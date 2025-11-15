@@ -147,7 +147,9 @@ jobs:
         run: echo "No STAGING_BASE provided, skipping"
       - name: Health check
         if: env.STAGING_BASE != ''
-        run: curl -fsSL "$STAGING_BASE/health" | tee health.json
+        run: |
+          curl -fsSL "$STAGING_BASE/health" | tee health.json
       - name: Billing balance
         if: env.STAGING_BASE != ''
-        run: curl -fsSL "$STAGING_BASE/api/v1/billing/balance" -H "Authorization: Bearer test" | tee balance.json || true
+        run: |
+          curl -fsSL "$STAGING_BASE/api/v1/billing/balance" -H "Authorization: Bearer test" | tee balance.json || true
