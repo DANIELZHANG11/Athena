@@ -1,6 +1,11 @@
 describe('Home', () => {
   it('loads and switches language', () => {
-    cy.visit('/')
+    cy.visit('/login')
+    cy.get('input[aria-label="邮箱"]').type('e2e@example.com')
+    cy.contains('发送验证码').click()
+    cy.get('input[aria-label="验证码"]').type('123456')
+    cy.contains('登录').click()
+    cy.url().should('include', '/')
     cy.contains('雅典娜')
     cy.get('select').select('en-US')
     cy.contains('Athena')
