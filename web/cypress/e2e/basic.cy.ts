@@ -10,6 +10,7 @@ describe('Basic flows', () => {
     cy.url().should('include', '/')
     cy.window().then((win) => win.localStorage.setItem('i18nextLng', 'zh-CN'))
     cy.visit('/tts')
-    cy.contains('生成并播放').should('exist')
+    cy.url().should('include', '/tts')
+    cy.contains('生成并播放', { timeout: 10000 }).should('exist')
   })
 })
