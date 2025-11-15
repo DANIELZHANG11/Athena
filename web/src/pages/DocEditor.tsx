@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 export default function DocEditor() {
+  const { t } = useTranslation()
   const { docId } = useParams()
   const [content, setContent] = useState('')
   const [version, setVersion] = useState(0)
@@ -52,15 +54,15 @@ export default function DocEditor() {
   }
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ marginBottom: 8 }}>版本 {version}</div>
+      <div style={{ marginBottom: 8 }}>{t('doc.version')} {version}</div>
       <textarea value={content} onChange={e => setContent(e.target.value)} style={{ width: '100%', height: 300 }} />
       <div style={{ marginTop: 8 }}>
-        <button onClick={send}>发送</button>
-        <button onClick={loadConflicts} style={{ marginLeft: 8 }}>冲突</button>
-        <button onClick={recoverDraft} style={{ marginLeft: 8 }}>恢复草稿</button>
+        <button onClick={send}>{t('doc.send')}</button>
+        <button onClick={loadConflicts} style={{ marginLeft: 8 }}>{t('doc.conflicts')}</button>
+        <button onClick={recoverDraft} style={{ marginLeft: 8 }}>{t('doc.recover')}</button>
       </div>
       {conflicts.length > 0 && (
-        <div style={{ marginTop: 8 }}>冲突 {conflicts.length}</div>
+        <div style={{ marginTop: 8 }}>{t('doc.conflicts')} {conflicts.length}</div>
       )}
     </div>
   )

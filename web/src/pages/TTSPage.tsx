@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export default function TTSPage() {
+  const { t } = useTranslation()
   const [text, setText] = useState('')
   const [audioUrl, setAudioUrl] = useState('')
   const [reqId, setReqId] = useState('')
@@ -41,17 +43,17 @@ export default function TTSPage() {
   return (
     <div style={{ padding: 16 }}>
       <div>
-        <input value={text} onChange={e => setText(e.target.value)} placeholder="输入朗读文本" style={{ width: '60%' }} />
-        <button onClick={start} style={{ marginLeft: 8 }}>生成并播放</button>
-        <button onClick={stop} style={{ marginLeft: 8 }}>停止心跳</button>
+        <input value={text} onChange={e => setText(e.target.value)} placeholder={t('tts.input')} style={{ width: '60%' }} />
+        <button onClick={start} style={{ marginLeft: 8 }}>{t('tts.start')}</button>
+        <button onClick={stop} style={{ marginLeft: 8 }}>{t('tts.stop')}</button>
       </div>
       {audioUrl && (
         <audio src={audioUrl} controls style={{ display: 'block', marginTop: 12 }} />
       )}
       <div style={{ marginTop: 12 }}>请求 {reqId}，累计时长 {duration} ms</div>
-      <div style={{ marginTop: 12 }}>余额 {balance ? `${balance.balance} Credits，钱包 ${balance.wallet_amount} ${balance.wallet_currency}` : ''}</div>
+      <div style={{ marginTop: 12 }}>{t('billing.balance_prefix')} {balance ? `${balance.balance} Credits，钱包 ${balance.wallet_amount} ${balance.wallet_currency}` : ''}</div>
       <div style={{ marginTop: 12 }}>
-        <div>账单</div>
+        <div>{t('billing.title')}</div>
         <ul>
           {ledger.map((x, i) => <li key={i}>{x.direction} {x.amount} {x.currency} {x.reason}</li>)}
         </ul>

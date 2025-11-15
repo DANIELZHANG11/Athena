@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export default function AIConversationsPage() {
+  const { t } = useTranslation()
   const [text, setText] = useState('')
   const [out, setOut] = useState('')
   const esRef = useRef<EventSource | null>(null)
@@ -11,8 +13,8 @@ export default function AIConversationsPage() {
   }, [])
   return (
     <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 24 }}>AI 对话</h1>
-      <input value={text} onChange={(e) => setText(e.target.value)} placeholder="输入提示词" style={{ width: 320, padding: 8 }} />
+      <h1 style={{ fontSize: 24 }}>{t('ai.title')}</h1>
+      <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('ai.prompt')} style={{ width: 320, padding: 8 }} />
       <button style={{ marginLeft: 12 }} onClick={() => {
         esRef.current?.close()
         const token = localStorage.getItem('access_token') || ''
@@ -26,7 +28,7 @@ export default function AIConversationsPage() {
           if (d === 'END') { es.close(); return }
           setOut((prev) => prev + d)
         }
-      }}>开始</button>
+      }}>{t('ai.start')}</button>
       <div style={{ marginTop: 16, whiteSpace: 'pre-wrap' }}>{out}</div>
     </div>
   )

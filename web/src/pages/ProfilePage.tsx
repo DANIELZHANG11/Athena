@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
+import { useTranslation } from 'react-i18next'
 
 export default function ProfilePage() {
+  const { t } = useTranslation()
   const [profile, setProfile] = useState<any>(null)
   const [etag, setEtag] = useState<string>('W/"1"')
   const [displayName, setDisplayName] = useState('')
   return (
     <div>
-      <h1 className="typography-large-title">个人中心</h1>
+      <h1 className="typography-large-title">{t('profile.title')}</h1>
       <div style={{ marginTop: 'var(--space-sm)' }}>
         <Button
           onClick={async () => {
@@ -19,11 +21,11 @@ export default function ProfilePage() {
             setEtag(j.data.etag || 'W/"1"')
             setDisplayName(j.data.display_name || '')
           }}
-        >获取资料</Button>
+        >{t('profile.get')}</Button>
       </div>
       {profile && (
         <div style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-          <span>显示名称</span>
+          <span>{t('profile.name')}</span>
           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={{ width: 240 }} />
           <Button
             onClick={async () => {
@@ -34,7 +36,7 @@ export default function ProfilePage() {
               setProfile(j.data)
               setDisplayName(j.data.display_name || '')
             }}
-          >保存</Button>
+          >{t('profile.save')}</Button>
         </div>
       )}
     </div>

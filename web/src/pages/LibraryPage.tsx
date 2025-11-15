@@ -3,19 +3,21 @@ import BookCard from '../components/BookCard'
 import Button from '../components/ui/Button'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
+import { useTranslation } from 'react-i18next'
 
 export default function LibraryPage() {
+  const { t } = useTranslation()
   const [show, setShow] = useState(false)
-  const [fileName, setFileName] = useState('纪德·道德三部曲.epub')
+  const [fileName, setFileName] = useState('')
   const [fingerprint, setFingerprint] = useState('a-unique-simulated-hash-string')
   const [fileObj, setFileObj] = useState<File | null>(null)
   const [items, setItems] = useState<Array<{ id: string; title: string; downloadUrl?: string }>>([])
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 className="typography-large-title">我的书库</h1>
+        <h1 className="typography-large-title">{t('library.title')}</h1>
         <Button variant="primary" onClick={() => setShow(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-          上传书籍
+          {t('upload.cta')}
         </Button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
@@ -26,21 +28,21 @@ export default function LibraryPage() {
       {show && (
         <Modal>
           <div>
-            <h2 style={{ fontSize: 18 }}>上传书籍</h2>
+            <h2 style={{ fontSize: 18 }}>{t('upload.title')}</h2>
             <div style={{ marginTop: 'var(--space-sm)' }}>
-              <div>文件名</div>
+              <div>{t('upload.filename')}</div>
               <Input value={fileName} onChange={(e) => setFileName(e.target.value)} />
             </div>
             <div style={{ marginTop: 'var(--space-sm)' }}>
-              <div>指纹</div>
+              <div>{t('upload.fingerprint')}</div>
               <Input value={fingerprint} onChange={(e) => setFingerprint(e.target.value)} />
             </div>
             <div style={{ marginTop: 'var(--space-sm)' }}>
-              <div>选择本地文件</div>
+              <div>{t('upload.pick_file')}</div>
               <input type="file" onChange={(e) => setFileObj(e.target.files?.[0] || null)} />
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
-              <Button onClick={() => setShow(false)}>取消</Button>
+              <Button onClick={() => setShow(false)}>{t('common.cancel')}</Button>
               <Button variant="primary"
                 onClick={async () => {
                   const at = localStorage.getItem('access_token')
@@ -63,7 +65,7 @@ export default function LibraryPage() {
                   }
                   setShow(false)
                 }}
-              >开始上传</Button>
+              >{t('upload.start')}</Button>
             </div>
           </div>
         </Modal>
