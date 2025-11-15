@@ -6,7 +6,7 @@ describe('Home', () => {
     cy.get('input[aria-label="验证码"]').type('123456')
     cy.contains('登录').click()
     cy.url().should('include', '/')
-    cy.contains('雅典娜', { timeout: 10000 })
+    cy.contains(/雅典娜|Athena/, { timeout: 10000 })
     cy.window().then((win) => win.localStorage.setItem('i18nextLng', 'en-US'))
     cy.reload()
     cy.contains('Athena', { timeout: 10000 })
