@@ -13,37 +13,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: 'pnpm'
 
       - name: Install web deps
         working-directory: web
         run: |
-          npm ci
+          pnpm install --no-frozen-lockfile
 
       - name: Contracts lint
         working-directory: web
         run: |
-          npm run contracts:lint
+          pnpm run contracts:lint
 
       - name: ESLint
         working-directory: web
         run: |
-          npm run lint
+          pnpm run lint
 
       - name: Vitest coverage
         working-directory: web
         run: |
-          npx -y vitest run --coverage
+          (pnpm run test:ci || pnpm exec vitest run)
 
       - name: Cypress E2E (axe & flows)
         uses: cypress-io/github-action@v6
         with:
           working-directory: web
-          start: npm run dev
-          wait-on: 'http://localhost:5173'
+          install-command: pnpm install --no-frozen-lockfile
+          start: pnpm preview --port 4173
+          wait-on: 'http://localhost:4173'
           spec: |
             cypress/e2e/axe.cy.ts,
             cypress/e2e/billing.cy.ts,
