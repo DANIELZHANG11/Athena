@@ -87,7 +87,7 @@ jobs:
       - name: Install pytest and coverage
         run: pip install pytest pytest-cov
       - name: Pytest with coverage (>=30%)
-        run: pytest -q --cov=api/app/main.py --cov-report=term --cov-fail-under=30
+        run: pytest -q --cov=api.app --cov-report=term --cov-fail-under=30
 
   static-qa:
     name: Python Static QA
