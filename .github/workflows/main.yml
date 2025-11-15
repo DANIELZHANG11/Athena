@@ -70,3 +70,84 @@ jobs:
           : > .env.infisical
       - name: Validate compose
         run: docker compose --env-file .github/workflows/.env.ci -f docker-compose.yml config
+
+  backend-tests:
+    name: Backend Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install requirements
+        working-directory: api
+        run: pip install -r requirements.txt
+      - name: Install pytest and coverage
+        run: pip install pytest pytest-cov
+      - name: Pytest with coverage (>=30%)
+        run: pytest -q --cov=api/app --cov-report=term --cov-fail-under=30
+
+  static-qa:
+    name: Python Static QA
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install linters and scanners
+        run: pip install flake8 ruff mypy bandit
+      - name: flake8
+        run: flake8 api || true
+      - name: ruff
+        run: ruff check api || true
+      - name: mypy
+        run: mypy api || true
+      - name: bandit
+        run: bandit -r api -ll || true
+
+  contracts-strict:
+    name: Contracts Strict Lint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Redocly
+        run: npm i -g @redocly/cli
+      - name: Lint contracts
+        run: redocly lint contracts/api/v1/**/*.yaml
+
+  trivy-scan:
+    name: Trivy FS Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy scan (fs)
+        uses: aquasecurity/trivy-action@0.13.1
+        with:
+          scan-type: fs
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+  runtime-smoke:
+    name: Runtime Smoke (optional)
+    runs-on: ubuntu-latest
+    env:
+      STAGING_BASE: ${{ secrets.STAGING_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if STAGING_BASE empty
+        if: env.STAGING_BASE == ''
+        run: echo "No STAGING_BASE provided, skipping"
+      - name: Health check
+        if: env.STAGING_BASE != ''
+        run: curl -fsSL "$STAGING_BASE/health" | tee health.json
+      - name: Billing balance
+        if: env.STAGING_BASE != ''
+        run: curl -fsSL "$STAGING_BASE/api/v1/billing/balance" -H "Authorization: Bearer test" | tee balance.json || true

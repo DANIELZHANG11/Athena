@@ -52,3 +52,12 @@ jobs:
         working-directory: web
         run: |
           pnpm dlx start-server-and-test preview http://localhost:4173 "pnpm cypress run"
+
+      - name: Upload Cypress Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            web/cypress/screenshots
+            web/cypress/videos
