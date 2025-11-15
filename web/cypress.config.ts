@@ -5,11 +5,11 @@ export default defineConfig({
     supportFile: 'cypress/support/e2e.js',
     setupNodeEvents(on, config) {
       on('task', {
-        log(message: string) {
+        log(message) {
           console.log(message)
           return null
         },
-        error(message: string) {
+        error(message) {
           console.error(message)
           return null
         }
