@@ -8,6 +8,7 @@ describe('Home', () => {
     cy.url().should('include', '/')
     cy.window().then((win) => win.localStorage.setItem('i18nextLng', 'zh-CN'))
     cy.reload()
+    cy.get('select').select('zh-CN')
     cy.contains('雅典娜', { timeout: 10000 })
     cy.get('select').select('en-US')
     cy.contains('Athena', { timeout: 10000 })
