@@ -1,7 +1,7 @@
 // custom commands
 Cypress.Commands.add('login', () => {
-  cy.intercept('POST', /\/api\/v1\/auth\/email\/send[-_]code$/).as('sendCode')
-  cy.intercept('POST', /\/api\/v1\/auth\/email\/verify[-_]code$/).as('verifyCode')
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/send[-_]code(?:\?.*)?$/).as('sendCode')
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/verify[-_]code(?:\?.*)?$/).as('verifyCode')
 
   cy.intercept('GET', '/api/v1/profile/me', { statusCode: 200, body: { data: { display_name: 'E2E User' } } }).as('getProfile')
 
