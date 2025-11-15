@@ -22,6 +22,7 @@ export default function LoginPage() {
         <label htmlFor="email-input">{t('login.email')}</label>
         <Input id="email-input" ariaLabel={t('login.email')} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.email')} />
         <Button
+          data-testid="login-send"
           style={{ marginTop: 'var(--space-sm)', width: '100%' }}
           onClick={async () => {
             setMsg('')
@@ -42,6 +43,7 @@ export default function LoginPage() {
         <label htmlFor="code-input">{t('login.code')}</label>
         <Input id="code-input" ariaLabel={t('login.code')} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('login.code')} />
         <Button
+          data-testid="login-submit"
           style={{ marginTop: 'var(--space-sm)', width: '100%' }}
           onClick={async () => {
             setMsg('')
