@@ -24,6 +24,9 @@ jobs:
           node-version: '20.x'
           cache: 'pnpm'
 
+      - name: Ensure pnpm
+        run: npm i -g pnpm
+
       - name: Install web deps
         working-directory: web
         run: |
