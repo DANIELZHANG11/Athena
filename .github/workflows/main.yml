@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
       - name: Install deps
         working-directory: web
         run: pnpm install --no-frozen-lockfile
