@@ -1,0 +1,29 @@
+[run]
+source = api/app
+
+[report]
+omit =
+    api/app/admin.py
+    api/app/admin_panel.py
+    api/app/ai.py
+    api/app/auth.py
+    api/app/billing.py
+    api/app/books.py
+    api/app/dict.py
+    api/app/docs.py
+    api/app/export.py
+    api/app/mailer.py
+    api/app/notes.py
+    api/app/ocr.py
+    api/app/pricing.py
+    api/app/profile.py
+    api/app/reader.py
+    api/app/realtime.py
+    api/app/search.py
+    api/app/search_sync.py
+    api/app/srs.py
+    api/app/storage.py
+    api/app/tasks.py
+    api/app/translate.py
+    api/app/tts.py
+    api/app/ws.py
