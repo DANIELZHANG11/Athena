@@ -6,6 +6,8 @@ describe('Home', () => {
     cy.get('input[aria-label="验证码"]').type('123456')
     cy.contains('登录').click()
     cy.url().should('include', '/')
+    cy.window().then((win) => win.localStorage.setItem('i18nextLng', 'zh-CN'))
+    cy.reload()
     cy.contains('雅典娜')
     cy.get('select').select('en-US')
     cy.contains('Athena')
