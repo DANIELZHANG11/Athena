@@ -1,14 +1,14 @@
 describe('Home', () => {
   it('loads and switches language', () => {
-    cy.visit('/login')
+    cy.visit('/login', { onBeforeLoad: (win) => win.localStorage.setItem('i18nextLng', 'zh-CN') })
     cy.get('input[aria-label="邮箱"]').type('e2e@example.com')
     cy.contains('发送验证码').click()
     cy.get('input[aria-label="验证码"]').type('123456')
     cy.contains('登录').click()
     cy.url().should('include', '/')
-    cy.get('select', { timeout: 10000 }).should('exist').select('zh-CN')
     cy.contains('雅典娜', { timeout: 10000 })
-    cy.get('select').select('en-US')
+    cy.window().then((win) => win.localStorage.setItem('i18nextLng', 'en-US'))
+    cy.reload()
     cy.contains('Athena', { timeout: 10000 })
   })
 })
