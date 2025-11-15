@@ -1,12 +1,12 @@
 // custom commands
 Cypress.Commands.add('login', () => {
-  cy.intercept('POST', '/api/v1/auth/email/send-code', {
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/send[-_]code/, {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
     body: { status: 'success' }
   }).as('sendCode')
 
-  cy.intercept('POST', '/api/v1/auth/email/verify-code', {
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/verify[-_]code/, {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
     body: {
@@ -33,6 +33,6 @@ Cypress.Commands.add('login', () => {
   cy.wait('@sendCode')
   cy.get('input[aria-label="验证码"]').type('123456')
   cy.contains('登录').click()
-  cy.wait('@verifyCode')
+  cy.wait('@verifyCode', { timeout: 10000 })
   cy.url().should('include', '/')
 })

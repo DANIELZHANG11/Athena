@@ -26,11 +26,15 @@ export default function LoginPage() {
           onClick={async () => {
             setMsg('')
             try {
+              console.log('[E2E DEBUG] send_code: start', { email })
               const res = await fetch('/api/v1/auth/email/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+              console.log('[E2E DEBUG] send_code: status', res.status)
               const ct = res.headers.get('content-type') || ''
-              const j = ct.includes('application/json') ? await res.json().catch(() => ({})) : {}
+              const j = ct.includes('application/json') ? await res.json().catch((e) => { console.error('[E2E DEBUG] send_code: json parse error', e); return {} }) : {}
+              console.log('[E2E DEBUG] send_code: body', j)
               setMsg(j.status === 'success' ? t('login.sent') : t('login.send_fail'))
             } catch {
+              console.error('[E2E DEBUG] send_code: failed')
               setMsg(t('login.sent'))
             }
           }}
@@ -42,9 +46,12 @@ export default function LoginPage() {
           onClick={async () => {
             setMsg('')
             try {
+              console.log('[E2E DEBUG] verify_code: start', { email, code })
               const res = await fetch('/api/v1/auth/email/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
+              console.log('[E2E DEBUG] verify_code: status', res.status)
               const ct = res.headers.get('content-type') || ''
-              const j = ct.includes('application/json') ? await res.json().catch(() => ({})) : {}
+              const j = ct.includes('application/json') ? await res.json().catch((e) => { console.error('[E2E DEBUG] verify_code: json parse error', e); return {} }) : {}
+              console.log('[E2E DEBUG] verify_code: body', j)
               const ok = j.status === 'success' || !j.status
               const tokens = j?.data?.tokens || { access_token: 'e2e_access', refresh_token: 'e2e_refresh' }
               if (ok) {
@@ -57,6 +64,7 @@ export default function LoginPage() {
                 setMsg(t('login.fail'))
               }
             } catch {
+              console.error('[E2E DEBUG] verify_code: failed')
               localStorage.setItem('access_token', 'e2e_access')
               localStorage.setItem('refresh_token', 'e2e_refresh')
               await dbSet('access_token', 'e2e_access')
