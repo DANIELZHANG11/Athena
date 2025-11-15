@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from api.app.main import app
 
-client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=False)
 
 def test_health():
     r = client.get('/health')
@@ -18,4 +18,5 @@ def test_root():
 def test_error_handler():
     r = client.get('/error')
     assert r.status_code == 500
-    assert r.json().get('error', {}).get('code') == 'internal_error'
+    body = r.json()
+    assert body.get('error', {}).get('code') == 'internal_error'
