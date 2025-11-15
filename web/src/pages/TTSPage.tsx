@@ -12,8 +12,15 @@ export default function TTSPage() {
   const timerRef = useRef<any>(null)
   const at = typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : ''
   const call = async (path: string, init?: RequestInit) => {
-    const r = await fetch(path, { ...(init||{}), headers: { ...(init?.headers||{}), Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } })
-    return r.json()
+    try {
+      const r = await fetch(path, { ...(init||{}), headers: { ...(init?.headers||{}), Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } })
+      const ct = r.headers.get('content-type') || ''
+      if (!ct.includes('application/json')) return {}
+      const body = await r.json().catch(() => ({}))
+      return body || {}
+    } catch {
+      return {}
+    }
   }
   const start = async () => {
     const j = await call('/api/v1/tts', { method: 'POST', body: JSON.stringify({ text }) })
