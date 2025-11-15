@@ -26,7 +26,7 @@ export default function LoginPage() {
           onClick={async () => {
             setMsg('')
             try {
-              const res = await fetch('/api/v1/auth/email/send_code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+              const res = await fetch('/api/v1/auth/email/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
               const ct = res.headers.get('content-type') || ''
               const j = ct.includes('application/json') ? await res.json().catch(() => ({})) : {}
               setMsg(j.status === 'success' ? t('login.sent') : t('login.send_fail'))
@@ -42,7 +42,7 @@ export default function LoginPage() {
           onClick={async () => {
             setMsg('')
             try {
-              const res = await fetch('/api/v1/auth/email/verify_code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
+              const res = await fetch('/api/v1/auth/email/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
               const ct = res.headers.get('content-type') || ''
               const j = ct.includes('application/json') ? await res.json().catch(() => ({})) : {}
               const ok = j.status === 'success' || !j.status

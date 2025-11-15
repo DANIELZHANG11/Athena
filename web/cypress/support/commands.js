@@ -1,12 +1,12 @@
 // custom commands
 Cypress.Commands.add('login', () => {
-  cy.intercept('POST', '/api/v1/auth/email/send_code', {
+  cy.intercept('POST', '/api/v1/auth/email/send-code', {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
     body: { status: 'success' }
   }).as('sendCode')
 
-  cy.intercept('POST', '/api/v1/auth/email/verify_code', {
+  cy.intercept('POST', '/api/v1/auth/email/verify-code', {
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
     body: {
