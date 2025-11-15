@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './i18n'
 import App from './App'
 import { registerSW } from 'virtual:pwa-register'
-registerSW({ immediate: true })
+if (typeof window !== 'undefined' && !('Cypress' in window) && !import.meta.env.VITE_DISABLE_PWA) {
+  registerSW({ immediate: true })
+}
 const el = document.getElementById('root')
 if (el) {
   createRoot(el).render(<App />)
