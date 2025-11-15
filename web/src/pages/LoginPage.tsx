@@ -46,6 +46,11 @@ export default function LoginPage() {
           onClick={async () => {
             setMsg('')
             try {
+              console.log('[E2E DEBUG] handleLoginSubmit: triggered', { email, code })
+              if (!email || !code) {
+                console.error('[E2E DEBUG] validation: failed', { emailEmpty: !email, codeEmpty: !code })
+                return
+              }
               console.log('[E2E DEBUG] verify_code: start', { email, code })
               const res = await fetch('/api/v1/auth/email/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
               console.log('[E2E DEBUG] verify_code: status', res.status)
