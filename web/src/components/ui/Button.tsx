@@ -1,5 +1,5 @@
-type Props = { children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary'; style?: React.CSSProperties }
-export default function Button({ children, onClick, variant = 'secondary', style }: Props) {
+type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' }
+export default function Button({ children, onClick, variant = 'secondary', style, ...rest }: Props) {
   const base = {
     padding: 'var(--space-sm) var(--space-md)',
     borderRadius: 8,
@@ -10,6 +10,6 @@ export default function Button({ children, onClick, variant = 'secondary', style
     ? { background: 'var(--color-system-blue)', color: '#fff' }
     : { background: 'var(--color-system-fill)', color: 'var(--color-label)' }
   return (
-    <button onClick={onClick} style={{ ...base, ...theme, ...style }}>{children}</button>
+    <button {...rest} onClick={onClick} style={{ ...base, ...theme, ...style }}>{children}</button>
   )
 }
