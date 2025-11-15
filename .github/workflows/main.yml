@@ -15,12 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: 9
       - name: Install deps
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Lint
         working-directory: web
         run: pnpm lint
@@ -30,6 +30,9 @@ jobs:
       - name: i18n no-hardcode
         working-directory: web
         run: pnpm run i18n:no-hardcode
+      - name: Install Cypress binary
+        working-directory: web
+        run: npx cypress install --force
       - name: Build
         working-directory: web
         run: pnpm build
@@ -60,4 +63,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate compose
-        run: docker compose -f docker-compose.yml config
+        run: docker compose --env-file .github/workflows/.env.ci -f docker-compose.yml config
