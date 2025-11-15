@@ -1,3 +1,5 @@
+/// <reference types="cypress" />
+
 describe('Home', () => {
   it('loads and switches language', () => {
     cy.login()
