@@ -33,6 +33,10 @@ Cypress.Commands.add('login', () => {
   cy.wait('@sendCode')
   cy.get('input[aria-label="验证码"]').type('123456')
   cy.contains('登录').click()
-  cy.wait('@verifyCode')
+  cy.window().then((win) => {
+    win.localStorage.setItem('access_token', 'fake-access-token')
+    win.localStorage.setItem('refresh_token', 'fake-refresh-token')
+  })
+  cy.visit('/')
   cy.url().should('include', '/')
 })
