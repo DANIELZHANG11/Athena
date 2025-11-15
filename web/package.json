@@ -12,6 +12,8 @@
     "i18n:no-hardcode": "node scripts/no-hardcode.cjs",
     "i18n:sync": "node scripts/i18n-sync.cjs",
     "e2e": "cypress run",
+    "prettier:check": "prettier -c \"src/**/*.{ts,tsx,json,css,md}\"",
+    "test:ci": "vitest run --coverage",
     "contracts:lint": "npx -y @redocly/cli lint ../contracts/api/v1/**/*.yaml",
     "e2e:axe": "cypress run --spec cypress/e2e/axe.cy.ts",
     "e2e:flows": "cypress run --spec cypress/e2e/billing.cy.ts,cypress/e2e/docs.cy.ts",
