@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: Athena Translate API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/translate:
+    post:
+      summary: Translate text and charge accordingly
+      operationId: translateText
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

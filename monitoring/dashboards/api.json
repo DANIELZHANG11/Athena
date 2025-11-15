@@ -1,0 +1,26 @@
+{
+  "title": "Athena API",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Request Rate",
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{job=\"api\"}[5m]))" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Error Rate",
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{job=\"api\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"api\"}[5m]))" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Latency P95",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"api\"}[5m])) by (le))" }
+      ]
+    }
+  ]
+}

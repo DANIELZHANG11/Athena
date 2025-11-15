@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: Athena Export API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/export/ocr/{job_id}:
+    get:
+      summary: Export OCR result
+      operationId: exportOcr
+      parameters:
+        - in: path
+          name: job_id
+          schema:
+            type: string
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [txt, md, markdown, pdf]
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+        "400": { description: Bad Request }
+  /api/v1/export/notes:
+    get:
+      summary: Export notes
+      operationId: exportNotes
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [txt, md, markdown, pdf]
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+        "400": { description: Bad Request }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

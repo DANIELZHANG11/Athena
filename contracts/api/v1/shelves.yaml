@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Athena Shelves API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8000
+paths:
+  /api/v1/shelves:
+    post:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+    get:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+  /api/v1/shelves/{shelf_id}:
+    patch:
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: If-Match
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /api/v1/shelves/{shelf_id}/items:
+    post:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+    get:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+  /api/v1/shelves/{shelf_id}/items/{book_id}:
+    delete:
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

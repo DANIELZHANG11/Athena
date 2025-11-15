@@ -1,0 +1,238 @@
+openapi: 3.0.3
+info:
+  title: Athena Books API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+paths:
+  /api/v1/books:
+    get:
+      summary: List books
+      operationId: listBooks
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+    post:
+      summary: Upload proxy
+      operationId: uploadProxy
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400": { description: Bad Request }
+        "401": { description: Unauthorized }
+  /api/v1/books/register:
+    post:
+      summary: Register external object url (idempotent)
+      operationId: registerBook
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400": { description: Bad Request }
+        "401": { description: Unauthorized }
+  /api/v1/books/upload_init:
+    post:
+      summary: Init direct upload
+      operationId: uploadInit
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/upload_complete:
+    post:
+      summary: Complete direct upload
+      operationId: uploadComplete
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400": { description: Bad Request }
+        "401": { description: Unauthorized }
+  /api/v1/books/{book_id}:
+    get:
+      summary: Get book detail
+      operationId: getBook
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+    patch:
+      summary: Update book
+      operationId: patchBook
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: If-Match
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+        "409": { description: Conflict }
+    delete:
+      summary: Delete book
+      operationId: deleteBook
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/{book_id}/presign:
+    get:
+      summary: Presign download
+      operationId: presignDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/{book_id}/convert:
+    post:
+      summary: Request convert
+      operationId: requestConvert
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/jobs/list:
+    get:
+      summary: List conversion jobs
+      operationId: listJobs
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/jobs/{job_id}/complete:
+    post:
+      summary: Complete job
+      operationId: completeJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/jobs/{job_id}/fail:
+    post:
+      summary: Fail job
+      operationId: failJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/{book_id}/processing/status:
+    get:
+      summary: Get processing status
+      operationId: getProcessingStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+  /api/v1/books/{book_id}/convert/output:
+    get:
+      summary: Presign convert output
+      operationId: presignConvertOutput
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: book_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+        "401": { description: Unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

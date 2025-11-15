@@ -1,0 +1,637 @@
+openapi: 3.0.3
+info:
+  title: Athena Admin API
+  version: 1.0.0
+  description: 管理面板后端契约（初版），只读与少量管理操作。
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+    description: 本地开发
+tags:
+  - name: Users
+    description: 用户管理
+  - name: FeatureFlags
+    description: 特性开关配置
+  - name: UserFeatureFlags
+    description: 用户级开关覆盖
+  - name: PromptTemplates
+    description: 提示词模板管理
+  - name: AuditLogs
+    description: 审计日志查询
+  - name: Metrics
+    description: 运营指标
+  - name: Tasks
+    description: 运维任务
+  - name: I18nLanguages
+    description: 语言配置
+  - name: I18nTranslations
+    description: 翻译配置
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/admin/users:
+    get:
+      tags: [Users]
+      summary: 列出用户（分页/筛选）
+      operationId: adminListUsers
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: 关键字（邮箱/昵称）
+        - in: query
+          name: role
+          schema: { type: string, enum: [user, admin] }
+        - in: query
+          name: isActive
+          schema: { type: boolean }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 200, default: 20 }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [created_at, last_login_at] }
+        - in: query
+          name: order
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '401': { description: Unauthorized }
+  /api/v1/admin/users/{userId}:
+    get:
+      tags: [Users]
+      summary: 获取用户详情
+      operationId: adminGetUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { description: Unauthorized }
+    patch:
+      tags: [Users]
+      summary: 更新用户属性（角色/激活）
+      operationId: adminPatchUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200': { description: OK }
+        '400': { description: Bad Request }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden }
+        '409': { description: Conflict }
+  /api/v1/admin/feature-flags:
+    get:
+      tags: [FeatureFlags]
+      summary: 列出所有特性开关
+      operationId: adminListFeatureFlags
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FeatureFlag' }
+        '401': { description: Unauthorized }
+    post:
+      tags: [FeatureFlags]
+      summary: 创建特性开关
+      operationId: adminCreateFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureFlagCreate' }
+      responses:
+        '201': { description: Created }
+        '409': { description: Duplicate Key }
+        '401': { description: Unauthorized }
+  /api/v1/admin/feature-flags/{key}:
+    patch:
+      tags: [FeatureFlags]
+      summary: 更新特性开关（并发控制）
+      operationId: adminUpdateFeatureFlag
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+        - in: header
+          name: If-Match
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureFlagUpdate' }
+      responses:
+        '200': { description: OK, headers: { ETag: { $ref: '#/components/headers/ETag' } } }
+        '409': { description: VERSION_CONFLICT }
+        '401': { description: Unauthorized }
+    delete:
+      tags: [FeatureFlags]
+      summary: 删除特性开关
+      operationId: adminDeleteFeatureFlag
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: No Content }
+        '401': { description: Unauthorized }
+  /api/v1/admin/user-feature-flags/{userId}:
+    get:
+      tags: [UserFeatureFlags]
+      summary: 获取用户特性开关覆盖
+      operationId: adminGetUserFlags
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserFeatureFlags' }
+        '401': { description: Unauthorized }
+    put:
+      tags: [UserFeatureFlags]
+      summary: 设置用户覆盖（幂等）
+      operationId: adminPutUserFlags
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserFeatureFlags' }
+      responses:
+        '200': { description: OK }
+        '401': { description: Unauthorized }
+  /api/v1/admin/prompt-templates:
+    get:
+      tags: [PromptTemplates]
+      summary: 列出提示词模板
+      operationId: adminListPromptTemplates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PromptTemplate' }
+        '401': { description: Unauthorized }
+  /api/v1/admin/prompt-templates/{name}:
+    put:
+      tags: [PromptTemplates]
+      summary: 更新提示词模板（并发控制）
+      operationId: adminPutPromptTemplate
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+        - in: header
+          name: If-Match
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PromptTemplateUpdate' }
+      responses:
+        '200': { description: OK, headers: { ETag: { $ref: '#/components/headers/ETag' } } }
+        '409': { description: VERSION_CONFLICT }
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [AuditLogs]
+      summary: 查询审计日志（分页/筛选）
+      operationId: adminListAuditLogs
+      parameters:
+        - in: query
+          name: user_id
+          schema: { type: string, format: uuid }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogList' }
+        '401': { description: Unauthorized }
+  /api/v1/admin/metrics:
+    get:
+      tags: [Metrics]
+      summary: 获取运营指标（受限字段）
+      operationId: adminGetMetrics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperationalMetrics' }
+        '401': { description: Unauthorized }
+  /api/v1/admin/tasks/reindex/{userId}:
+    post:
+      tags: [Tasks]
+      summary: 单用户数据重建索引（入队）
+      operationId: adminReindexUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Accepted
+        '401': { description: Unauthorized }
+          
+
+  /api/v1/admin/i18n/languages:
+    get:
+      tags: [I18nLanguages]
+      summary: 列出支持语言（分页）
+      operationId: adminListLanguages
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/I18nLanguageList' }
+        '401': { description: Unauthorized }
+    post:
+      tags: [I18nLanguages]
+      summary: 新增语言
+      operationId: adminCreateLanguage
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string }
+                name: { type: string }
+      responses:
+        '201': { description: Created }
+        '401': { description: Unauthorized }
+
+  /api/v1/admin/i18n/languages/{code}:
+    patch:
+      tags: [I18nLanguages]
+      summary: 更新语言（启用/禁用/改名，并发控制）
+      operationId: adminPatchLanguage
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+        - in: header
+          name: If-Match
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                is_active: { type: boolean }
+      responses:
+        '200': { description: OK, headers: { ETag: { $ref: '#/components/headers/ETag' } } }
+        '409': { description: VERSION_CONFLICT }
+        '401': { description: Unauthorized }
+    delete:
+      tags: [I18nLanguages]
+      summary: 删除语言
+      operationId: adminDeleteLanguage
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: No Content }
+        '401': { description: Unauthorized }
+
+  /api/v1/admin/i18n/translations:
+    get:
+      tags: [I18nTranslations]
+      summary: 查询翻译键值对
+      operationId: adminListTranslations
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: lang_code
+          schema: { type: string }
+        - in: query
+          name: key
+          schema: { type: string }
+          description: 模糊搜索
+        - in: query
+          name: view
+          schema: { type: string, enum: [key_based, language_based], default: key_based }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/I18nTranslationItem' }
+                  next_cursor: { type: string }
+        '401': { description: Unauthorized }
+    put:
+      tags: [I18nTranslations]
+      summary: 批量UPSERT翻译（幂等）
+      operationId: adminPutTranslations
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required: [key, lang_code, value]
+                properties:
+                  key: { type: string }
+                  lang_code: { type: string }
+                  value: { type: string }
+      responses:
+        '200': { description: OK }
+        '401': { description: Unauthorized }
+
+  /api/v1/admin/i18n/publish:
+    post:
+      tags: [I18nTranslations]
+      summary: 触发发布到 MinIO/CDN（异步）
+      operationId: adminPublishTranslations
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/I18nPublishAccepted' }
+        '401': { description: Unauthorized }
+
+  /api/v1/admin/i18n/import:
+    post:
+      tags: [I18nTranslations]
+      summary: 批量导入翻译（CSV/JSON，异步）
+      operationId: adminImportTranslations
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                format: { type: string, enum: [csv, json] }
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/I18nPublishAccepted' }
+        '401': { description: Unauthorized }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  headers:
+    ETag:
+      description: 资源版本标签，用于并发控制
+      schema: { type: string }
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        display_name: { type: string }
+        role: { type: string, enum: [user, admin] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time }
+    UserList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+    UpdateUser:
+      type: object
+      properties:
+        role: { type: string, enum: [user, admin] }
+        is_active: { type: boolean }
+    FeatureFlag:
+      type: object
+      properties:
+        key: { type: string }
+        enabled: { type: boolean }
+        description: { type: string }
+        version: { type: integer }
+        updated_at: { type: string, format: date-time }
+    FeatureFlagCreate:
+      type: object
+      required: [key, enabled]
+      properties:
+        key: { type: string }
+        enabled: { type: boolean }
+        description: { type: string }
+    FeatureFlagUpdate:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        description: { type: string }
+        version: { type: integer }
+    UserFeatureFlags:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        overrides:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              enabled: { type: boolean }
+    PromptTemplate:
+      type: object
+      properties:
+        name: { type: string }
+        version: { type: integer }
+        content: { type: string }
+        updated_at: { type: string, format: date-time }
+    PromptTemplateUpdate:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_user_id: { type: string, format: uuid }
+        target_user_id: { type: string, format: uuid }
+        action: { type: string }
+        metadata: { type: object }
+        created_at: { type: string, format: date-time }
+    AuditLogList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+    OperationalMetrics:
+      type: object
+      properties:
+        active_users_24h: { type: integer }
+        new_users_24h: { type: integer }
+        book_uploads_24h: { type: integer }
+        ai_tokens_24h: { type: integer }
+        errors_24h: { type: integer }
+    TaskQueued:
+      type: object
+      properties:
+        task_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued] }
+    I18nLanguage:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        is_active: { type: boolean }
+        version: { type: integer }
+        updated_at: { type: string, format: date-time }
+    I18nLanguageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/I18nLanguage' }
+        next_cursor: { type: string }
+    I18nTranslationItem:
+      type: object
+      properties:
+        key: { type: string }
+        translations:
+          type: object
+          additionalProperties: { type: string }
+    I18nPublishAccepted:
+      type: object
+      properties:
+        job_id: { type: string }

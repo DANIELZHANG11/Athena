@@ -1,0 +1,129 @@
+@baseUrl = http://localhost:8000
+@email = webmaster@wxbooks.cn
+@token = paste-your-token-here
+@noteId = paste-note-id-here
+@etag = paste-etag-here
+
+###
+GET {{baseUrl}}/
+
+###
+GET {{baseUrl}}/health
+
+###
+POST {{baseUrl}}/api/v1/auth/email/send_code
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+###
+POST {{baseUrl}}/api/v1/auth/email/verify_code
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "524767"
+}
+
+###
+GET {{baseUrl}}/api/v1/books?limit=10
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/v1/shelves
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$randomUUID}}
+Content-Type: application/json
+
+{
+  "name": "我的书架",
+  "description": ""
+}
+
+###
+GET {{baseUrl}}/api/v1/shelves?limit=10
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/v1/notes
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$randomUUID}}
+Content-Type: application/json
+
+{
+  "book_id": "{{$guid}}",
+  "content": "示例笔记",
+  "chapter": "第一章",
+  "location": "p10",
+  "offset": 5
+}
+
+###
+GET {{baseUrl}}/api/v1/notes?limit=10
+Authorization: Bearer {{token}}
+
+###
+GET {{baseUrl}}/api/v1/search?q=示例&kind=note&limit=10
+Authorization: Bearer {{token}}
+
+###
+POST {{baseUrl}}/api/v1/highlights
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$randomUUID}}
+Content-Type: application/json
+
+{
+  "book_id": "{{$guid}}",
+  "start_location": 1,
+  "end_location": 3,
+  "color": "yellow",
+  "comment": "重要段落"
+}
+
+###
+GET {{baseUrl}}/api/v1/highlights?limit=10
+Authorization: Bearer {{token}}
+
+### 并发控制：获取笔记详情ETag
+GET {{baseUrl}}/api/v1/notes/{{noteId}}
+Authorization: Bearer {{token}}
+
+### 并发控制：携带If-Match进行更新（使用上一请求返回的etag替换 {{etag}}）
+PATCH {{baseUrl}}/api/v1/notes/{{noteId}}
+Authorization: Bearer {{token}}
+If-Match: {{etag}}
+Content-Type: application/json
+
+{
+  "content": "并发更新内容——一次成功"
+}
+
+### 并发控制：再次使用旧ETag更新，预期409
+PATCH {{baseUrl}}/api/v1/notes/{{noteId}}
+Authorization: Bearer {{token}}
+If-Match: {{etag}}
+Content-Type: application/json
+
+{
+  "content": "并发更新内容——二次冲突"
+}
+
+### 并发控制：获取笔记详情ETag
+GET {{baseUrl}}/api/v1/notes/{{$guid}}
+Authorization: Bearer {{token}}
+
+### 并发控制：使用If-Match更新笔记
+PATCH {{baseUrl}}/api/v1/notes/{{$guid}}
+Authorization: Bearer {{token}}
+If-Match: W/"1"
+Content-Type: application/json
+
+{
+  "content": "并发更新内容"
+}
+
+### 搜索：按tag_ids与混合kind过滤
+GET {{baseUrl}}/api/v1/search?q=示例&kind=note&tag_ids={{$guid}}&limit=10
+Authorization: Bearer {{token}}

@@ -1,0 +1,135 @@
+openapi: 3.0.3
+info:
+  title: Athena Search API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8000
+paths:
+  /api/v1/search:
+    get:
+      operationId: search
+      summary: Search notes/highlights/books
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [note, highlight, book]
+        - in: query
+          name: tag_ids
+          schema:
+            type: array
+            items:
+              type: string
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            enum: [relevance, updated_at]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: offset
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Search-Engine:
+              schema:
+                type: string
+              description: elasticsearch or postgres-tsvector
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/SearchNote'
+                        - $ref: '#/components/schemas/SearchHighlight'
+                        - $ref: '#/components/schemas/SearchBook'
+        "401":
+          description: Unauthorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SearchNote:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [note]
+        id:
+          type: string
+        content:
+          type: string
+        book_id:
+          type: string
+        updated_at:
+          type: string
+        etag:
+          type: string
+        score:
+          type: number
+        highlight:
+          $ref: '#/components/schemas/HighlightFragments'
+    SearchHighlight:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [highlight]
+        id:
+          type: string
+        comment:
+          type: string
+        book_id:
+          type: string
+        updated_at:
+          type: string
+        etag:
+          type: string
+        score:
+          type: number
+        highlight:
+          $ref: '#/components/schemas/HighlightFragments'
+    SearchBook:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [book]
+        id:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        updated_at:
+          type: string
+        etag:
+          type: string
+    HighlightFragments:
+      type: object
+      properties:
+        fragments:
+          type: array
+          items:
+            type: string

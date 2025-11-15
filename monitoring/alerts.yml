@@ -1,0 +1,17 @@
+groups:
+  - name: athena-api
+    rules:
+      - alert: APIHighErrorRate
+        expr: increase(http_request_duration_seconds_count{status=~"5.."}[10m]) / increase(http_request_duration_seconds_count[10m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: API 5xx 错误率超过5%
+      - alert: APILatencyP95High
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: API P95 延迟超过300ms

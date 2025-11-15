@@ -1,0 +1,30 @@
+name: Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      STAGING_BASE:
+        description: Base URL of staging API (e.g., https://staging.example.com)
+        required: false
+        default: ""
+
+jobs:
+  smoke:
+    name: API Smoke Contracts
+    runs-on: ubuntu-latest
+    env:
+      STAGING_BASE: ${{ github.event.inputs.STAGING_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when STAGING_BASE is empty
+        if: env.STAGING_BASE == ''
+        run: echo "No STAGING_BASE provided, skipping smoke tests" && exit 0
+      - name: Health check
+        run: |
+          curl -fsSL "$STAGING_BASE/health" | tee health.json
+      - name: Pricing currencies
+        run: |
+          curl -fsSL "$STAGING_BASE/api/v1/pricing/currencies" | tee currencies.json
+      - name: Search fallback
+        run: |
+          curl -fsSL "$STAGING_BASE/api/v1/search?q=test" | tee search.json || true

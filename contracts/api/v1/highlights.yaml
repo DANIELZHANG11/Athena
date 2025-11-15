@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Athena Highlights API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+paths:
+  /api/v1/highlights:
+    get:
+      operationId: listHighlights
+      summary: List highlights
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: book_id
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: cursor
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+    post:
+      operationId: createHighlight
+      summary: Create highlight (idempotent)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [book_id, start_location, end_location]
+              properties:
+                book_id:
+                  type: string
+                start_location:
+                  type: integer
+                end_location:
+                  type: integer
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+  /api/v1/highlights/{highlight_id}:
+    patch:
+      operationId: updateHighlight
+      summary: Update highlight
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: highlight_id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: If-Match
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: OK
+        "409":
+          description: Version Conflict
+    delete:
+      operationId: deleteHighlight
+      summary: Soft delete highlight
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: highlight_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

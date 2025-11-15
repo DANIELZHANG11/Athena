@@ -1,0 +1,104 @@
+openapi: 3.0.3
+info:
+  title: Athena Billing API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+paths:
+  /api/v1/billing/balance:
+    get:
+      summary: Get balance
+      operationId: getBillingBalance
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+  /api/v1/billing/ledger:
+    get:
+      summary: List ledger
+      operationId: listBillingLedger
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+        - in: query
+          name: offset
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Unauthorized
+  /api/v1/billing/sessions:
+    post:
+      summary: Create payment session
+      operationId: createPaymentSession
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+        "401":
+          description: Unauthorized
+  /api/v1/billing/webhook/{gateway}:
+    post:
+      summary: Payment webhook
+      security: []
+      operationId: paymentWebhook
+      parameters:
+        - in: path
+          name: gateway
+          schema:
+            type: string
+        - in: header
+          name: X-Signature
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Bad Signature
+  /api/v1/billing/consume:
+    post:
+      summary: Consume credits
+      operationId: consumeCredits
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid Amount
+        "401":
+          description: Unauthorized
+  /api/v1/billing/exchange:
+    post:
+      summary: Exchange between wallet and credits
+      operationId: exchangeWalletCredits
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Invalid Request
+        "401":
+          description: Unauthorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

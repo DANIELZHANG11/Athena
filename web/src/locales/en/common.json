@@ -1,0 +1,16 @@
+{
+  "homepage.title": "Athena",
+  "homepage.subtitle": "Reading & AI assistant for everyone",
+  "homepage.cta": "Get Started",
+  "homepage.lang.switch": "Language",
+  "profile.title": "Profile",
+  "profile.get": "Fetch Profile",
+  "profile.name": "Display Name",
+  "profile.save": "Save",
+  "upload.title": "Upload Book",
+  "upload.filename": "Filename",
+  "upload.fingerprint": "Fingerprint",
+  "upload.start": "Start Upload",
+  "upload.status": "Status",
+  "upload.download": "Download"
+}

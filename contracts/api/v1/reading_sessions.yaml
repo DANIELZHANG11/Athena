@@ -1,0 +1,179 @@
+openapi: 3.0.3
+info:
+  title: Reader Progress Sessions API
+  version: 1.0.0
+  description: 心跳会话模型的阅读进度同步API。
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: reading-sessions
+    description: 阅读会话心跳与进度同步
+
+paths:
+  /api/v1/reading-sessions/start:
+    post:
+      tags: [reading-sessions]
+      summary: 开启阅读会话
+      operationId: startReadingSession
+      parameters:
+        - name: X-Timezone
+          in: header
+          required: false
+          description: 客户端IANA时区名称（如 Asia/Shanghai），用于本地日期计算
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSessionRequest'
+            examples:
+              pdf:
+                value: { book_id: "e9c3c8a5-86e0-4e03-9b28-88b3c3c1b8e0" }
+      responses:
+        '200':
+          description: 会话已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartSessionResponse'
+
+  /api/v1/reading-sessions/{sessionId}/heartbeat:
+    post:
+      tags: [reading-sessions]
+      summary: 发送心跳并同步进度
+      operationId: heartbeatReadingSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Timezone
+          in: header
+          required: false
+          description: 客户端IANA时区名称（如 Asia/Shanghai），用于本地日期计算
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+            examples:
+              pdf:
+                value:
+                  last_location: { type: PDF, page: 125, zoom: 1.2, scrollTop: 420 }
+                  progress_percentage: 0.45
+              epub:
+                value:
+                  last_location: { type: EPUB, cfi: "epubcfi(/6/2[chapter]!/4/1:0)" }
+                  progress_percentage: 0.21
+      responses:
+        '204':
+          description: 已同步，无内容返回
+
+  /api/v1/reading-sessions/{sessionId}/end:
+    post:
+      tags: [reading-sessions]
+      summary: 结束阅读会话并执行最终同步
+      operationId: endReadingSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Timezone
+          in: header
+          required: false
+          description: 客户端IANA时区名称（如 Asia/Shanghai），用于本地日期计算
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+            examples:
+              final:
+                value:
+                  last_location: { type: PDF, page: 131, zoom: 1.1, scrollTop: 300 }
+                  progress_percentage: 0.51
+      responses:
+        '204':
+          description: 会话已结束并完成同步
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    StartSessionRequest:
+      type: object
+      required: [book_id]
+      properties:
+        book_id:
+          type: string
+          format: uuid
+    StartSessionResponse:
+      type: object
+      required: [session_id]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+
+    HeartbeatRequest:
+      type: object
+      required: [last_location]
+      properties:
+        last_location:
+          $ref: '#/components/schemas/LastLocation'
+        progress_percentage:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    LastLocation:
+      oneOf:
+        - $ref: '#/components/schemas/PdfLocation'
+        - $ref: '#/components/schemas/EpubLocation'
+      discriminator:
+        propertyName: type
+
+    PdfLocation:
+      type: object
+      required: [type, page]
+      properties:
+        type:
+          type: string
+          enum: [PDF]
+        page:
+          type: integer
+          minimum: 1
+        zoom:
+          type: number
+          format: float
+        scrollTop:
+          type: integer
+
+    EpubLocation:
+      type: object
+      required: [type, cfi]
+      properties:
+        type:
+          type: string
+          enum: [EPUB]
+        cfi:
+          type: string

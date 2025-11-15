@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  web:
+    name: Web Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - name: Install deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: web
+        run: pnpm lint
+      - name: Typecheck
+        working-directory: web
+        run: pnpm typecheck
+      - name: i18n no-hardcode
+        working-directory: web
+        run: pnpm run i18n:no-hardcode
+      - name: Build
+        working-directory: web
+        run: pnpm build
+      - name: Preview
+        working-directory: web
+        run: pnpm preview --port 4173 & sleep 3
+      - name: E2E
+        working-directory: web
+        run: pnpm e2e
+
+  api:
+    name: API Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install requirements
+        working-directory: api
+        run: pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q api/app
+
+  compose:
+    name: Compose Config Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose
+        run: docker compose -f docker-compose.yml config

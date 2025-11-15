@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Athena Dictionary API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://api.athena.app
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/dict/packages:
+    get:
+      summary: List dictionary packages
+      operationId: listDictPackages
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /api/v1/dict/packages/upload_init:
+    post:
+      summary: Init upload
+      operationId: dictUploadInit
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /api/v1/dict/packages/upload_complete:
+    post:
+      summary: Complete upload
+      operationId: dictUploadComplete
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /api/v1/dict/lookup:
+    post:
+      summary: Lookup word
+      operationId: dictLookup
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /api/v1/dict/history:
+    get:
+      summary: List lookup history
+      operationId: dictHistory
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

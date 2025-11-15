@@ -1,0 +1,17 @@
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+redis==5.0.8
+sentry-sdk==2.19.0
+alembic==1.13.2
+prometheus-fastapi-instrumentator==6.1.0
+python-jose==3.3.0
+minio==7.2.7
+python-multipart==0.0.9
+jaeger-client==4.8.0
+opentracing==2.4.0
+reportlab==3.6.13
+requests==2.32.3
+celery==5.4.0

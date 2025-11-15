@@ -1,0 +1,16 @@
+{
+  "homepage.title": "雅典娜",
+  "homepage.subtitle": "面向所有人的阅读与AI助手",
+  "homepage.cta": "开始使用",
+  "homepage.lang.switch": "语言",
+  "profile.title": "个人资料",
+  "profile.get": "获取资料",
+  "profile.name": "显示名称",
+  "profile.save": "保存",
+  "upload.title": "上传书籍",
+  "upload.filename": "文件名",
+  "upload.fingerprint": "指纹",
+  "upload.start": "开始上传",
+  "upload.status": "状态",
+  "upload.download": "下载"
+}

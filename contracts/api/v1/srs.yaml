@@ -1,0 +1,224 @@
+openapi: 3.0.3
+info:
+  title: Athena SRS API
+  version: 1.0.0
+  description: 智能复习（SRS）接口契约：牌组、卡片、队列、评分与表现。
+servers:
+  - url: /api/v1
+tags:
+  - name: SRS
+security:
+  - bearerAuth: []
+paths:
+  /srs/decks:
+    get:
+      tags: [SRS]
+      summary: 列出牌组
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Deck' }
+    post:
+      tags: [SRS]
+      summary: 创建牌组
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeckCreate' }
+      responses:
+        '201': { description: Created }
+  /srs/cards:
+    get:
+      tags: [SRS]
+      summary: 拉取到期卡片队列
+      parameters:
+        - in: query
+          name: deckId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Card' }
+    post:
+      tags: [SRS]
+      summary: 从笔记/高亮创建卡片（幂等）
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardCreate' }
+      responses:
+        '201': { description: Created }
+        '409': { description: Conflict }
+  /srs/cards/{cardId}:
+    patch:
+      tags: [SRS]
+      summary: 暂停或恢复卡片
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_suspended: { type: boolean }
+      responses:
+        '200': { description: OK }
+  /srs/cards/{cardId}/review:
+    post:
+      tags: [SRS]
+      summary: 提交评分与调度（幂等）
+      parameters:
+        - in: path
+          name: cardId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewResponse' }
+  /srs/performance:
+    get:
+      tags: [SRS]
+      summary: 查询复习表现（聚合）
+      parameters:
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerformanceList' }
+  /srs/settings:
+    get:
+      tags: [SRS]
+      summary: 获取SRS参数设置
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SRSSettings' }
+    put:
+      tags: [SRS]
+      summary: 更新SRS参数设置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SRSSettings' }
+      responses:
+        '200': { description: OK }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Deck:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+    DeckCreate:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    Card:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        deck_id: { type: string, format: uuid }
+        source_type: { type: string, enum: [NOTE, HIGHLIGHT] }
+        source_id: { type: string, format: uuid }
+        prompt: { type: string }
+        answer: { type: string }
+        ease: { type: number }
+        interval: { type: integer }
+        due_at: { type: string, format: date-time }
+        is_suspended: { type: boolean }
+    CardCreate:
+      type: object
+      required: [deck_id, source_type, source_id, prompt]
+      properties:
+        deck_id: { type: string, format: uuid }
+        source_type: { type: string, enum: [NOTE, HIGHLIGHT] }
+        source_id: { type: string, format: uuid }
+        prompt: { type: string }
+        answer: { type: string }
+    ReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 0, maximum: 5 }
+    ReviewResponse:
+      type: object
+      properties:
+        card_id: { type: string, format: uuid }
+        new_interval: { type: integer }
+        new_ease: { type: number }
+        next_due_at: { type: string, format: date-time }
+    PerformanceItem:
+      type: object
+      properties:
+        day: { type: string, format: date }
+        reviews: { type: integer }
+        avg_rating: { type: number }
+        retention: { type: number }
+    PerformanceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PerformanceItem' }
+    SRSSettings:
+      type: object
+      properties:
+        algorithm: { type: string, enum: [SM2, FSRS] }
+        fsrs_weights:
+          type: array
+          items: { type: number }
