@@ -4,8 +4,10 @@ describe('Basic flows', () => {
   it('Login and open TTS', () => {
     cy.login()
     cy.window().then((win) => {
-      (win.__e2e_logs || []).forEach((m) => cy.task('log', m))
-      (win.__e2e_errors || []).forEach((m) => cy.task('error', m))
+      const logs = Array.isArray(win.__e2e_logs) ? win.__e2e_logs : []
+      const errs = Array.isArray(win.__e2e_errors) ? win.__e2e_errors : []
+      logs.forEach((m) => cy.task('log', m))
+      errs.forEach((m) => cy.task('error', m))
     })
     cy.visit('/tts', { onBeforeLoad: (win) => win.localStorage.setItem('i18nextLng', 'zh-CN') })
     cy.url().should('include', '/tts')

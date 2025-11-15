@@ -4,8 +4,10 @@ describe('Home', () => {
   it('loads and switches language', () => {
     cy.login()
     cy.window().then((win) => {
-      (win.__e2e_logs || []).forEach((m) => cy.task('log', m))
-      (win.__e2e_errors || []).forEach((m) => cy.task('error', m))
+      const logs = Array.isArray(win.__e2e_logs) ? win.__e2e_logs : []
+      const errs = Array.isArray(win.__e2e_errors) ? win.__e2e_errors : []
+      logs.forEach((m) => cy.task('log', m))
+      errs.forEach((m) => cy.task('error', m))
     })
     cy.window().then((win) => cy.log('Page URL is: ' + win.location.href))
     cy.get('body').then(($b) => cy.log($b.html() || ''))
