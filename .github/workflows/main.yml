@@ -63,5 +63,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Create env stubs for compose
+        run: |
+          : > .env.local
+          : > .env.infisical
       - name: Validate compose
         run: docker compose --env-file .github/workflows/.env.ci -f docker-compose.yml config
