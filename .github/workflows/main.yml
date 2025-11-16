@@ -110,9 +110,10 @@ jobs:
       - name: Install pytest and coverage
         run: pip install pytest pytest-cov
       - name: Apply database migrations
+        working-directory: api
         env:
           DATABASE_URL: postgresql://athena:testpassword@localhost:5432/athena_test
-        run: alembic -c api/alembic.ini upgrade head
+        run: alembic -c alembic.ini upgrade head
       - name: Pytest with coverage (>=80%)
         env:
           DATABASE_URL: postgresql+asyncpg://athena:testpassword@localhost:5432/athena_test
