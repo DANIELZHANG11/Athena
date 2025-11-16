@@ -99,7 +99,7 @@ def upgrade():
                     EXISTS (
                         SELECT 1 FROM shelves s
                         WHERE s.id = shelf_items.shelf_id
-                          AND (s.owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin')
+                          AND (s.user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin')
                     )
                 )
             )
@@ -108,7 +108,7 @@ def upgrade():
                     EXISTS (
                         SELECT 1 FROM shelves s
                         WHERE s.id = shelf_items.shelf_id
-                          AND (s.owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin')
+                          AND (s.user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin')
                     )
                 )
             );
@@ -138,10 +138,10 @@ def downgrade():
         ALTER TABLE books DISABLE ROW LEVEL SECURITY;
         ALTER TABLE shelves DISABLE ROW LEVEL SECURITY;
 
-        DROP INDEX IF EXISTS idx_conversion_jobs_owner_status;
+        DROP INDEX IF EXISTS idx_conversion_jobs_user_status;
         DROP INDEX IF EXISTS idx_shelf_items_shelf;
-        DROP INDEX IF EXISTS idx_books_owner_updated;
-        DROP INDEX IF EXISTS idx_shelves_owner_updated;
+        DROP INDEX IF EXISTS idx_books_user_updated;
+        DROP INDEX IF EXISTS idx_shelves_user_updated;
 
         DROP TABLE IF EXISTS conversion_jobs;
         DROP TABLE IF EXISTS shelf_items;
