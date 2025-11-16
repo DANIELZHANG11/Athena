@@ -74,6 +74,29 @@ jobs:
   backend-tests:
     name: Backend Tests & Coverage
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: athena_test
+          POSTGRES_USER: athena
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U athena -d athena_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     env:
       PYTHONPATH: ${{ github.workspace }}
     steps:
@@ -86,7 +109,14 @@ jobs:
         run: pip install -r requirements.txt
       - name: Install pytest and coverage
         run: pip install pytest pytest-cov
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: postgresql://athena:testpassword@localhost:5432/athena_test
+        run: alembic -c api/alembic.ini upgrade head
       - name: Pytest with coverage (>=80%)
+        env:
+          DATABASE_URL: postgresql+asyncpg://athena:testpassword@localhost:5432/athena_test
+          REDIS_URL: redis://localhost:6379
         run: pytest -q --cov=api.app --cov-report=term --cov-fail-under=80
 
   static-qa:
