@@ -17,11 +17,6 @@ paths:
       responses:
         "200": { description: OK }
         "401": { description: Unauthorized }
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
   /api/v1/tts/heartbeat:
     post:
       summary: Accumulate TTS duration
@@ -29,3 +24,8 @@ components:
       responses:
         "200": { description: OK }
         "401": { description: Unauthorized }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

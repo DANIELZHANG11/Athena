@@ -3,6 +3,9 @@ info:
   title: Reader Progress Sessions API
   version: 1.0.0
   description: 心跳会话模型的阅读进度同步API。
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 servers:
   - url: /
 security:
@@ -39,6 +42,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StartSessionResponse'
+        '400': { description: Bad Request }
+        '401': { description: Unauthorized }
+        '409': { description: Conflict }
 
   /api/v1/reading-sessions/{sessionId}/heartbeat:
     post:
@@ -76,6 +82,9 @@ paths:
       responses:
         '204':
           description: 已同步，无内容返回
+        '400': { description: Bad Request }
+        '401': { description: Unauthorized }
+        '404': { description: Not Found }
 
   /api/v1/reading-sessions/{sessionId}/end:
     post:
@@ -109,6 +118,9 @@ paths:
       responses:
         '204':
           description: 会话已结束并完成同步
+        '400': { description: Bad Request }
+        '401': { description: Unauthorized }
+        '404': { description: Not Found }
 
 components:
   securitySchemes:

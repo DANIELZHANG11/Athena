@@ -604,11 +604,6 @@ components:
         book_uploads_24h: { type: integer }
         ai_tokens_24h: { type: integer }
         errors_24h: { type: integer }
-    TaskQueued:
-      type: object
-      properties:
-        task_id: { type: string, format: uuid }
-        status: { type: string, enum: [queued] }
     I18nLanguage:
       type: object
       properties:
