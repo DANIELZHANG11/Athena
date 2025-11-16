@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Header
 from sqlalchemy import text
 from .db import engine
 from .auth import require_user
