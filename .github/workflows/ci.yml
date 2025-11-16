@@ -42,6 +42,17 @@ jobs:
         working-directory: web
         run: pnpm build
 
+      - name: Ensure Cypress Binary (Windows)
+        if: runner.os == 'Windows'
+        working-directory: web
+        shell: pwsh
+        env:
+          CYPRESS_CACHE_FOLDER: ${{ env.USERPROFILE }}\.cache\Cypress
+        run: |
+          Write-Host "Cache folder: $env:CYPRESS_CACHE_FOLDER"
+          npx cypress install --force
+          npx cypress verify
+
       - name: Cypress install (binary)
         working-directory: web
         run: |
