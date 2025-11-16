@@ -15,8 +15,19 @@ AUTH_SECRET = os.getenv("AUTH_SECRET", "dev_secret")
 DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
 ACCESS_EXPIRE = int(os.getenv("ACCESS_EXPIRE", "3600"))
 REFRESH_EXPIRE = int(os.getenv("REFRESH_EXPIRE", "2592000"))
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+_ru = os.getenv("REDIS_URL")
+if _ru and "://" in _ru:
+    try:
+        from urllib.parse import urlparse
+        _p = urlparse(_ru)
+        REDIS_HOST = _p.hostname or "redis"
+        REDIS_PORT = _p.port or 6379
+    except Exception:
+        REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+        REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+else:
+    REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 _mem = {}
 
@@ -94,42 +105,41 @@ async def verify_email_code(payload: dict = Body(...)):
         raise HTTPException(status_code=401, detail="invalid_code")
     user_id = str(uuid.uuid4())
     session_id = str(uuid.uuid4())
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-            await conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                  id uuid PRIMARY KEY,
-                  email text UNIQUE NOT NULL,
-                  display_name text NOT NULL DEFAULT '',
-                  is_active boolean NOT NULL DEFAULT TRUE,
-                  updated_at timestamptz NOT NULL DEFAULT now()
-                );
-                """
-            )
-            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'FREE'")
-            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
-            await conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS user_sessions (
-                  id uuid PRIMARY KEY,
-                  user_id uuid NOT NULL REFERENCES users(id),
-                  revoked boolean NOT NULL DEFAULT FALSE,
-                  created_at timestamptz NOT NULL DEFAULT now()
-                );
-                """
-            )
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
+        
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+              id uuid PRIMARY KEY,
+              email text UNIQUE NOT NULL,
+              display_name text NOT NULL DEFAULT '',
+              is_active boolean NOT NULL DEFAULT TRUE,
+              updated_at timestamptz NOT NULL DEFAULT now()
+            );
+            """
+        )
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'FREE'")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS user_sessions (
+              id uuid PRIMARY KEY,
+              user_id uuid NOT NULL REFERENCES users(id),
+              revoked boolean NOT NULL DEFAULT FALSE,
+              created_at timestamptz NOT NULL DEFAULT now()
+            );
+            """
+        )
+        # 查或建用户（幂等）
+        res = await conn.execute(text("SELECT id::text FROM users WHERE email = :email"), {"email": addr})
+        row = res.fetchone()
+        if not row:
+            await conn.execute(text("INSERT INTO users(id, email, display_name, is_active, updated_at) VALUES (cast(:uid as uuid), :email, '', TRUE, now()) ON CONFLICT (email) DO NOTHING"), {"uid": user_id, "email": addr})
             res = await conn.execute(text("SELECT id::text FROM users WHERE email = :email"), {"email": addr})
             row = res.fetchone()
-            if not row:
-                await conn.execute(text("INSERT INTO users(id, email, display_name, is_active, updated_at) VALUES (cast(:uid as uuid), :email, '', TRUE, now()) ON CONFLICT (email) DO NOTHING"), {"uid": user_id, "email": addr})
-                res = await conn.execute(text("SELECT id::text FROM users WHERE email = :email"), {"email": addr})
-                row = res.fetchone()
-            user_id = row[0]
-            await conn.execute(text("INSERT INTO user_sessions(id, user_id) VALUES (cast(:id as uuid), cast(:uid as uuid))"), {"id": session_id, "uid": user_id})
-    except Exception:
-        pass
+        user_id = row[0]
+        await conn.execute(text("INSERT INTO user_sessions(id, user_id) VALUES (cast(:id as uuid), cast(:uid as uuid))"), {"id": session_id, "uid": user_id})
     tokens = issue_tokens(user_id, session_id)
     return {"status": "success", "data": {"user": {"id": user_id, "email": addr, "display_name": "", "is_active": True}, "tokens": tokens, "session": {"id": session_id}}}
 
