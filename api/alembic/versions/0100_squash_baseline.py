@@ -16,6 +16,10 @@ depends_on = None
 def upgrade():
     op.execute(
         """
+        -- required extensions
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS vector;
+
         -- Core tables for Athena baseline
 
         CREATE TABLE IF NOT EXISTS shelves (
