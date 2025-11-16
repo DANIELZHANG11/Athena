@@ -1,22 +1,27 @@
-from fastapi.testclient import TestClient
+import pytest
+import httpx
 from api.app.main import app
 
-client = TestClient(app, raise_server_exceptions=False)
+@pytest.mark.asyncio
+async def test_health():
+    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+        r = await client.get('/health')
+        assert r.status_code == 200
+        assert r.json().get('status') == 'ok'
 
-def test_health():
-    r = client.get('/health')
-    assert r.status_code == 200
-    assert r.json().get('status') == 'ok'
+@pytest.mark.asyncio
+async def test_root():
+    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+        r = await client.get('/')
+        assert r.status_code == 200
+        j = r.json()
+        assert j.get('status') == 'ok'
+        assert j.get('service') == 'athena-api'
 
-def test_root():
-    r = client.get('/')
-    assert r.status_code == 200
-    j = r.json()
-    assert j.get('status') == 'ok'
-    assert j.get('service') == 'athena-api'
-
-def test_error_handler():
-    r = client.get('/error')
-    assert r.status_code == 500
-    body = r.json()
-    assert body.get('error', {}).get('code') == 'internal_error'
+@pytest.mark.asyncio
+async def test_error_handler():
+    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+        r = await client.get('/error')
+        assert r.status_code == 500
+        body = r.json()
+        assert body.get('error', {}).get('code') == 'internal_error'
