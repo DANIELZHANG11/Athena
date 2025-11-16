@@ -29,6 +29,7 @@ async def test_ocr_quota_membership(monkeypatch):
 
         r = await client.post("/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"})
         jid = r.json()["data"]["id"]
+        await client.post("/api/v1/billing/debug/grant-credits", headers=h, json={"kind": "credits", "amount": 10000})
         r = await client.get("/api/v1/billing/ledger", headers=h)
         before = len(r.json()["data"]["data"]) if isinstance(r.json()["data"], dict) else len(r.json()["data"]) 
         r = await client.post("/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3})
