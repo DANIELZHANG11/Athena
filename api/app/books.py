@@ -548,10 +548,33 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
             import math
             qty = 100000
             units = max(1, math.ceil(qty / int(rule[1])))
-            # 免费额度
             sres = await conn.execute(text("SELECT key, value FROM system_settings WHERE key LIKE 'free_%'"))
             settings = {r[0]: r[1] for r in sres.fetchall()}
-            free_chars = int(settings.get("free_vector_chars", 0))
+            mtres = await conn.execute(text("SELECT membership_tier FROM users WHERE id = current_setting('app.user_id')::uuid"))
+            mtrow = mtres.fetchone()
+            tier = (mtrow and mtrow[0]) or "FREE"
+            tres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'membership_tiers'"))
+            trow = tres.fetchone()
+            mconf = trow and trow[0]
+            free_chars = None
+            if isinstance(mconf, dict) and tier in mconf:
+                try:
+                    free_chars = int((mconf[tier] or {}).get("free_vector_chars") or 0)
+                except Exception:
+                    free_chars = 0
+            if free_chars is None:
+                free_chars = int(settings.get("free_vector_chars", 0))
+            await conn.exec_driver_sql(
+                """
+                CREATE TABLE IF NOT EXISTS free_quota_usage (
+                  owner_id UUID NOT NULL,
+                  service_type TEXT NOT NULL,
+                  used_units BIGINT NOT NULL DEFAULT 0,
+                  period_start DATE NOT NULL DEFAULT current_date,
+                  PRIMARY KEY(owner_id, service_type, period_start)
+                );
+                """
+            )
             ures = await conn.execute(text("SELECT used_units FROM free_quota_usage WHERE owner_id = current_setting('app.user_id')::uuid AND service_type = 'VECTORIZE' AND period_start = current_date"))
             urow = ures.fetchone()
             used = int(urow[0]) if urow else 0

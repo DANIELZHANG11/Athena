@@ -48,10 +48,22 @@ async def complete_job(body: dict = Body(...), auth=Depends(require_user)):
         rule = res.fetchone()
         if rule:
             pa = float(rule[0])
-            # 免费额度读取
             sres = await conn.execute(text("SELECT key, value FROM system_settings WHERE key LIKE 'free_%'"))
             settings = {r[0]: r[1] for r in sres.fetchall()}
-            free_pages = int(settings.get("free_ocr_pages", 0))
+            mtres = await conn.execute(text("SELECT membership_tier FROM users WHERE id = current_setting('app.user_id')::uuid"))
+            mtrow = mtres.fetchone()
+            tier = (mtrow and mtrow[0]) or "FREE"
+            tres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'membership_tiers'"))
+            trow = tres.fetchone()
+            mconf = trow and trow[0]
+            free_pages = None
+            if isinstance(mconf, dict) and tier in mconf:
+                try:
+                    free_pages = int((mconf[tier] or {}).get("free_ocr_pages") or 0)
+                except Exception:
+                    free_pages = 0
+            if free_pages is None:
+                free_pages = int(settings.get("free_ocr_pages", 0))
             ures = await conn.execute(text("SELECT used_units FROM free_quota_usage WHERE owner_id = current_setting('app.user_id')::uuid AND service_type = 'OCR' AND period_start = current_date"))
             urow = ures.fetchone()
             used = int(urow[0]) if urow else 0

@@ -11,10 +11,17 @@ async def get_me(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        res = await conn.execute(text("SELECT id::text, email, display_name, is_active, updated_at FROM users WHERE id = current_setting('app.user_id')::uuid"))
-        row = res.fetchone()
-        if not row:
-            return {"status": "success", "data": {"id": user_id, "email": "", "display_name": "", "is_active": True, "etag": "W/\"1\""}}
+        try:
+            res = await conn.execute(text("SELECT id::text, email, display_name, is_active, membership_tier, updated_at FROM users WHERE id = current_setting('app.user_id')::uuid"))
+            row = res.fetchone()
+            if not row:
+                return {"status": "success", "data": {"id": user_id, "email": "", "display_name": "", "is_active": True, "membership_tier": "FREE", "etag": "W/\"1\""}}
+            return {"status": "success", "data": {"id": row[0], "email": row[1] or "", "display_name": row[2] or "", "is_active": bool(row[3]), "membership_tier": row[4] or "FREE", "updated_at": str(row[5]), "etag": "W/\"1\""}}
+        except Exception:
+            res = await conn.execute(text("SELECT id::text, email, display_name, is_active, updated_at FROM users WHERE id = current_setting('app.user_id')::uuid"))
+            row = res.fetchone()
+            if not row:
+                return {"status": "success", "data": {"id": user_id, "email": "", "display_name": "", "is_active": True, "etag": "W/\"1\""}}
         return {"status": "success", "data": {"id": row[0], "email": row[1] or "", "display_name": row[2] or "", "is_active": bool(row[3]), "updated_at": str(row[4]), "etag": "W/\"1\""}}
 
 @router.patch("/me")

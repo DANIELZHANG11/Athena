@@ -34,14 +34,16 @@ async def update_user(user_id: str, body: dict = Body(...), if_match: str | None
         raise HTTPException(status_code=400, detail="invalid_if_match")
     display_name = body.get("display_name")
     is_active = body.get("is_active")
+    membership_tier = body.get("membership_tier")
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'FREE'")
         before = await conn.execute(text("SELECT to_jsonb(u) FROM (SELECT id, email, display_name, is_active, version FROM users WHERE id = cast(:id as uuid)) u"), {"id": user_id})
         b = before.fetchone()
-        res = await conn.execute(text("UPDATE users SET display_name = COALESCE(:dn, display_name), is_active = COALESCE(:ia, is_active), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"dn": display_name, "ia": is_active, "id": user_id, "v": ver})
+        res = await conn.execute(text("UPDATE users SET display_name = COALESCE(:dn, display_name), is_active = COALESCE(:ia, is_active), membership_tier = COALESCE(:mt, membership_tier), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"dn": display_name, "ia": is_active, "mt": membership_tier, "id": user_id, "v": ver})
         if res.rowcount == 0:
             raise HTTPException(status_code=409, detail="version_conflict")
-        after = await conn.execute(text("SELECT to_jsonb(u) FROM (SELECT id, email, display_name, is_active, version FROM users WHERE id = cast(:id as uuid)) u"), {"id": user_id})
+        after = await conn.execute(text("SELECT to_jsonb(u) FROM (SELECT id, email, display_name, is_active, membership_tier, version FROM users WHERE id = cast(:id as uuid)) u"), {"id": user_id})
         a = after.fetchone()
         await conn.execute(text("INSERT INTO audit_logs(id, actor_id, action, entity, entity_id, before, after) VALUES (cast(:id as uuid), NULL, 'admin.update_user', 'users', cast(:eid as uuid), cast(:b as jsonb), cast(:a as jsonb))"), {"id": str(uuid.uuid4()), "eid": user_id, "b": b[0], "a": a[0]})
     return {"status": "success"}

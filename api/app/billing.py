@@ -120,10 +120,23 @@ async def exchange(payload: dict = Body(...), auth=Depends(require_user)):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
-        # 读取汇率：每1单位钱包货币兑换多少Credits
         sres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'wallet_exchange_rate'"))
         srow = sres.fetchone()
-        rate = float((srow and srow[0]) or 100.0)
+        val = srow and srow[0]
+        rate = None
+        if isinstance(val, (int, float, str)):
+            try:
+                rate = float(val)
+            except Exception:
+                rate = None
+        if rate is None:
+            curres = await conn.execute(text("SELECT wallet_currency FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))
+            currow = curres.fetchone()
+            wc = (currow and currow[0]) or 'CNY'
+            try:
+                rate = float((val or {}).get(wc) or (val or {}).get('default') or 100.0)
+            except Exception:
+                rate = 100.0
         if direction == "wallet_to_credits":
             # 检查钱包余额
             wres = await conn.execute(text("SELECT wallet_amount FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))

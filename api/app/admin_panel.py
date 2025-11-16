@@ -43,6 +43,18 @@ async def _ensure(conn):
           active BOOLEAN NOT NULL DEFAULT TRUE,
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
         );
+        CREATE TABLE IF NOT EXISTS service_providers (
+          id UUID PRIMARY KEY,
+          service_type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          endpoint TEXT,
+          config JSONB NOT NULL DEFAULT '{}'::jsonb,
+          is_active BOOLEAN NOT NULL DEFAULT TRUE,
+          priority INTEGER NOT NULL DEFAULT 0,
+          version INTEGER NOT NULL DEFAULT 1,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+          UNIQUE(service_type, name)
+        );
         CREATE TABLE IF NOT EXISTS audit_logs (
           id UUID PRIMARY KEY,
           owner_id UUID NOT NULL,
@@ -74,6 +86,57 @@ async def put_settings(body: dict = Body(...), auth=Depends(require_user)):
         for k, v in (body or {}).items():
             await conn.execute(text("INSERT INTO system_settings(id, key, value) VALUES (gen_random_uuid(), :k, cast(:v as jsonb)) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"), {"k": k, "v": v})
         await _audit(conn, auth[0], "update_system_settings", body or {})
+    return {"status": "success"}
+
+@router.get("/providers")
+async def list_providers(service_type: str | None = None, auth=Depends(require_user)):
+    _require_admin(auth[0])
+    async with engine.begin() as conn:
+        await _ensure(conn)
+        base = "SELECT id::text, service_type, name, endpoint, config, is_active, priority, version, updated_at FROM service_providers"
+        params = {}
+        if service_type:
+            base += " WHERE service_type = :st"
+            params["st"] = service_type
+        base += " ORDER BY service_type, priority DESC, updated_at DESC"
+        res = await conn.execute(text(base), params)
+        rows = res.fetchall()
+        return {"status": "success", "data": [{"id": r[0], "service_type": r[1], "name": r[2], "endpoint": r[3], "config": r[4], "is_active": bool(r[5]), "priority": int(r[6]), "etag": f"W/\"{int(r[7])}\"", "updated_at": str(r[8])} for r in rows]}
+
+@router.post("/providers")
+async def upsert_provider(body: dict = Body(...), auth=Depends(require_user)):
+    _require_admin(auth[0])
+    async with engine.begin() as conn:
+        await _ensure(conn)
+        service_type = body.get("service_type")
+        name = body.get("name")
+        endpoint = body.get("endpoint")
+        config = body.get("config")
+        is_active = body.get("is_active")
+        priority = body.get("priority")
+        await conn.execute(text("INSERT INTO service_providers(id, service_type, name, endpoint, config, is_active, priority) VALUES (gen_random_uuid(), :st, :nm, :ep, cast(:cfg as jsonb), COALESCE(:act, TRUE), COALESCE(:pr, 0)) ON CONFLICT (service_type, name) DO UPDATE SET endpoint = EXCLUDED.endpoint, config = EXCLUDED.config, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, version = service_providers.version + 1, updated_at = now()"), {"st": service_type, "nm": name, "ep": endpoint, "cfg": config, "act": is_active, "pr": priority})
+        await _audit(conn, auth[0], "upsert_provider", body or {})
+    return {"status": "success"}
+
+@router.patch("/providers/{provider_id}")
+async def update_provider(provider_id: str, body: dict = Body(...), if_match: str | None = Header(None), auth=Depends(require_user)):
+    _require_admin(auth[0])
+    if not if_match or not if_match.startswith("W/\""):
+        raise HTTPException(status_code=428, detail="missing_if_match")
+    try:
+        ver = int(if_match.split("\"")[1])
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid_if_match")
+    endpoint = body.get("endpoint")
+    config = body.get("config")
+    is_active = body.get("is_active")
+    priority = body.get("priority")
+    async with engine.begin() as conn:
+        await _ensure(conn)
+        res = await conn.execute(text("UPDATE service_providers SET endpoint = COALESCE(:ep, endpoint), config = COALESCE(cast(:cfg as jsonb), config), is_active = COALESCE(:act, is_active), priority = COALESCE(:pr, priority), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"ep": endpoint, "cfg": config, "act": is_active, "pr": priority, "id": provider_id, "v": ver})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=409, detail="version_conflict")
+        await _audit(conn, auth[0], "update_provider", body or {})
     return {"status": "success"}
 
 @router.get("/feature/flags")
