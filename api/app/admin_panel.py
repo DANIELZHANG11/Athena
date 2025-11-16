@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 from fastapi import APIRouter, Body, Depends, HTTPException, Header
 from sqlalchemy import text
 from .db import engine
@@ -15,55 +16,12 @@ def _require_admin(user_id: str):
         raise HTTPException(status_code=403, detail="forbidden")
 
 async def _ensure(conn):
-    await conn.exec_driver_sql(
-        """
-        CREATE TABLE IF NOT EXISTS system_settings (
-          id UUID PRIMARY KEY,
-          key TEXT UNIQUE NOT NULL,
-          value JSONB NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS feature_flags (
-          id UUID PRIMARY KEY,
-          key TEXT UNIQUE NOT NULL,
-          is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS prompt_templates (
-          id UUID PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          content TEXT NOT NULL,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS ai_models (
-          id UUID PRIMARY KEY,
-          provider TEXT NOT NULL,
-          model_id TEXT UNIQUE NOT NULL,
-          display_name TEXT NOT NULL,
-          active BOOLEAN NOT NULL DEFAULT TRUE,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS service_providers (
-          id UUID PRIMARY KEY,
-          service_type TEXT NOT NULL,
-          name TEXT NOT NULL,
-          endpoint TEXT,
-          config JSONB NOT NULL DEFAULT '{}'::jsonb,
-          is_active BOOLEAN NOT NULL DEFAULT TRUE,
-          priority INTEGER NOT NULL DEFAULT 0,
-          version INTEGER NOT NULL DEFAULT 1,
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-          UNIQUE(service_type, name)
-        );
-        CREATE TABLE IF NOT EXISTS audit_logs (
-          id UUID PRIMARY KEY,
-          owner_id UUID NOT NULL,
-          action TEXT NOT NULL,
-          details JSONB NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        """
-    )
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS system_settings (id UUID PRIMARY KEY, key TEXT UNIQUE NOT NULL, value JSONB NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS feature_flags (id UUID PRIMARY KEY, key TEXT UNIQUE NOT NULL, is_enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS prompt_templates (id UUID PRIMARY KEY, name TEXT UNIQUE NOT NULL, content TEXT NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS ai_models (id UUID PRIMARY KEY, provider TEXT NOT NULL, model_id TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS service_providers (id UUID PRIMARY KEY, service_type TEXT NOT NULL, name TEXT NOT NULL, endpoint TEXT, config JSONB NOT NULL DEFAULT '{}'::jsonb, is_active BOOLEAN NOT NULL DEFAULT TRUE, priority INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), UNIQUE(service_type, name))")
+    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, owner_id UUID NOT NULL, action TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
 
 async def _audit(conn, owner_id: str, action: str, details: dict):
     import json as _json
@@ -86,7 +44,7 @@ async def put_settings(body: dict = Body(...), auth=Depends(require_user)):
         await _ensure(conn)
         for k, v in (body or {}).items():
             sid = str(uuid.uuid4())
-            await conn.execute(text("INSERT INTO system_settings(id, key, value) VALUES (cast(:id as uuid), :k, cast(:v as jsonb)) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"), {"id": sid, "k": k, "v": v})
+            await conn.execute(text("INSERT INTO system_settings(id, key, value) VALUES (cast(:id as uuid), :k, cast(:v as jsonb)) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"), {"id": sid, "k": k, "v": json.dumps(v)})
         await _audit(conn, auth[0], "update_system_settings", body or {})
     return {"status": "success"}
 
@@ -117,7 +75,7 @@ async def upsert_provider(body: dict = Body(...), auth=Depends(require_user)):
         is_active = body.get("is_active")
         priority = body.get("priority")
         pid = str(uuid.uuid4())
-        await conn.execute(text("INSERT INTO service_providers(id, service_type, name, endpoint, config, is_active, priority) VALUES (cast(:id as uuid), :st, :nm, :ep, cast(:cfg as jsonb), COALESCE(:act, TRUE), COALESCE(:pr, 0)) ON CONFLICT (service_type, name) DO UPDATE SET endpoint = EXCLUDED.endpoint, config = EXCLUDED.config, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, version = service_providers.version + 1, updated_at = now()"), {"id": pid, "st": service_type, "nm": name, "ep": endpoint, "cfg": config, "act": is_active, "pr": priority})
+        await conn.execute(text("INSERT INTO service_providers(id, service_type, name, endpoint, config, is_active, priority) VALUES (cast(:id as uuid), :st, :nm, :ep, cast(:cfg as jsonb), COALESCE(:act, TRUE), COALESCE(:pr, 0)) ON CONFLICT (service_type, name) DO UPDATE SET endpoint = EXCLUDED.endpoint, config = EXCLUDED.config, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, version = service_providers.version + 1, updated_at = now()"), {"id": pid, "st": service_type, "nm": name, "ep": endpoint, "cfg": json.dumps(config) if config is not None else None, "act": is_active, "pr": priority})
         await _audit(conn, auth[0], "upsert_provider", body or {})
     return {"status": "success"}
 
@@ -136,7 +94,7 @@ async def update_provider(provider_id: str, body: dict = Body(...), if_match: st
     priority = body.get("priority")
     async with engine.begin() as conn:
         await _ensure(conn)
-        res = await conn.execute(text("UPDATE service_providers SET endpoint = COALESCE(:ep, endpoint), config = COALESCE(cast(:cfg as jsonb), config), is_active = COALESCE(:act, is_active), priority = COALESCE(:pr, priority), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"ep": endpoint, "cfg": config, "act": is_active, "pr": priority, "id": provider_id, "v": ver})
+        res = await conn.execute(text("UPDATE service_providers SET endpoint = COALESCE(:ep, endpoint), config = COALESCE(cast(:cfg as jsonb), config), is_active = COALESCE(:act, is_active), priority = COALESCE(:pr, priority), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"ep": endpoint, "cfg": json.dumps(config) if config is not None else None, "act": is_active, "pr": priority, "id": provider_id, "v": ver})
         if res.rowcount == 0:
             raise HTTPException(status_code=409, detail="version_conflict")
         await _audit(conn, auth[0], "update_provider", body or {})

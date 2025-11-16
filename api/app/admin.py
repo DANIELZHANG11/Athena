@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 from datetime import timedelta
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from sqlalchemy import text
@@ -66,7 +67,7 @@ async def create_gateway(body: dict = Body(...), idempotency_key: str | None = H
     gid = str(uuid.uuid4())
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-        await conn.execute(text("INSERT INTO payment_gateways(id, name, config, is_active) VALUES (cast(:id as uuid), :n, cast(:c as jsonb), :a) ON CONFLICT (name) DO NOTHING"), {"id": gid, "n": name, "c": config, "a": is_active})
+        await conn.execute(text("INSERT INTO payment_gateways(id, name, config, is_active) VALUES (cast(:id as uuid), :n, cast(:c as jsonb), :a) ON CONFLICT (name) DO NOTHING"), {"id": gid, "n": name, "c": json.dumps(config), "a": is_active})
     return {"status": "success", "data": {"id": gid}}
 
 @router.patch("/gateways/{gateway_id}")
@@ -82,7 +83,7 @@ async def update_gateway(gateway_id: str, body: dict = Body(...), if_match: str 
     is_active = body.get("is_active")
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-        res = await conn.execute(text("UPDATE payment_gateways SET name = COALESCE(:n, name), config = COALESCE(cast(:c as jsonb), config), is_active = COALESCE(:a, is_active), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"n": name, "c": config, "a": is_active, "id": gateway_id, "v": ver})
+        res = await conn.execute(text("UPDATE payment_gateways SET name = COALESCE(:n, name), config = COALESCE(cast(:c as jsonb), config), is_active = COALESCE(:a, is_active), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"n": name, "c": json.dumps(config) if config is not None else None, "a": is_active, "id": gateway_id, "v": ver})
         if res.rowcount == 0:
             raise HTTPException(status_code=409, detail="version_conflict")
     return {"status": "success"}
@@ -115,7 +116,7 @@ async def upsert_translation(body: dict = Body(...), idempotency_key: str | None
     tid = str(uuid.uuid4())
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-        await conn.execute(text("INSERT INTO translations(id, namespace, key, lang, value) VALUES (cast(:id as uuid), :ns, :k, :lg, :v) ON CONFLICT (namespace, key, lang) WHERE deleted_at IS NULL DO UPDATE SET value = EXCLUDED.value, version = translations.version + 1, updated_at = now()"), {"id": tid, "ns": ns, "k": key, "lg": lang, "v": value})
+        await conn.execute(text("INSERT INTO translations(id, namespace, key, lang, value) VALUES (cast(:id as uuid), :ns, :k, :lg, cast(:v as jsonb)) ON CONFLICT (namespace, key, lang) WHERE deleted_at IS NULL DO UPDATE SET value = EXCLUDED.value, version = translations.version + 1, updated_at = now()"), {"id": tid, "ns": ns, "k": key, "lg": lang, "v": json.dumps(value)})
     return {"status": "success", "data": {"id": tid}}
 
 @router.patch("/translations/{id}")
@@ -129,7 +130,7 @@ async def update_translation(id: str, body: dict = Body(...), if_match: str | No
     value = body.get("value")
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-        res = await conn.execute(text("UPDATE translations SET value = COALESCE(:v, value), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND deleted_at IS NULL AND version = :ver"), {"v": value, "id": id, "ver": ver})
+        res = await conn.execute(text("UPDATE translations SET value = COALESCE(cast(:v as jsonb), value), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND deleted_at IS NULL AND version = :ver"), {"v": json.dumps(value) if value is not None else None, "id": id, "ver": ver})
         if res.rowcount == 0:
             raise HTTPException(status_code=409, detail="version_conflict")
     return {"status": "success"}
