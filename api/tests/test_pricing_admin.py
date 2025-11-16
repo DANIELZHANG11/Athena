@@ -7,7 +7,8 @@ from api.app.main import app
 @pytest.mark.asyncio
 async def test_pricing_admin_and_user_rules(monkeypatch):
     monkeypatch.setenv("DEV_MODE", "true")
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "op@athena.local"})
         code = r.json()["data"]["dev_code"]
         r = await client.post("/api/v1/auth/email/verify-code", json={"email": "op@athena.local", "code": code})

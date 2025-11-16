@@ -4,14 +4,16 @@ from api.app.main import app
 
 @pytest.mark.asyncio
 async def test_health():
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get('/health')
         assert r.status_code == 200
         assert r.json().get('status') == 'ok'
 
 @pytest.mark.asyncio
 async def test_root():
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get('/')
         assert r.status_code == 200
         j = r.json()
@@ -20,7 +22,8 @@ async def test_root():
 
 @pytest.mark.asyncio
 async def test_error_handler():
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.get('/error')
         assert r.status_code == 500
         body = r.json()

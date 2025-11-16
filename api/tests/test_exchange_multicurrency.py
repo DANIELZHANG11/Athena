@@ -11,7 +11,8 @@ from api.app.main import app
 async def test_exchange_wallet_multicurrency(monkeypatch):
     monkeypatch.setenv("DEV_MODE", "true")
     monkeypatch.setenv("PAY_FAKE_WEBHOOK_SECRET", "s1")
-    async with httpx.AsyncClient(app=app, base_url="http://test") as client:
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "test@athena.local"})
         assert r.status_code == 200
         dev_code = r.json()["data"].get("dev_code")
@@ -34,7 +35,7 @@ async def test_exchange_wallet_multicurrency(monkeypatch):
         payload["session_id"] = sid
         body = json.dumps(payload).encode("utf-8")
         sig = hmac.new(b"s1", body, hashlib.sha256).hexdigest()
-        r = await client.post(f"/api/v1/billing/webhook/fake", data=body, headers={"x_signature": sig, "Content-Type": "application/json"})
+        r = await client.post(f"/api/v1/billing/webhook/fake", data=body, headers={"x-signature": sig, "Content-Type": "application/json"})
         assert r.status_code == 200
 
         r = await client.get("/api/v1/billing/balance", headers=auth)
