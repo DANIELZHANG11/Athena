@@ -67,7 +67,8 @@ async def _ensure(conn):
 
 async def _audit(conn, owner_id: str, action: str, details: dict):
     import json as _json
-    await conn.execute(text("INSERT INTO audit_logs(id, owner_id, action, details) VALUES (gen_random_uuid(), cast(:uid as uuid), :act, cast(:det as jsonb))"), {"uid": owner_id, "act": action, "det": _json.dumps(details)})
+    aid = str(uuid.uuid4())
+    await conn.execute(text("INSERT INTO audit_logs(id, owner_id, action, details) VALUES (cast(:id as uuid), cast(:uid as uuid), :act, cast(:det as jsonb))"), {"id": aid, "uid": owner_id, "act": action, "det": _json.dumps(details)})
 
 @router.get("/system/settings")
 async def get_settings(auth=Depends(require_user)):
@@ -84,7 +85,8 @@ async def put_settings(body: dict = Body(...), auth=Depends(require_user)):
     async with engine.begin() as conn:
         await _ensure(conn)
         for k, v in (body or {}).items():
-            await conn.execute(text("INSERT INTO system_settings(id, key, value) VALUES (gen_random_uuid(), :k, cast(:v as jsonb)) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"), {"k": k, "v": v})
+            sid = str(uuid.uuid4())
+            await conn.execute(text("INSERT INTO system_settings(id, key, value) VALUES (cast(:id as uuid), :k, cast(:v as jsonb)) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"), {"id": sid, "k": k, "v": v})
         await _audit(conn, auth[0], "update_system_settings", body or {})
     return {"status": "success"}
 
@@ -114,7 +116,8 @@ async def upsert_provider(body: dict = Body(...), auth=Depends(require_user)):
         config = body.get("config")
         is_active = body.get("is_active")
         priority = body.get("priority")
-        await conn.execute(text("INSERT INTO service_providers(id, service_type, name, endpoint, config, is_active, priority) VALUES (gen_random_uuid(), :st, :nm, :ep, cast(:cfg as jsonb), COALESCE(:act, TRUE), COALESCE(:pr, 0)) ON CONFLICT (service_type, name) DO UPDATE SET endpoint = EXCLUDED.endpoint, config = EXCLUDED.config, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, version = service_providers.version + 1, updated_at = now()"), {"st": service_type, "nm": name, "ep": endpoint, "cfg": config, "act": is_active, "pr": priority})
+        pid = str(uuid.uuid4())
+        await conn.execute(text("INSERT INTO service_providers(id, service_type, name, endpoint, config, is_active, priority) VALUES (cast(:id as uuid), :st, :nm, :ep, cast(:cfg as jsonb), COALESCE(:act, TRUE), COALESCE(:pr, 0)) ON CONFLICT (service_type, name) DO UPDATE SET endpoint = EXCLUDED.endpoint, config = EXCLUDED.config, is_active = EXCLUDED.is_active, priority = EXCLUDED.priority, version = service_providers.version + 1, updated_at = now()"), {"id": pid, "st": service_type, "nm": name, "ep": endpoint, "cfg": config, "act": is_active, "pr": priority})
         await _audit(conn, auth[0], "upsert_provider", body or {})
     return {"status": "success"}
 
@@ -172,7 +175,8 @@ async def create_prompt(body: dict = Body(...), auth=Depends(require_user)):
     _require_admin(auth[0])
     async with engine.begin() as conn:
         await _ensure(conn)
-        await conn.execute(text("INSERT INTO prompt_templates(id, name, content) VALUES (gen_random_uuid(), :n, :c) ON CONFLICT (name) DO UPDATE SET content = EXCLUDED.content, updated_at = now()"), {"n": body.get("name"), "c": body.get("content")})
+        tid = str(uuid.uuid4())
+        await conn.execute(text("INSERT INTO prompt_templates(id, name, content) VALUES (cast(:id as uuid), :n, :c) ON CONFLICT (name) DO UPDATE SET content = EXCLUDED.content, updated_at = now()"), {"id": tid, "n": body.get("name"), "c": body.get("content")})
         await _audit(conn, auth[0], "upsert_prompt", body or {})
     return {"status": "success"}
 
@@ -190,7 +194,8 @@ async def upsert_model(body: dict = Body(...), auth=Depends(require_user)):
     _require_admin(auth[0])
     async with engine.begin() as conn:
         await _ensure(conn)
-        await conn.execute(text("INSERT INTO ai_models(id, provider, model_id, display_name, active) VALUES (gen_random_uuid(), :p, :m, :d, COALESCE(:a, TRUE)) ON CONFLICT (model_id) DO UPDATE SET provider = EXCLUDED.provider, display_name = EXCLUDED.display_name, active = EXCLUDED.active, updated_at = now()"), {"p": body.get("provider"), "m": body.get("model_id"), "d": body.get("display_name"), "a": body.get("active")})
+        mid = str(uuid.uuid4())
+        await conn.execute(text("INSERT INTO ai_models(id, provider, model_id, display_name, active) VALUES (cast(:id as uuid), :p, :m, :d, COALESCE(:a, TRUE)) ON CONFLICT (model_id) DO UPDATE SET provider = EXCLUDED.provider, display_name = EXCLUDED.display_name, active = EXCLUDED.active, updated_at = now()"), {"id": mid, "p": body.get("provider"), "m": body.get("model_id"), "d": body.get("display_name"), "a": body.get("active")})
         await _audit(conn, auth[0], "upsert_model", body or {})
     return {"status": "success"}
 
