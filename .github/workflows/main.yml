@@ -114,7 +114,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://athena:testpassword@localhost:5432/athena_test
         run: |
-          alembic -c alembic.ini stamp 0100_squash_baseline
+          alembic -c alembic.ini upgrade 0100_squash_baseline
           alembic -c alembic.ini upgrade head
       - name: Pytest with coverage (>=80%)
         env:
