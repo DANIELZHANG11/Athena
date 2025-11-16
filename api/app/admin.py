@@ -7,7 +7,6 @@ from .db import engine
 from .auth import require_user
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
-_MEM_GATEWAYS = {}
 
 def require_admin(auth=Depends(require_user)):
     user_id, _ = auth
@@ -51,15 +50,11 @@ async def update_user(user_id: str, body: dict = Body(...), if_match: str | None
 
 @router.get("/gateways")
 async def list_gateways(limit: int = 50, offset: int = 0, _=Depends(require_admin)):
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-            res = await conn.execute(text("SELECT id::text, name, config, is_active, updated_at, version FROM payment_gateways ORDER BY updated_at DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset})
-            rows = res.fetchall()
-            return {"status": "success", "data": [{"id": r[0], "name": r[1], "config": r[2], "is_active": bool(r[3]), "updated_at": str(r[4]), "etag": f"W/\"{int(r[5])}\""} for r in rows]}
-    except Exception:
-        rows = [{"id": gid, "name": v["name"], "config": v["config"], "is_active": bool(v.get("is_active", True)), "updated_at": "", "etag": "W/\"1\""} for gid, v in _MEM_GATEWAYS.items()]
-        return {"status": "success", "data": rows}
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
+        res = await conn.execute(text("SELECT id::text, name, config, is_active, updated_at, version FROM payment_gateways ORDER BY updated_at DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset})
+        rows = res.fetchall()
+        return {"status": "success", "data": [{"id": r[0], "name": r[1], "config": r[2], "is_active": bool(r[3]), "updated_at": str(r[4]), "etag": f"W/\"{int(r[5])}\""} for r in rows]}
 
 @router.post("/gateways")
 async def create_gateway(body: dict = Body(...), idempotency_key: str | None = Header(None), _=Depends(require_admin)):
@@ -69,14 +64,10 @@ async def create_gateway(body: dict = Body(...), idempotency_key: str | None = H
     if not name or config is None:
         raise HTTPException(status_code=400, detail="invalid_payload")
     gid = str(uuid.uuid4())
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-            await conn.execute(text("INSERT INTO payment_gateways(id, name, config, is_active) VALUES (cast(:id as uuid), :n, cast(:c as jsonb), :a) ON CONFLICT (name) DO NOTHING"), {"id": gid, "n": name, "c": config, "a": is_active})
-        return {"status": "success", "data": {"id": gid}}
-    except Exception:
-        _MEM_GATEWAYS[gid] = {"name": name, "config": config, "is_active": is_active}
-        return {"status": "success", "data": {"id": gid}}
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
+        await conn.execute(text("INSERT INTO payment_gateways(id, name, config, is_active) VALUES (cast(:id as uuid), :n, cast(:c as jsonb), :a) ON CONFLICT (name) DO NOTHING"), {"id": gid, "n": name, "c": config, "a": is_active})
+    return {"status": "success", "data": {"id": gid}}
 
 @router.patch("/gateways/{gateway_id}")
 async def update_gateway(gateway_id: str, body: dict = Body(...), if_match: str | None = Header(None), _=Depends(require_admin)):
@@ -89,23 +80,12 @@ async def update_gateway(gateway_id: str, body: dict = Body(...), if_match: str 
     name = body.get("name")
     config = body.get("config")
     is_active = body.get("is_active")
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
-            res = await conn.execute(text("UPDATE payment_gateways SET name = COALESCE(:n, name), config = COALESCE(cast(:c as jsonb), config), is_active = COALESCE(:a, is_active), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"n": name, "c": config, "a": is_active, "id": gateway_id, "v": ver})
-            if res.rowcount == 0:
-                raise HTTPException(status_code=409, detail="version_conflict")
-        return {"status": "success"}
-    except Exception:
-        v = _MEM_GATEWAYS.get(gateway_id)
-        if v:
-            if name is not None:
-                v["name"] = name
-            if config is not None:
-                v["config"] = config
-            if is_active is not None:
-                v["is_active"] = is_active
-        return {"status": "success"}
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
+        res = await conn.execute(text("UPDATE payment_gateways SET name = COALESCE(:n, name), config = COALESCE(cast(:c as jsonb), config), is_active = COALESCE(:a, is_active), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND version = :v"), {"n": name, "c": config, "a": is_active, "id": gateway_id, "v": ver})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=409, detail="version_conflict")
+    return {"status": "success"}
 
 @router.get("/translations")
 async def list_translations(namespace: str | None = None, lang: str | None = None, limit: int = 50, offset: int = 0, _=Depends(require_admin)):
