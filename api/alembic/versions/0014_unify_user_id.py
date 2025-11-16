@@ -10,9 +10,6 @@ def upgrade():
         """
         ALTER TABLE IF EXISTS books RENAME COLUMN owner_id TO user_id;
         ALTER TABLE IF EXISTS shelves RENAME COLUMN owner_id TO user_id;
-        ALTER TABLE IF EXISTS notes RENAME COLUMN owner_id TO user_id;
-        ALTER TABLE IF EXISTS highlights RENAME COLUMN owner_id TO user_id;
-        ALTER TABLE IF EXISTS tags RENAME COLUMN owner_id TO user_id;
         """
     )
 
@@ -21,8 +18,5 @@ def downgrade():
         """
         ALTER TABLE IF EXISTS books RENAME COLUMN user_id TO owner_id;
         ALTER TABLE IF EXISTS shelves RENAME COLUMN user_id TO owner_id;
-        ALTER TABLE IF EXISTS notes RENAME COLUMN user_id TO owner_id;
-        ALTER TABLE IF EXISTS highlights RENAME COLUMN user_id TO owner_id;
-        ALTER TABLE IF EXISTS tags RENAME COLUMN user_id TO owner_id;
         """
     )
