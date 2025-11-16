@@ -135,6 +135,44 @@ def upgrade():
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
 
+        CREATE TABLE IF NOT EXISTS payment_gateways (
+            id UUID PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            config JSONB NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS pricing_rules (
+            id UUID PRIMARY KEY,
+            service_type VARCHAR(32) NOT NULL,
+            unit_type VARCHAR(32) NOT NULL,
+            unit_size INTEGER NOT NULL,
+            price_amount NUMERIC(10,2) NOT NULL,
+            currency VARCHAR(10) NOT NULL,
+            region VARCHAR(10),
+            remark_template TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS service_providers (
+            id UUID PRIMARY KEY,
+            service_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            endpoint TEXT,
+            config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            priority INTEGER NOT NULL DEFAULT 0,
+            version INTEGER NOT NULL DEFAULT 1,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(service_type, name)
+        );
+
         -- Useful indexes
         CREATE INDEX IF NOT EXISTS idx_shelves_user_updated ON shelves(user_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_books_user_updated ON books(user_id, updated_at DESC);
@@ -153,6 +191,9 @@ def downgrade():
         DROP INDEX IF EXISTS idx_books_user_updated;
         DROP INDEX IF EXISTS idx_shelves_user_updated;
 
+        DROP TABLE IF EXISTS service_providers;
+        DROP TABLE IF EXISTS pricing_rules;
+        DROP TABLE IF EXISTS payment_gateways;
         DROP TABLE IF EXISTS ai_models;
         DROP TABLE IF EXISTS system_settings;
         DROP TABLE IF EXISTS ocr_jobs;
