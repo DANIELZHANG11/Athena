@@ -55,7 +55,9 @@ jobs:
           python-version: '3.11'
       - name: Install requirements
         working-directory: api
-        run: pip install -r requirements.txt
+        run: |
+          pip cache purge || true
+          pip install --no-cache-dir -r requirements.txt
       - name: Compile Python sources
         run: python -m compileall -q api/app
 
