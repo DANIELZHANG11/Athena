@@ -9,7 +9,7 @@ Create Date: 2025-11-15
 from alembic import op
 
 revision = '0022_books_etag'
-down_revision = '0014_unify_user_id'
+down_revision = '0021_books_cols'
 branch_labels = None
 depends_on = None
 
