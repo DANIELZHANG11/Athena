@@ -9,7 +9,7 @@ from api.app.main import app
 
 @pytest.mark.asyncio
 async def test_exchange_wallet_multicurrency(monkeypatch):
-    os.environ["DEV_MODE"] = "true"
+    monkeypatch.setenv("DEV_MODE", "true")
     monkeypatch.setenv("PAY_FAKE_WEBHOOK_SECRET", "s1")
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "test@athena.local"})

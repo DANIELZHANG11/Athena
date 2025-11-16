@@ -7,7 +7,7 @@ from api.app.main import app
 
 @pytest.mark.asyncio
 async def test_ocr_quota_membership(monkeypatch):
-    os.environ["DEV_MODE"] = "true"
+    monkeypatch.setenv("DEV_MODE", "true")
     mock_minio = MagicMock()
     mock_minio.bucket_exists.return_value = True
     mock_minio.make_bucket.return_value = None

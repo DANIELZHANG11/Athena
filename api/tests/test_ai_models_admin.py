@@ -5,8 +5,8 @@ from api.app.main import app
 
 
 @pytest.mark.asyncio
-async def test_ai_models_upsert_list():
-    os.environ["DEV_MODE"] = "true"
+async def test_ai_models_upsert_list(monkeypatch):
+    monkeypatch.setenv("DEV_MODE", "true")
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "ai@athena.local"})
         code = r.json()["data"]["dev_code"]

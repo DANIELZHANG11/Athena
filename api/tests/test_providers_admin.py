@@ -5,8 +5,8 @@ from api.app.main import app
 
 
 @pytest.mark.asyncio
-async def test_providers_crud():
-    os.environ["DEV_MODE"] = "true"
+async def test_providers_crud(monkeypatch):
+    monkeypatch.setenv("DEV_MODE", "true")
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "admin@athena.local"})
         assert r.status_code == 200
