@@ -71,6 +71,9 @@ async def complete_job(body: dict = Body(...), auth=Depends(require_user)):
             payable_pages = max(0, pages - remain)
             if remain > 0:
                 await conn.execute(text("INSERT INTO free_quota_usage(owner_id, service_type, used_units) VALUES (current_setting('app.user_id')::uuid, 'OCR', :u) ON CONFLICT (owner_id, service_type, period_start) DO UPDATE SET used_units = free_quota_usage.used_units + EXCLUDED.used_units"), {"u": min(pages, remain)})
+                if payable_pages == 0:
+                    lid_free = str(uuid.uuid4())
+                    await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, related_id, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, 0, 'CNY', 'ocr_free', cast(:rid as uuid), 'info')"), {"id": lid_free, "rid": jid})
             if payable_pages > 0:
                 amt_cents = int(round(pa * 100)) * payable_pages
                 await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
