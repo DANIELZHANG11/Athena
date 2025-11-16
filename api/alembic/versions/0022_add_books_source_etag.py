@@ -18,7 +18,12 @@ def upgrade():
         """
         ALTER TABLE IF EXISTS books
           ADD COLUMN IF NOT EXISTS source_etag TEXT;
-        CREATE UNIQUE INDEX IF NOT EXISTS uniq_books_user_etag ON books(user_id, source_etag) WHERE source_etag IS NOT NULL;
+        DO $$
+        BEGIN
+          IF to_regclass('public.books') IS NOT NULL THEN
+            CREATE UNIQUE INDEX IF NOT EXISTS uniq_books_user_etag ON books(user_id, source_etag) WHERE source_etag IS NOT NULL;
+          END IF;
+        END$$;
         """
     )
 
