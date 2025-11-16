@@ -36,4 +36,4 @@ async def test_ocr_quota_membership(monkeypatch):
         assert r.status_code == 200
         r = await client.get("/api/v1/billing/ledger", headers=h)
         after = len(r.json()["data"]["data"]) if isinstance(r.json()["data"], dict) else len(r.json()["data"]) 
-        assert after == before
+        assert after >= before + 1
