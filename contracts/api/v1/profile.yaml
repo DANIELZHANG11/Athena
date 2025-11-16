@@ -2,11 +2,15 @@ openapi: 3.0.3
 info:
   title: Athena Profile API
   version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
 servers:
   - url: https://api.athena.com
 paths:
   /api/v1/profile/me:
     get:
+      operationId: getProfileMe
       summary: 获取当前用户资料
       security:
         - bearerAuth: []
@@ -21,7 +25,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Profile'
+        '401': { description: Unauthorized }
     patch:
+      operationId: patchProfileMe
       summary: 更新当前用户资料（乐观并发 + 幂等）
       security:
         - bearerAuth: []

@@ -10,6 +10,7 @@ servers:
   - url: /api/v1
 tags:
   - name: SRS
+    description: 智能复习（Spaced Repetition System）相关操作
 security:
   - bearerAuth: []
 paths:
@@ -17,6 +18,7 @@ paths:
     get:
       tags: [SRS]
       summary: 列出牌组
+      operationId: listDecks
       responses:
         '200':
           description: OK
@@ -29,6 +31,7 @@ paths:
     post:
       tags: [SRS]
       summary: 创建牌组
+      operationId: createDeck
       requestBody:
         required: true
         content:
@@ -42,6 +45,7 @@ paths:
     get:
       tags: [SRS]
       summary: 拉取到期卡片队列
+      operationId: listDueCards
       parameters:
         - in: query
           name: deckId
@@ -61,6 +65,7 @@ paths:
     post:
       tags: [SRS]
       summary: 从笔记/高亮创建卡片（幂等）
+      operationId: createCard
       parameters:
         - in: header
           name: Idempotency-Key
@@ -80,6 +85,7 @@ paths:
     patch:
       tags: [SRS]
       summary: 暂停或恢复卡片
+      operationId: patchCard
       parameters:
         - in: path
           name: cardId
@@ -102,6 +108,7 @@ paths:
     post:
       tags: [SRS]
       summary: 提交评分与调度（幂等）
+      operationId: reviewCard
       parameters:
         - in: path
           name: cardId
@@ -129,6 +136,7 @@ paths:
     get:
       tags: [SRS]
       summary: 查询复习表现（聚合）
+      operationId: getPerformance
       parameters:
         - in: query
           name: since
@@ -147,6 +155,7 @@ paths:
     get:
       tags: [SRS]
       summary: 获取SRS参数设置
+      operationId: getSettings
       responses:
         '200':
           description: OK
@@ -157,6 +166,7 @@ paths:
     put:
       tags: [SRS]
       summary: 更新SRS参数设置
+      operationId: putSettings
       requestBody:
         required: true
         content:
