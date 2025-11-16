@@ -212,6 +212,7 @@ async def grant_credits(payload: dict = Body(...), auth=Depends(require_user)):
     return {"status": "success"}
 async def _ensure_billing(conn):
     await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS payment_sessions (id UUID PRIMARY KEY, owner_id UUID NOT NULL, gateway TEXT NOT NULL, amount INT NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, return_url TEXT, cancel_url TEXT, metadata JSONB, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
+    await conn.exec_driver_sql("ALTER TABLE IF EXISTS payment_sessions ADD COLUMN IF NOT EXISTS external_id TEXT")
     await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS payment_webhook_events (id TEXT PRIMARY KEY, gateway TEXT NOT NULL, session_id UUID NOT NULL, payload JSONB NOT NULL, processed BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
     await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS credit_accounts (owner_id UUID PRIMARY KEY, balance BIGINT NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'CNY', wallet_amount DOUBLE PRECISION NOT NULL DEFAULT 0, wallet_currency TEXT NOT NULL DEFAULT 'CNY', updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
     await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS credit_ledger (id UUID PRIMARY KEY, owner_id UUID NOT NULL, amount BIGINT NOT NULL, currency TEXT NOT NULL, reason TEXT NOT NULL, related_id UUID, direction TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())")
