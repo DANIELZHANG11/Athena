@@ -18,6 +18,7 @@ REFRESH_EXPIRE = int(os.getenv("REFRESH_EXPIRE", "2592000"))
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+_mem = {}
 
 def issue_tokens(user_id: str, session_id: str):
     now = int(time.time())
@@ -43,25 +44,37 @@ def send_email_code(email: dict = Body(...), idempotency_key: str | None = Heade
     addr = email.get("email")
     if not addr:
         raise HTTPException(status_code=400, detail="invalid_email")
-    if r.get(f"email_rate:{addr}"):
-        raise HTTPException(status_code=429, detail="rate_limited")
+    try:
+        if r.get(f"email_rate:{addr}"):
+            raise HTTPException(status_code=429, detail="rate_limited")
+    except Exception:
+        pass
     code = str(uuid.uuid4().int)[-6:]
     print(code)
-    r.setex(f"email_code:{addr}", 600, code)
+    try:
+        r.setex(f"email_code:{addr}", 600, code)
+    except Exception:
+        _mem[f"email_code:{addr}"] = code
     threading.Thread(target=send_email, args=(addr, "Your Athena Code", f"Your code is: {code}"), daemon=True).start()
-    r.setex(f"email_rate:{addr}", 60, "1")
+    try:
+        r.setex(f"email_rate:{addr}", 60, "1")
+    except Exception:
+        _mem[f"email_rate:{addr}"] = "1"
     data = {"request_id": str(uuid.uuid4()), "message": "sent"}
-    if DEV_MODE:
+    if os.getenv("DEV_MODE", "true").lower() == "true":
         data["dev_code"] = code
     return {"status": "success", "data": data}
 
 @router.get("/email/dev_code")
 def get_dev_code(email: str):
-    if not DEV_MODE:
+    if not (os.getenv("DEV_MODE", "true").lower() == "true"):
         raise HTTPException(status_code=403, detail="forbidden")
     if not email:
         raise HTTPException(status_code=400, detail="invalid_email")
-    code = r.get(f"email_code:{email}")
+    try:
+        code = r.get(f"email_code:{email}")
+    except Exception:
+        code = _mem.get(f"email_code:{email}")
     if not code:
         raise HTTPException(status_code=404, detail="not_found")
     return {"status": "success", "data": {"email": email, "code": code}}
@@ -73,7 +86,10 @@ async def verify_email_code(payload: dict = Body(...)):
     code = payload.get("code")
     if not addr or not code:
         raise HTTPException(status_code=400, detail="invalid_payload")
-    saved = r.get(f"email_code:{addr}")
+    try:
+        saved = r.get(f"email_code:{addr}")
+    except Exception:
+        saved = _mem.get(f"email_code:{addr}")
     if not saved or saved != code:
         raise HTTPException(status_code=401, detail="invalid_code")
     user_id = str(uuid.uuid4())
