@@ -35,7 +35,7 @@ async def test_exchange_wallet_multicurrency(monkeypatch):
         payload["session_id"] = sid
         body = json.dumps(payload).encode("utf-8")
         sig = hmac.new(b"s1", body, hashlib.sha256).hexdigest()
-        r = await client.post(f"/api/v1/billing/webhook/fake", data=body, headers={"x-signature": sig, "Content-Type": "application/json"})
+        r = await client.post(f"/api/v1/billing/webhook/fake", content=body, headers={"x-signature": sig, "Content-Type": "application/json"})
         assert r.status_code == 200
 
         r = await client.get("/api/v1/billing/balance", headers=auth)
