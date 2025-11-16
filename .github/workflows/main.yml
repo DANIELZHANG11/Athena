@@ -113,7 +113,7 @@ jobs:
         working-directory: api
         env:
           DATABASE_URL: postgresql://athena:testpassword@localhost:5432/athena_test
-        run: alembic -c alembic.ini upgrade head
+        run: alembic -c alembic.ini upgrade heads
       - name: Pytest with coverage (>=80%)
         env:
           DATABASE_URL: postgresql+asyncpg://athena:testpassword@localhost:5432/athena_test
