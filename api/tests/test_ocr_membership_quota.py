@@ -1,12 +1,18 @@
 import os
 import pytest
 import httpx
+from unittest.mock import MagicMock
 from api.app.main import app
 
 
 @pytest.mark.asyncio
-async def test_ocr_quota_membership():
+async def test_ocr_quota_membership(monkeypatch):
     os.environ["DEV_MODE"] = "true"
+    mock_minio = MagicMock()
+    mock_minio.bucket_exists.return_value = True
+    mock_minio.make_bucket.return_value = None
+    mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
+    monkeypatch.setattr('api.app.storage.get_minio', lambda: mock_minio)
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@athena.local"})
         code = r.json()["data"]["dev_code"]

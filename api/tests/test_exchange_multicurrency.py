@@ -8,8 +8,9 @@ from api.app.main import app
 
 
 @pytest.mark.asyncio
-async def test_exchange_wallet_multicurrency():
+async def test_exchange_wallet_multicurrency(monkeypatch):
     os.environ["DEV_MODE"] = "true"
+    monkeypatch.setenv("PAY_FAKE_WEBHOOK_SECRET", "s1")
     async with httpx.AsyncClient(app=app, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "test@athena.local"})
         assert r.status_code == 200
@@ -26,7 +27,6 @@ async def test_exchange_wallet_multicurrency():
         r = await client.put("/api/v1/admin/system/settings", headers=auth, json=settings)
         assert r.status_code == 200
 
-        os.environ["PAY_FAKE_WEBHOOK_SECRET"] = "s1"
         payload = {"event_id": "evt_1", "session_id": None, "amount": 1000, "status": "succeeded"}
         r = await client.post("/api/v1/billing/sessions", headers=auth, json={"gateway": "fake", "amount": 1000, "currency": "CNY"})
         assert r.status_code == 200

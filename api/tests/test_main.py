@@ -24,4 +24,5 @@ async def test_error_handler():
         r = await client.get('/error')
         assert r.status_code == 500
         body = r.json()
+        assert body.get('status') == 'error'
         assert body.get('error', {}).get('code') == 'internal_error'
