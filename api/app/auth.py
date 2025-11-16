@@ -38,6 +38,7 @@ def require_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="invalid_token")
 
 @router.post("/email/send_code")
+@router.post("/email/send-code")
 def send_email_code(email: dict = Body(...), idempotency_key: str | None = Header(None), x_client_request_id: str | None = Header(None)):
     addr = email.get("email")
     if not addr:
@@ -66,6 +67,7 @@ def get_dev_code(email: str):
     return {"status": "success", "data": {"email": email, "code": code}}
 
 @router.post("/email/verify_code")
+@router.post("/email/verify-code")
 async def verify_email_code(payload: dict = Body(...)):
     addr = payload.get("email")
     code = payload.get("code")
@@ -90,6 +92,8 @@ async def verify_email_code(payload: dict = Body(...)):
             );
             """
         )
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier TEXT NOT NULL DEFAULT 'FREE'")
+        await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
         await conn.exec_driver_sql(
             """
             CREATE TABLE IF NOT EXISTS user_sessions (

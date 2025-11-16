@@ -28,5 +28,5 @@ def test_pricing_admin_and_user_rules():
 
     r = c.get("/api/v1/pricing/rules", params={"service_type": "OCR", "region": "CN"})
     assert r.status_code == 200
-    remark = r.json()["data"]["data"][0]["remark"]
+    remark = r.json()["data"][0]["remark"]
     assert "0.06" in remark
