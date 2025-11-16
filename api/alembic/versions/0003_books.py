@@ -13,7 +13,7 @@ def upgrade():
         """
         CREATE TABLE IF NOT EXISTS shelves (
             id UUID PRIMARY KEY,
-            owner_id UUID NOT NULL,
+            user_id UUID NOT NULL,
             name TEXT NOT NULL,
             description TEXT,
             version INT NOT NULL DEFAULT 1,
@@ -23,7 +23,7 @@ def upgrade():
 
         CREATE TABLE IF NOT EXISTS books (
             id UUID PRIMARY KEY,
-            owner_id UUID NOT NULL,
+            user_id UUID NOT NULL,
             title TEXT NOT NULL,
             author TEXT,
             language TEXT,
@@ -46,7 +46,7 @@ def upgrade():
 
         CREATE TABLE IF NOT EXISTS conversion_jobs (
             id UUID PRIMARY KEY,
-            owner_id UUID NOT NULL,
+            user_id UUID NOT NULL,
             book_id UUID NOT NULL,
             source_key TEXT NOT NULL,
             target_format TEXT NOT NULL,
@@ -58,10 +58,10 @@ def upgrade():
         );
 
         -- Indexes
-        CREATE INDEX IF NOT EXISTS idx_shelves_owner_updated ON shelves(owner_id, updated_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_books_owner_updated ON books(owner_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_shelves_user_updated ON shelves(user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_books_user_updated ON books(user_id, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_shelf_items_shelf ON shelf_items(shelf_id);
-        CREATE INDEX IF NOT EXISTS idx_conversion_jobs_owner_status ON conversion_jobs(owner_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversion_jobs_user_status ON conversion_jobs(user_id, status, created_at DESC);
 
         -- Enable RLS and FORCE RLS
         ALTER TABLE shelves ENABLE ROW LEVEL SECURITY;
@@ -77,19 +77,19 @@ def upgrade():
         CREATE POLICY shelves_owner ON shelves
             FOR ALL
             USING (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             )
             WITH CHECK (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             );
 
         CREATE POLICY books_owner ON books
             FOR ALL
             USING (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             )
             WITH CHECK (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             );
 
         CREATE POLICY shelf_items_owner ON shelf_items
@@ -116,10 +116,10 @@ def upgrade():
         CREATE POLICY conversion_jobs_owner ON conversion_jobs
             FOR ALL
             USING (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             )
             WITH CHECK (
-                owner_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
+                user_id = current_setting('app.user_id')::uuid OR current_setting('app.role', true) = 'admin'
             );
         """
     )

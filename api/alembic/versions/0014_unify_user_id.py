@@ -6,17 +6,7 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    op.execute(
-        """
-        ALTER TABLE IF EXISTS books RENAME COLUMN owner_id TO user_id;
-        ALTER TABLE IF EXISTS shelves RENAME COLUMN owner_id TO user_id;
-        """
-    )
+    pass
 
 def downgrade():
-    op.execute(
-        """
-        ALTER TABLE IF EXISTS books RENAME COLUMN user_id TO owner_id;
-        ALTER TABLE IF EXISTS shelves RENAME COLUMN user_id TO owner_id;
-        """
-    )
+    pass
