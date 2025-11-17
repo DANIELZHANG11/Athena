@@ -6,7 +6,7 @@ info:
     name: MIT
     url: https://opensource.org/licenses/MIT
 servers:
-  - url: https://api.athena.com
+  - url: https://api.athena.app
 paths:
   /api/v1/profile/me:
     get:

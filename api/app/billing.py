@@ -64,8 +64,7 @@ async def webhook(gateway: str, request: Request, x_signature: str | None = Head
     secret = os.getenv(f"PAY_{gateway.upper()}_WEBHOOK_SECRET", "")
     body = await request.body()
     x_sig = request.headers.get('x-signature') or request.headers.get('x_signature') or x_signature
-    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if not _sig_ok(secret, body, x_sig) and not (dev_mode and gateway.lower() == "fake"):
+    if not _sig_ok(secret, body, x_sig):
         raise HTTPException(status_code=401, detail="bad_signature")
 
     try:
@@ -104,9 +103,6 @@ async def webhook(gateway: str, request: Request, x_signature: str | None = Head
         return {"status": "success"}
     except Exception as e:
         logging.exception(f"[WEBHOOK] Unexpected error: {e}")
-        if dev_mode:
-            # 在CI/DEV返回200以便后续断言继续执行，同时打印日志用于定位
-            return {"status": "error", "message": str(e)}
         raise
 
 @router.post("/consume")
