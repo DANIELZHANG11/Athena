@@ -47,9 +47,10 @@ jobs:
         working-directory: web
         shell: pwsh
         env:
-          CYPRESS_CACHE_FOLDER: ${{ env.USERPROFILE }}\.cache\Cypress
+          CYPRESS_CACHE_FOLDER: ${{ env.LOCALAPPDATA }}\Cypress\Cache
         run: |
           Write-Host "Cache folder: $env:CYPRESS_CACHE_FOLDER"
+          npx cypress cache list || true
           npx cypress install --force
           npx cypress verify
 
