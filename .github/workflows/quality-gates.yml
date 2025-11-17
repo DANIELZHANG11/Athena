@@ -53,7 +53,7 @@ jobs:
         working-directory: web
         shell: pwsh
         env:
-          CYPRESS_CACHE_FOLDER: ${{ env.USERPROFILE }}\.cache\Cypress
+          CYPRESS_CACHE_FOLDER: ${{ env.LOCALAPPDATA }}\Cypress\Cache
         run: |
           Write-Host "Cache folder: $env:CYPRESS_CACHE_FOLDER"
           npx cypress cache list || true
@@ -62,6 +62,8 @@ jobs:
 
       - name: Cypress E2E (axe & flows)
         uses: cypress-io/github-action@v6
+        env:
+          CYPRESS_CACHE_FOLDER: ${{ env.USERPROFILE }}\.cache\Cypress
         with:
           working-directory: web
           install-command: pnpm install --no-frozen-lockfile
