@@ -48,6 +48,10 @@ jobs:
         run: |
           (pnpm run test:ci || pnpm exec vitest run)
 
+      - name: Build (vite)
+        working-directory: web
+        run: pnpm build
+
       - name: Ensure Cypress Binary (Windows)
         if: runner.os == 'Windows'
         working-directory: web
