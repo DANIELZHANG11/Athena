@@ -22,15 +22,15 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<div />} />
-        <Route path="/" element={<RequireAuth><MainLayout /></RequireAuth>}>
+        <Route path="/" element={<MainLayout />}>
           <Route index element={<HomePage />} />
-          <Route path="library" element={<LibraryPage />} />
-          <Route path="ai-conversations" element={<AIConversationsPage />} />
-          <Route path="notes" element={<NotesPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="docs/:docId" element={<DocEditor />} />
-          <Route path="tts" element={<TTSPage />} />
-          <Route path="billing" element={<BillingPage />} />
+          <Route path="library" element={<RequireAuth><LibraryPage /></RequireAuth>} />
+          <Route path="ai-conversations" element={<RequireAuth><AIConversationsPage /></RequireAuth>} />
+          <Route path="notes" element={<RequireAuth><NotesPage /></RequireAuth>} />
+          <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+          <Route path="docs/:docId" element={<RequireAuth><DocEditor /></RequireAuth>} />
+          <Route path="tts" element={<RequireAuth><TTSPage /></RequireAuth>} />
+          <Route path="billing" element={<RequireAuth><BillingPage /></RequireAuth>} />
         </Route>
       </Routes>
     </BrowserRouter>
