@@ -26,6 +26,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+        ports:
+          - 5432:5432
       valkey:
         image: valkey/valkey:7
         options: >-
@@ -33,6 +35,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+        ports:
+          - 6379:6379
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,17 +54,17 @@ jobs:
           PGPASSWORD: athena_dev
         run: |
           for i in {1..30}; do
-            pg_isready -h postgres -p 5432 -U athena && break || sleep 2;
+            pg_isready -h localhost -p 5432 -U athena && break || sleep 2;
           done
       - name: Migrate DB
         env:
-          DATABASE_URL: postgresql+asyncpg://athena:athena_dev@postgres:5432/athena
+          DATABASE_URL: postgresql+asyncpg://athena:athena_dev@localhost:5432/athena
         run: |
           alembic -c api/alembic.ini upgrade head
       - name: Run API tests
         env:
-          DATABASE_URL: postgresql+asyncpg://athena:athena_dev@postgres:5432/athena
-          REDIS_HOST: valkey
+          DATABASE_URL: postgresql+asyncpg://athena:athena_dev@localhost:5432/athena
+          REDIS_HOST: localhost
           REDIS_PORT: 6379
           DEV_MODE: 'true'
         run: |

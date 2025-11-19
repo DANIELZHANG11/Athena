@@ -7,6 +7,8 @@ module.exports = {
   settings: { react: { version: 'detect' } },
   rules: {
     'react/react-in-jsx-scope': 'off',
+    'react/prop-types': 'off',
+    'react/no-unescaped-entities': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
     'no-empty': 'warn'
   }

@@ -1,14 +1,14 @@
 """
 Add AI/SRS/credit_products tables and users locale columns
 
-Revision ID: 0105_add_ai_srs_products_users_locale
+Revision ID: 0105_ai_srs_users_locale
 Revises: 0104_add_books_analysis_columns
 Create Date: 2025-11-19
 """
 
 from alembic import op
 
-revision = '0105_add_ai_srs_products_users_locale'
+revision = '0105_ai_srs_users_locale'
 down_revision = '0104_add_books_analysis_columns'
 branch_labels = None
 depends_on = None
