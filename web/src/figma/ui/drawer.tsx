@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Drawer as VaulDrawer } from 'vaul'
 import { cn } from './utils'
 
-function Drawer({ className, ...props }: React.ComponentProps<typeof VaulDrawer.Root>) {
+function Drawer({ className, ...props }: any) {
   return <VaulDrawer.Root data-slot="drawer" className={cn(className)} {...props} />
 }
 

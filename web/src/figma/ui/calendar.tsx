@@ -36,10 +36,12 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: R
         day_hidden: 'invisible',
         ...classNames,
       }}
-      components={{
-        IconLeft: ({ className, ...props }) => <ChevronLeft className={cn('size-4', className)} {...props} />,
-        IconRight: ({ className, ...props }) => <ChevronRight className={cn('size-4', className)} {...props} />,
-      }}
+      components={
+        {
+          IconLeft: (props: any) => <ChevronLeft className={cn('size-4', props?.className)} {...props} />,
+          IconRight: (props: any) => <ChevronRight className={cn('size-4', props?.className)} {...props} />,
+        } as any
+      }
       {...props}
     />
   )

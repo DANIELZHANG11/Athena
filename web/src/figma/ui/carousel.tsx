@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from 'react'
-import useEmblaCarousel, { EmblaOptionsType } from 'embla-carousel-react'
+import useEmblaCarousel from 'embla-carousel-react'
 import { cn } from './utils'
 
-function Carousel({ className, options, children }: { className?: string; options?: EmblaOptionsType; children: React.ReactNode }) {
+function Carousel({ className, options, children }: { className?: string; options?: any; children: React.ReactNode }) {
   const [emblaRef] = useEmblaCarousel(options)
   return (
     <div data-slot="carousel" className={cn('overflow-hidden', className)} ref={emblaRef}>

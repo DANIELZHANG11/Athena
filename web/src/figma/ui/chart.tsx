@@ -36,7 +36,7 @@ ${colorConfig.map(([key, item]) => { const color = item.theme?.[theme as keyof t
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
-function ChartTooltipContent({ active, payload, className, indicator = 'dot', hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, formatter, color, nameKey, labelKey }: React.ComponentProps<typeof RechartsPrimitive.Tooltip> & React.ComponentProps<'div'> & { hideLabel?: boolean; hideIndicator?: boolean; indicator?: 'line' | 'dot' | 'dashed'; nameKey?: string; labelKey?: string }) {
+function ChartTooltipContent({ active, payload, className, indicator = 'dot', hideLabel = false, hideIndicator = false, label, labelFormatter, labelClassName, formatter, color, nameKey, labelKey }: any) {
   const { config } = useChart()
   const tooltipLabel = React.useMemo(() => {
     if (hideLabel || !payload?.length) return null
