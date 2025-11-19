@@ -1,12 +1,10 @@
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Home, Library, MessageSquare, NotebookText, Search, User } from 'lucide-react'
-import { useTranslation } from 'react-i18next'
+import { Search } from 'lucide-react'
 import { useState } from 'react'
 import i18n from '../../i18n'
 import NavItem from './NavItem'
 
 export default function MainLayout() {
-  const { t } = useTranslation()
   const nav = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   return (
@@ -29,12 +27,8 @@ export default function MainLayout() {
             <div style={{ fontWeight: 700, fontSize: 16, color: '#111' }}>Athena</div>
           </div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
-            <NavItem to="/" icon={<Home size={18} />} label="Home" />
-            <NavItem to="/library" icon={<Library size={18} />} label="Library" />
-            <NavItem to="/ai-conversations" icon={<MessageSquare size={18} />} label="AI" />
-            <NavItem to="/notes" icon={<NotebookText size={18} />} label={t('upload.title')} />
-            <NavItem to="/search" icon={<Search size={18} />} label="Search" />
-            <NavItem to="/profile" icon={<User size={18} />} label="个人中心" />
+            <NavItem to="/library" icon={null} label="Library" />
+            <NavItem to="/search" icon={<Search size={18} />} label="" />
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
             <select value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)} style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>

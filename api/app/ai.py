@@ -94,8 +94,11 @@ async def create_conversation(body: dict = Body({}), auth=Depends(require_user))
     import uuid as _uuid
     cid = str(_uuid.uuid4())
     title = (body or {}).get("title") or ""
+    mode = (body or {}).get("mode") or "default"
+    book_ids = (body or {}).get("book_ids") or []
     async with engine.begin() as conn:
         await conn.execute(text("INSERT INTO ai_conversations(id, owner_id, title) VALUES (cast(:id as uuid), cast(:uid as uuid), :t)"), {"id": cid, "uid": user_id, "t": title})
+        await conn.execute(text("INSERT INTO ai_conversation_contexts(conversation_id, owner_id, mode, book_ids) VALUES (cast(:cid as uuid), cast(:uid as uuid), :m, cast(:ids as jsonb)) ON CONFLICT (conversation_id) DO UPDATE SET mode = EXCLUDED.mode, book_ids = EXCLUDED.book_ids, updated_at = now()"), {"cid": cid, "uid": user_id, "m": mode, "ids": book_ids})
     return {"status": "success", "data": {"id": cid}}
 
 @router.get("/messages")

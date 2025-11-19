@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import Hero from '../landing/Hero'
 import FeatureCards from '../landing/FeatureCards'
 import BookGrid from '../landing/BookGrid'

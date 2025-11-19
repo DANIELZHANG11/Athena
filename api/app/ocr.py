@@ -21,17 +21,7 @@ async def init_job(body: dict = Body(...), auth=Depends(require_user)):
     return {"status": "success", "data": {"id": jid, "put_url": put_url}}
 
 async def _ensure_quota(conn):
-    await conn.exec_driver_sql(
-        """
-        CREATE TABLE IF NOT EXISTS free_quota_usage (
-          owner_id UUID NOT NULL,
-          service_type TEXT NOT NULL,
-          used_units BIGINT NOT NULL DEFAULT 0,
-          period_start DATE NOT NULL DEFAULT current_date,
-          PRIMARY KEY(owner_id, service_type, period_start)
-        );
-        """
-    )
+    return
 
 @router.post("/jobs/complete")
 async def complete_job(body: dict = Body(...), auth=Depends(require_user)):
@@ -42,7 +32,7 @@ async def complete_job(body: dict = Body(...), auth=Depends(require_user)):
         raise HTTPException(status_code=400, detail="missing_id")
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        await _ensure_quota(conn)
+        
         await conn.execute(text("UPDATE ocr_jobs SET status = 'processing', updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"), {"id": jid})
         res = await conn.execute(text("SELECT price_amount, currency FROM pricing_rules WHERE service_type = 'OCR' AND unit_type = 'PAGES' AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1"))
         rule = res.fetchone()

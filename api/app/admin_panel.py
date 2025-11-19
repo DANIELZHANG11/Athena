@@ -9,19 +9,12 @@ from .auth import require_user
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 def _require_admin(user_id: str):
-    if os.getenv("DEV_MODE", "true").lower() == "true":
-        return
     aid = os.getenv("ADMIN_USER_ID", "")
     if not aid or aid != user_id:
         raise HTTPException(status_code=403, detail="forbidden")
 
 async def _ensure(conn):
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS system_settings (id UUID PRIMARY KEY, key TEXT UNIQUE NOT NULL, value JSONB NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS feature_flags (id UUID PRIMARY KEY, key TEXT UNIQUE NOT NULL, is_enabled BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS prompt_templates (id UUID PRIMARY KEY, name TEXT UNIQUE NOT NULL, content TEXT NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS ai_models (id UUID PRIMARY KEY, provider TEXT NOT NULL, model_id TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS service_providers (id UUID PRIMARY KEY, service_type TEXT NOT NULL, name TEXT NOT NULL, endpoint TEXT, config JSONB NOT NULL DEFAULT '{}'::jsonb, is_active BOOLEAN NOT NULL DEFAULT TRUE, priority INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1, updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), UNIQUE(service_type, name))")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS audit_logs (id UUID PRIMARY KEY, owner_id UUID NOT NULL, action TEXT NOT NULL, details JSONB NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now())")
+    return
 
 async def _audit(conn, owner_id: str, action: str, details: dict):
     import json as _json

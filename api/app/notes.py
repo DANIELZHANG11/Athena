@@ -7,6 +7,7 @@ from sqlalchemy import text
 from .auth import require_user
 from .db import engine
 from .search_sync import index_note, delete_note, index_highlight, delete_highlight
+from .celery_app import celery_app
 import redis
 
 
@@ -210,6 +211,10 @@ async def create_highlight(body: dict = Body(...), idempotency_key: str | None =
     if idempotency_key:
         r.setex(f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), hid)
     index_highlight(hid, user_id, book_id, comment or "", color or "", tags)
+    try:
+        celery_app.send_task('tasks.generate_srs_card', args=[hid])
+    except Exception:
+        pass
     return {"status": "success", "data": {"id": hid}}
 
 

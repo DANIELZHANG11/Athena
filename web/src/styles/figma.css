@@ -126,6 +126,7 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-ui);
   }
 }
 
@@ -147,7 +148,8 @@ html { font-size: var(--font-size); }
 :root { --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", "Noto Sans", sans-serif; }
 .font-ui { font-family: var(--font-ui); }
 
-.marquee-row { overflow: hidden; position: relative; }
-.marquee-track { display: inline-flex; gap: 12px; will-change: transform; animation: marquee-left 30s linear infinite; }
+.marquee-row { overflow-x: hidden; overflow-y: visible; position: relative; padding-block: 12px; }
+.marquee-row:has(.book-card:hover) { z-index: 30; }
+.marquee-track { display: inline-flex; gap: 6px; will-change: transform; }
 @keyframes marquee-left { from { transform: translateX(0%); } to { transform: translateX(-50%); } }
 .marquee-mask { -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,0.25) 40px, rgba(0,0,0,0.7) 100px, black 160px, black calc(100% - 160px), rgba(0,0,0,0.7) calc(100% - 100px), rgba(0,0,0,0.25) calc(100% - 40px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,0.25) 40px, rgba(0,0,0,0.7) 100px, black 160px, black calc(100% - 160px), rgba(0,0,0,0.7) calc(100% - 100px), rgba(0,0,0,0.25) calc(100% - 40px), transparent 100%); }

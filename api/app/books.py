@@ -26,15 +26,7 @@ shelves_router = APIRouter(prefix="/api/v1/shelves", tags=["shelves"])
 
 
 async def _ensure_books_fields(conn):
-    await conn.exec_driver_sql(
-        """
-        ALTER TABLE IF EXISTS books
-          ADD COLUMN IF NOT EXISTS is_digitalized BOOLEAN,
-          ADD COLUMN IF NOT EXISTS initial_digitalization_confidence NUMERIC,
-          ADD COLUMN IF NOT EXISTS converted_epub_key TEXT,
-          ADD COLUMN IF NOT EXISTS digitalize_report_key TEXT;
-        """
-    )
+    return
 
 def _quick_confidence(bucket: str, key: str) -> tuple[bool, float]:
     try:
@@ -103,7 +95,7 @@ async def upload_complete(body: dict = Body(...), idempotency_key: str | None = 
     etag = stat_etag(BOOKS_BUCKET, key)
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        await _ensure_books_fields(conn)
+        
         if etag:
             res = await conn.execute(text("SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"), {"e": etag})
             row = res.fetchone()
@@ -142,11 +134,12 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
-        res = await conn.execute(text("SELECT minio_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"), {"id": book_id})
+        res = await conn.execute(text("SELECT minio_key, is_digitalized, original_format FROM books WHERE id = cast(:id as uuid)"), {"id": book_id})
         row = res.fetchone()
         if not row:
             return
         key, dig = row[0], bool(row[1]) if row[1] is not None else False
+        fmt = (row[2] or '').lower()
         img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
         rep_key = make_object_key(user_id, f"digitalize-report-{book_id}.json")
         import json
@@ -156,15 +149,15 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
         await ws_broadcast(f"book:{book_id}", json.dumps({"event": "DEEP_ANALYZED", "digitalized": (not img_based and conf >= 0.8), "confidence": conf}))
     except Exception:
         pass
-    # 标准化占位：生成 converted_epub_key
-    std_key = make_object_key(user_id, f"converted/{book_id}.epub")
-    upload_bytes(BOOKS_BUCKET, std_key, b"standardized-epub", "application/epub+zip")
-    async with engine.begin() as conn:
-        await conn.execute(text("UPDATE books SET converted_epub_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"), {"k": std_key, "id": book_id})
-    try:
-        await ws_broadcast(f"book:{book_id}", json.dumps({"event": "STANDARDIZED", "epub_key": std_key}))
-    except Exception:
-        pass
+    if fmt != 'pdf':
+        std_key = make_object_key(user_id, f"converted/{book_id}.epub")
+        upload_bytes(BOOKS_BUCKET, std_key, b"standardized-epub", "application/epub+zip")
+        async with engine.begin() as conn:
+            await conn.execute(text("UPDATE books SET converted_epub_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"), {"k": std_key, "id": book_id})
+        try:
+            await ws_broadcast(f"book:{book_id}", json.dumps({"event": "STANDARDIZED", "epub_key": std_key}))
+        except Exception:
+            pass
 
 @router.get("/{book_id}/processing/status")
 async def processing_status(book_id: str, auth=Depends(require_user)):
@@ -564,17 +557,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
                     free_chars = 0
             if free_chars is None:
                 free_chars = int(settings.get("free_vector_chars", 0))
-            await conn.exec_driver_sql(
-                """
-                CREATE TABLE IF NOT EXISTS free_quota_usage (
-                  owner_id UUID NOT NULL,
-                  service_type TEXT NOT NULL,
-                  used_units BIGINT NOT NULL DEFAULT 0,
-                  period_start DATE NOT NULL DEFAULT current_date,
-                  PRIMARY KEY(owner_id, service_type, period_start)
-                );
-                """
-            )
+            
             ures = await conn.execute(text("SELECT used_units FROM free_quota_usage WHERE owner_id = current_setting('app.user_id')::uuid AND service_type = 'VECTORIZE' AND period_start = current_date"))
             urow = ures.fetchone()
             used = int(urow[0]) if urow else 0

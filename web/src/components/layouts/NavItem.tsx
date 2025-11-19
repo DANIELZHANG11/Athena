@@ -15,8 +15,8 @@ export default function NavItem({ to, icon, label }: Props) {
         color: isActive ? 'var(--color-label)' : 'var(--color-secondary-label)'
       })}
     >
-      <span style={{ display: 'inline-flex', color: 'inherit' }}>{icon}</span>
-      <span style={{ color: 'inherit' }}>{label}</span>
+      {icon ? <span style={{ display: 'inline-flex', color: 'inherit' }}>{icon}</span> : null}
+      {label ? <span style={{ color: 'inherit' }}>{label}</span> : null}
     </NavLink>
   )
 }

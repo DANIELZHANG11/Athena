@@ -19,13 +19,16 @@ services:
       - .env.local
       - .env.infisical
     environment:
-      ES_URL: http://elasticsearch:9200
+      ES_URL: http://opensearch:9200
+      REDIS_URL: redis://valkey:6379
+      REDIS_HOST: valkey
+      REDIS_PORT: 6379
       SENTRY_DSN: ""
       DATABASE_URL: postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_BACKEND_URL: redis://redis:6379/1
-      MINIO_PUBLIC_ENDPOINT: http://minio:9000
-      MINIO_ENDPOINT: minio:9000
+      CELERY_BROKER_URL: redis://valkey:6379/0
+      CELERY_BACKEND_URL: redis://valkey:6379/1
+      MINIO_PUBLIC_ENDPOINT: http://seaweed:8333
+      MINIO_ENDPOINT: seaweed:8333
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: athena
@@ -111,28 +114,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-  redis:
-    image: zukubq0aouv2k2.xuanyuan.run/redis:7
-    command: ["redis-server", "--appendonly", "yes"]
+  valkey:
+    image: valkey/valkey:7
+    command: ["valkey-server", "--appendonly", "yes"]
     volumes:
-      - redis_data:/data
-  minio:
-    image: zukubq0aouv2k2.xuanyuan.run/minio/minio:latest
-    command: ["server", "/data", "--console-address", ":9001"]
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - valkey_data:/data
+  seaweed:
+    image: chrislusf/seaweedfs:latest
+    command: ["server", "-s3", "-s3.port=8333", "-dir=/data"]
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "8333:8333"
+      - "8888:8888"
     volumes:
-      - minio_data:/data
-  elasticsearch:
-    image: zukubq0aouv2k2.xuanyuan.run/elasticsearch:8.14.0
+      - seaweed_data:/data
+  opensearch:
+    image: opensearchproject/opensearch:latest
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9200:9200"
     healthcheck:
@@ -172,17 +172,17 @@ services:
     build:
       context: ./api
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_BACKEND_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://valkey:6379/0
+      - CELERY_BACKEND_URL=redis://valkey:6379/1
     command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO"]
     depends_on:
-      - redis
+      - valkey
       - pgbouncer
     volumes:
       - ./api:/app
 volumes:
   pg_data:
-  redis_data:
-  minio_data:
+  valkey_data:
+  seaweed_data:
   calibre_config:
   calibre_books:

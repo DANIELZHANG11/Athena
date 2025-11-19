@@ -20,7 +20,6 @@ def _sig_ok(secret: str, body: bytes, sig: str | None) -> bool:
 async def get_balance(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await _ensure_billing(conn)
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
         res = await conn.execute(text("SELECT owner_id::text, balance, currency, wallet_amount, wallet_currency, updated_at FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))
@@ -33,11 +32,19 @@ async def get_balance(auth=Depends(require_user)):
 async def list_ledger(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await _ensure_billing(conn)
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(text("SELECT id::text, amount, currency, reason, related_id::text, direction, created_at FROM credit_ledger WHERE owner_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset})
         rows = res.fetchall()
         return {"status": "success", "data": [{"id": r[0], "amount": int(r[1]), "currency": r[2], "reason": r[3], "related_id": r[4], "direction": r[5], "created_at": str(r[6])} for r in rows]}
+
+@router.get("/products")
+async def list_products(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        res = await conn.execute(text("SELECT id::text, code, name, credits, amount_minor, currency, updated_at FROM credit_products ORDER BY updated_at DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset})
+        rows = res.fetchall()
+        return {"status": "success", "data": [{"id": r[0], "code": r[1], "name": r[2], "credits": int(r[3]), "amount_minor": int(r[4]), "currency": r[5], "updated_at": str(r[6])} for r in rows]}
 
 @router.post("/sessions")
 async def create_session(payload: dict = Body(...), auth=Depends(require_user)):
@@ -52,7 +59,6 @@ async def create_session(payload: dict = Body(...), auth=Depends(require_user)):
     cancel_url = payload.get("cancel_url") or os.getenv("PAY_CANCEL_URL", "https://localhost/cancel")
     meta = payload.get("metadata")
     async with engine.begin() as conn:
-        await _ensure_billing(conn)
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO payment_sessions(id, owner_id, gateway, amount, currency, status, return_url, cancel_url, metadata) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :g, :a, :c, 'pending', :r, :x, cast(:m as jsonb))"), {"id": sid, "g": gateway, "a": amount, "c": currency, "r": ret_url, "x": cancel_url, "m": meta})
     pay_url = f"https://pay.local/{gateway}/{sid}"
@@ -76,7 +82,6 @@ async def webhook(gateway: str, request: Request, x_signature: str | None = Head
         status = payload.get("status")
         external_id = str(payload.get("external_id") or "")
         async with engine.begin() as conn:
-            await _ensure_billing(conn)
             await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
             logging.info(f"[WEBHOOK] ensure tables & set role=admin")
             logging.info(f"[WEBHOOK] UPSERT event id={event_id}")
@@ -115,14 +120,10 @@ async def consume_credit(payload: dict = Body(...), auth=Depends(require_user)):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
-        res = await conn.execute(text("SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))
-        row = res.fetchone()
+        dec = await conn.execute(text("UPDATE credit_accounts SET balance = balance - :amt, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid AND balance >= :amt RETURNING balance"), {"amt": amount})
+        row = dec.fetchone()
         if not row:
-            raise HTTPException(status_code=500, detail="account_missing")
-        bal = int(row[0])
-        if bal < amount:
             raise HTTPException(status_code=400, detail="insufficient_balance")
-        await conn.execute(text("UPDATE credit_accounts SET balance = balance - :amt, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid"), {"amt": amount})
         lid = str(uuid.uuid4())
         await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CNY', :r, 'debit')"), {"id": lid, "amt": amount, "r": reason})
     return {"status": "success"}
@@ -135,7 +136,6 @@ async def exchange(payload: dict = Body(...), auth=Depends(require_user)):
     if direction not in ("wallet_to_credits", "credits_to_wallet") or not isinstance(amount, (int, float)) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_request")
     async with engine.begin() as conn:
-        await _ensure_billing(conn)
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
         sres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'wallet_exchange_rate'"))
@@ -156,27 +156,19 @@ async def exchange(payload: dict = Body(...), auth=Depends(require_user)):
             except Exception:
                 rate = 100.0
         if direction == "wallet_to_credits":
-            # 检查钱包余额
-            wres = await conn.execute(text("SELECT wallet_amount FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))
-            w = wres.fetchone()
-            wa = float(w[0] or 0)
-            if wa < amount:
-                raise HTTPException(status_code=400, detail="insufficient_wallet")
             credits = int(round(amount * rate))
-            await conn.execute(text("UPDATE credit_accounts SET wallet_amount = wallet_amount - :amt, balance = balance + :cr, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid"), {"amt": amount, "cr": credits})
+            upd = await conn.execute(text("UPDATE credit_accounts SET wallet_amount = wallet_amount - :amt, balance = balance + :cr, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid AND wallet_amount >= :amt RETURNING wallet_amount, balance"), {"amt": amount, "cr": credits})
+            if not upd.fetchone():
+                raise HTTPException(status_code=400, detail="insufficient_wallet")
             lid1 = str(uuid.uuid4()); lid2 = str(uuid.uuid4())
             await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CNY', 'exchange_wallet_to_credits', 'debit')"), {"id": lid1, "amt": int(round(amount*100))})
             await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CREDITS', 'exchange_wallet_to_credits', 'credit')"), {"id": lid2, "amt": credits})
         else:
-            # 积分转钱包
-            cres = await conn.execute(text("SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"))
-            c = cres.fetchone()
-            bal = int(c[0] or 0)
             credits = int(amount)
-            if bal < credits:
-                raise HTTPException(status_code=400, detail="insufficient_credits")
             money = float(round(credits / rate, 2))
-            await conn.execute(text("UPDATE credit_accounts SET balance = balance - :cr, wallet_amount = wallet_amount + :amt, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid"), {"cr": credits, "amt": money})
+            upd = await conn.execute(text("UPDATE credit_accounts SET balance = balance - :cr, wallet_amount = wallet_amount + :amt, updated_at = now() WHERE owner_id = current_setting('app.user_id')::uuid AND balance >= :cr RETURNING balance, wallet_amount"), {"cr": credits, "amt": money})
+            if not upd.fetchone():
+                raise HTTPException(status_code=400, detail="insufficient_credits")
             lid1 = str(uuid.uuid4()); lid2 = str(uuid.uuid4())
             await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CREDITS', 'exchange_credits_to_wallet', 'debit')"), {"id": lid1, "amt": credits})
             await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CNY', 'exchange_credits_to_wallet', 'credit')"), {"id": lid2, "amt": int(round(money*100))})
@@ -192,7 +184,6 @@ async def grant_credits(payload: dict = Body(...), auth=Depends(require_user)):
     if not isinstance(amount, (int, float)) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_amount")
     async with engine.begin() as conn:
-        await _ensure_billing(conn)
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(text("INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"))
         if kind == "wallet":
@@ -206,8 +197,3 @@ async def grant_credits(payload: dict = Body(...), auth=Depends(require_user)):
             lid = str(uuid.uuid4())
             await conn.execute(text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :amt, 'CREDITS', 'debug_grant_credits', 'credit')"), {"id": lid, "amt": credits})
     return {"status": "success"}
-async def _ensure_billing(conn):
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS payment_sessions (id UUID PRIMARY KEY, owner_id UUID NOT NULL, gateway TEXT NOT NULL, amount INT NOT NULL, currency TEXT NOT NULL, status TEXT NOT NULL, return_url TEXT, cancel_url TEXT, metadata JSONB, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS payment_webhook_events (id TEXT PRIMARY KEY, gateway TEXT NOT NULL, session_id UUID NOT NULL, payload JSONB NOT NULL, processed BOOLEAN NOT NULL DEFAULT FALSE, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS credit_accounts (owner_id UUID PRIMARY KEY, balance BIGINT NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'CNY', wallet_amount DOUBLE PRECISION NOT NULL DEFAULT 0, wallet_currency TEXT NOT NULL DEFAULT 'CNY', updated_at TIMESTAMPTZ NOT NULL DEFAULT now())")
-    await conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS credit_ledger (id UUID PRIMARY KEY, owner_id UUID NOT NULL, amount BIGINT NOT NULL, currency TEXT NOT NULL, reason TEXT NOT NULL, related_id UUID, direction TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())")

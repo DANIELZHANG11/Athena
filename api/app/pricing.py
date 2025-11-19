@@ -8,24 +8,7 @@ import os
 router = APIRouter(prefix="/api/v1/pricing", tags=["pricing"])
 
 async def _ensure(conn):
-    await conn.exec_driver_sql(
-        """
-        CREATE TABLE IF NOT EXISTS pricing_rules (
-          id UUID PRIMARY KEY,
-          service_type VARCHAR(32) NOT NULL,
-          unit_type VARCHAR(32) NOT NULL,
-          unit_size INTEGER NOT NULL,
-          price_amount NUMERIC(10,2) NOT NULL,
-          currency VARCHAR(10) NOT NULL,
-          region VARCHAR(10),
-          remark_template TEXT,
-          is_active BOOLEAN NOT NULL DEFAULT TRUE,
-          version INTEGER NOT NULL DEFAULT 1,
-          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-        );
-        """
-    )
+    return
 
 @router.get("/rules")
 async def list_rules(service_type: str | None = Query(None), region: str | None = Query(None)):
@@ -52,8 +35,6 @@ async def list_rules(service_type: str | None = Query(None), region: str | None 
 admin = APIRouter(prefix="/api/v1/admin/pricing", tags=["admin-pricing"])
 
 def _require_admin(user_id: str):
-    if os.getenv("DEV_MODE", "true").lower() == "true":
-        return
     aid = os.getenv("ADMIN_USER_ID", "")
     if not aid or aid != user_id:
         from fastapi import HTTPException

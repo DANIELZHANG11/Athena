@@ -9,16 +9,7 @@ router = APIRouter(prefix="/api/v1/reader")
 alias = APIRouter(prefix="/api/v1/reading-sessions")
 
 async def _ensure_tables(conn):
-    await conn.exec_driver_sql(
-        """
-        CREATE TABLE IF NOT EXISTS reading_daily (
-          user_id UUID NOT NULL,
-          day DATE NOT NULL,
-          total_ms BIGINT NOT NULL DEFAULT 0,
-          PRIMARY KEY(user_id, day)
-        );
-        """
-    )
+    return
 
 @router.post("/start")
 async def start(body: dict = Body(...), auth=Depends(require_user)):
@@ -28,7 +19,7 @@ async def start(body: dict = Body(...), auth=Depends(require_user)):
     sid = str(uuid.uuid4())
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        await _ensure_tables(conn)
+        
         await conn.execute(text("INSERT INTO reading_sessions(id, user_id, book_id, device_id, is_active, total_ms, last_heartbeat) VALUES (cast(:id as uuid), cast(:uid as uuid), cast(:bid as uuid), :dev, TRUE, 0, now())"), {"id": sid, "uid": user_id, "bid": book_id, "dev": device_id})
     return {"status": "success", "data": {"session_id": sid}}
 
@@ -41,7 +32,7 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
     last_location = body.get("last_location") or None
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        await _ensure_tables(conn)
+        
         res = await conn.execute(text("SELECT last_heartbeat FROM reading_sessions WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"), {"id": sid})
         prev = res.fetchone()
         now_ts = datetime.now(timezone.utc)
