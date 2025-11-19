@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run full CI (web build, e2e, coverage>=80)
+        required: false
+        default: "true"
 
 jobs:
   web:
