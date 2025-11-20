@@ -58,7 +58,7 @@ export default function LibraryPage() {
                     const init = await initRes.json()
                     const key = init.data.key
                     const url = init.data.upload_url
-                    try { await fetch(url, { method: 'PUT', body: new Blob([]) }) } catch {}
+                    try { await fetch(url, { method: 'PUT', body: new Blob([]) }) } catch { /* ignore */ }
                     const compRes = await fetch('/api/v1/books/upload_complete', { method: 'POST', headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ key, title: fileName.replace(/\.epub$/i, ''), original_format: 'epub', size: 0 }) })
                     const comp = await compRes.json()
                     setItems((prev) => [{ id: comp.data.id, title: fileName.replace(/\.epub$/i, ''), downloadUrl: comp.data.download_url }, ...prev])
