@@ -49,93 +49,203 @@
 ---
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
-Run pytest -q api/tests
-
-==================================== ERRORS ====================================
-________________ ERROR collecting tests/test_ai_models_admin.py ________________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_ai_models_admin.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_ai_models_admin.py:4: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-____________ ERROR collecting tests/test_exchange_multicurrency.py _____________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_exchange_multicurrency.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_exchange_multicurrency.py:7: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-________________ ERROR collecting tests/test_gateways_admin.py _________________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_gateways_admin.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_gateways_admin.py:4: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-_____________________ ERROR collecting tests/test_main.py ______________________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_main.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_main.py:3: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-_____________ ERROR collecting tests/test_ocr_membership_quota.py ______________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_ocr_membership_quota.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_ocr_membership_quota.py:5: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-_________________ ERROR collecting tests/test_pricing_admin.py _________________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_pricing_admin.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_pricing_admin.py:4: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-________________ ERROR collecting tests/test_providers_admin.py ________________
-ImportError while importing test module '/home/runner/work/Athena/Athena/api/tests/test_providers_admin.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-api/tests/test_providers_admin.py:4: in <module>
-    from api.app.main import app
-E   ModuleNotFoundError: No module named 'api'
-=========================== short test summary info ============================
-ERROR api/tests/test_ai_models_admin.py
-ERROR api/tests/test_exchange_multicurrency.py
-ERROR api/tests/test_gateways_admin.py
-ERROR api/tests/test_main.py
-ERROR api/tests/test_ocr_membership_quota.py
-ERROR api/tests/test_pricing_admin.py
-ERROR api/tests/test_providers_admin.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 7 errors during collection !!!!!!!!!!!!!!!!!!!!
-7 errors in 0.25s
-Error: Process completed with exit code 2.
 
 
-Run actions/setup-node@v4
-Found in cache @ /opt/hostedtoolcache/node/20.19.5/x64
-Environment details
-Error: Unable to locate executable file: pnpm. Please verify either the file path exists or the file can be found within a directory specified by the PATH environment variable. Also check the file mode to verify the file is executable.
+Run flake8 api --count --select=E9,F63,F7,F82 --show-source --statistics
+0
+api/__init__.py:1:1: W391 blank line at end of file
+api/app/__init__.py:1:1: W391 blank line at end of file
+api/app/admin.py:28:128: E501 line too long (141 > 127 characters)
+api/app/admin.py:70:128: E501 line too long (136 > 127 characters)
+api/app/admin.py:77:128: E501 line too long (254 > 127 characters)
+api/app/admin.py:91:128: E501 line too long (153 > 127 characters)
+api/app/admin.py:98:128: E501 line too long (217 > 127 characters)
+api/app/admin.py:111:128: E501 line too long (145 > 127 characters)
+api/app/admin.py:148:128: E501 line too long (159 > 127 characters)
+api/app/admin.py:175:128: E501 line too long (243 > 127 characters)
+api/app/admin.py:245:128: E501 line too long (288 > 127 characters)
+api/app/admin.py:270:128: E501 line too long (198 > 127 characters)
+api/app/admin.py:289:128: E501 line too long (155 > 127 characters)
+api/app/admin.py:302:128: E501 line too long (135 > 127 characters)
+api/app/admin.py:330:128: E501 line too long (134 > 127 characters)
+api/app/admin.py:364:128: E501 line too long (162 > 127 characters)
+api/app/admin.py:399:128: E501 line too long (287 > 127 characters)
+api/app/admin_panel.py:30:128: E501 line too long (141 > 127 characters)
+api/app/admin_panel.py:62:128: E501 line too long (190 > 127 characters)
+api/app/admin_panel.py:75:128: E501 line too long (135 > 127 characters)
+api/app/admin_panel.py:116:128: E501 line too long (438 > 127 characters)
+api/app/admin_panel.py:154:128: E501 line too long (293 > 127 characters)
+api/app/admin_panel.py:197:128: E501 line too long (188 > 127 characters)
+api/app/admin_panel.py:233:128: E501 line too long (180 > 127 characters)
+api/app/admin_panel.py:276:128: E501 line too long (294 > 127 characters)
+api/app/admin_panel.py:297:128: E501 line too long (138 > 127 characters)
+api/app/ai.py:74:128: E501 line too long (170 > 127 characters)
+api/app/ai.py:82:36: E203 whitespace before ':'
+api/app/ai.py:87:31: E203 whitespace before ':'
+api/app/ai.py:97:128: E501 line too long (175 > 127 characters)
+api/app/ai.py:109:128: E501 line too long (288 > 127 characters)
+api/app/ai.py:138:128: E501 line too long (135 > 127 characters)
+api/app/ai.py:169:128: E501 line too long (285 > 127 characters)
+api/app/ai.py:182:128: E501 line too long (168 > 127 characters)
+api/app/auth.py:142:128: E501 line too long (217 > 127 characters)
+api/app/auth.py:212:128: E501 line too long (151 > 127 characters)
+api/app/billing.py:32:128: E501 line too long (135 > 127 characters)
+api/app/billing.py:37:128: E501 line too long (177 > 127 characters)
+api/app/billing.py:65:128: E501 line too long (217 > 127 characters)
+api/app/billing.py:96:128: E501 line too long (155 > 127 characters)
+api/app/billing.py:140:128: E501 line too long (244 > 127 characters)
+api/app/billing.py:187:128: E501 line too long (193 > 127 characters)
+api/app/billing.py:213:128: E501 line too long (132 > 127 characters)
+api/app/billing.py:226:128: E501 line too long (143 > 127 characters)
+api/app/billing.py:231:128: E501 line too long (151 > 127 characters)
+api/app/billing.py:238:128: E501 line too long (233 > 127 characters)
+api/app/billing.py:268:128: E501 line too long (135 > 127 characters)
+api/app/billing.py:273:128: E501 line too long (181 > 127 characters)
+api/app/billing.py:283:128: E501 line too long (185 > 127 characters)
+api/app/billing.py:291:1: C901 'exchange' is too complex (11)
+api/app/billing.py:307:128: E501 line too long (135 > 127 characters)
+api/app/billing.py:337:128: E501 line too long (243 > 127 characters)
+api/app/billing.py:347:128: E501 line too long (215 > 127 characters)
+api/app/billing.py:353:128: E501 line too long (220 > 127 characters)
+api/app/billing.py:362:128: E501 line too long (236 > 127 characters)
+api/app/billing.py:372:128: E501 line too long (219 > 127 characters)
+api/app/billing.py:378:128: E501 line too long (216 > 127 characters)
+api/app/billing.py:400:128: E501 line too long (135 > 127 characters)
+api/app/billing.py:407:128: E501 line too long (157 > 127 characters)
+api/app/billing.py:414:128: E501 line too long (208 > 127 characters)
+api/app/billing.py:422:128: E501 line too long (146 > 127 characters)
+api/app/billing.py:429:128: E501 line too long (213 > 127 characters)
+api/app/books.py:47:1: C901 '_quick_confidence' is too complex (11)
+api/app/books.py:96:1: C901 'upload_complete' is too complex (12)
+api/app/books.py:151:128: E501 line too long (165 > 127 characters)
+api/app/books.py:213:128: E501 line too long (177 > 127 characters)
+api/app/books.py:265:128: E501 line too long (172 > 127 characters)
+api/app/books.py:290:128: E501 line too long (201 > 127 characters)
+api/app/books.py:320:128: E501 line too long (142 > 127 characters)
+api/app/books.py:390:128: E501 line too long (158 > 127 characters)
+api/app/books.py:406:1: C901 'list_books' is too complex (16)
+api/app/books.py:423:128: E501 line too long (140 > 127 characters)
+api/app/books.py:429:128: E501 line too long (198 > 127 characters)
+api/app/books.py:509:1: C901 'get_book' is too complex (12)
+api/app/books.py:520:128: E501 line too long (139 > 127 characters)
+api/app/books.py:610:128: E501 line too long (152 > 127 characters)
+api/app/books.py:662:128: E501 line too long (177 > 127 characters)
+api/app/books.py:810:128: E501 line too long (204 > 127 characters)
+api/app/books.py:817:128: E501 line too long (187 > 127 characters)
+api/app/books.py:848:128: E501 line too long (205 > 127 characters)
+api/app/books.py:865:128: E501 line too long (175 > 127 characters)
+api/app/books.py:881:128: E501 line too long (140 > 127 characters)
+api/app/books.py:895:128: E501 line too long (188 > 127 characters)
+api/app/books.py:931:128: E501 line too long (178 > 127 characters)
+api/app/books.py:941:128: E501 line too long (281 > 127 characters)
+api/app/books.py:950:128: E501 line too long (143 > 127 characters)
+api/app/books.py:962:128: E501 line too long (173 > 127 characters)
+api/app/books.py:969:128: E501 line too long (151 > 127 characters)
+api/app/books.py:976:128: E501 line too long (233 > 127 characters)
+api/app/books.py:982:128: E501 line too long (183 > 127 characters)
+api/app/books.py:1012:128: E501 line too long (130 > 127 characters)
+api/app/books.py:1038:128: E501 line too long (140 > 127 characters)
+api/app/books.py:1141:128: E501 line too long (131 > 127 characters)
+api/app/books.py:1257:128: E501 line too long (141 > 127 characters)
+api/app/dict.py:38:128: E501 line too long (197 > 127 characters)
+api/app/dict.py:65:128: E501 line too long (189 > 127 characters)
+api/app/dict.py:87:128: E501 line too long (212 > 127 characters)
+api/app/dict.py:133:128: E501 line too long (218 > 127 characters)
+api/app/dict.py:162:128: E501 line too long (185 > 127 characters)
+api/app/docs.py:33:128: E501 line too long (137 > 127 characters)
+api/app/docs.py:57:128: E501 line too long (131 > 127 characters)
+api/app/export.py:40:128: E501 line too long (131 > 127 characters)
+api/app/export.py:72:128: E501 line too long (181 > 127 characters)
+api/app/export.py:111:128: E501 line too long (186 > 127 characters)
+api/app/main.py:148:128: E501 line too long (213 > 127 characters)
+api/app/notes.py:58:128: E501 line too long (171 > 127 characters)
+api/app/notes.py:78:128: E501 line too long (171 > 127 characters)
+api/app/notes.py:117:128: E501 line too long (176 > 127 characters)
+api/app/notes.py:135:128: E501 line too long (147 > 127 characters)
+api/app/notes.py:168:128: E501 line too long (287 > 127 characters)
+api/app/notes.py:184:128: E501 line too long (135 > 127 characters)
+api/app/notes.py:211:128: E501 line too long (316 > 127 characters)
+api/app/notes.py:218:128: E501 line too long (247 > 127 characters)
+api/app/notes.py:253:128: E501 line too long (172 > 127 characters)
+api/app/notes.py:302:128: E501 line too long (433 > 127 characters)
+api/app/notes.py:323:128: E501 line too long (135 > 127 characters)
+api/app/notes.py:346:128: E501 line too long (148 > 127 characters)
+api/app/notes.py:380:128: E501 line too long (262 > 127 characters)
+api/app/notes.py:395:128: E501 line too long (141 > 127 characters)
+api/app/notes.py:423:128: E501 line too long (206 > 127 characters)
+api/app/notes.py:483:128: E501 line too long (342 > 127 characters)
+api/app/notes.py:504:128: E501 line too long (145 > 127 characters)
+api/app/notes.py:528:128: E501 line too long (153 > 127 characters)
+api/app/ocr.py:27:128: E501 line too long (154 > 127 characters)
+api/app/ocr.py:39:1: C901 'complete_job' is too complex (12)
+api/app/ocr.py:52:128: E501 line too long (160 > 127 characters)
+api/app/ocr.py:58:128: E501 line too long (171 > 127 characters)
+api/app/ocr.py:90:128: E501 line too long (172 > 127 characters)
+api/app/ocr.py:100:128: E501 line too long (275 > 127 characters)
+api/app/ocr.py:108:128: E501 line too long (233 > 127 characters)
+api/app/ocr.py:116:128: E501 line too long (143 > 127 characters)
+api/app/ocr.py:131:128: E501 line too long (165 > 127 characters)
+api/app/ocr.py:138:128: E501 line too long (231 > 127 characters)
+api/app/ocr.py:162:128: E501 line too long (155 > 127 characters)
+api/app/ocr.py:169:128: E501 line too long (231 > 127 characters)
+api/app/ocr.py:175:128: E501 line too long (138 > 127 characters)
+api/app/ocr.py:191:128: E501 line too long (177 > 127 characters)
+api/app/pricing.py:23:128: E501 line too long (159 > 127 characters)
+api/app/pricing.py:77:128: E501 line too long (194 > 127 characters)
+api/app/pricing.py:110:128: E501 line too long (227 > 127 characters)
+api/app/profile.py:20:128: E501 line too long (157 > 127 characters)
+api/app/profile.py:51:128: E501 line too long (140 > 127 characters)
+api/app/profile.py:95:128: E501 line too long (145 > 127 characters)
+api/app/reader.py:31:128: E501 line too long (205 > 127 characters)
+api/app/reader.py:52:128: E501 line too long (141 > 127 characters)
+api/app/reader.py:61:128: E501 line too long (174 > 127 characters)
+api/app/reader.py:68:128: E501 line too long (147 > 127 characters)
+api/app/reader.py:74:128: E501 line too long (256 > 127 characters)
+api/app/reader.py:87:128: E501 line too long (178 > 127 characters)
+api/app/reader.py:93:128: E501 line too long (314 > 127 characters)
+api/app/reader.py:100:128: E501 line too long (151 > 127 characters)
+api/app/reader.py:106:128: E501 line too long (260 > 127 characters)
+api/app/reader.py:119:128: E501 line too long (419 > 127 characters)
+api/app/reader.py:135:128: E501 line too long (189 > 127 characters)
+api/app/reader.py:163:128: E501 line too long (175 > 127 characters)
+api/app/reader.py:191:128: E501 line too long (143 > 127 characters)
+api/app/realtime.py:30:128: E501 line too long (163 > 127 characters)
+api/app/realtime.py:46:128: E501 line too long (192 > 127 characters)
+api/app/realtime.py:53:1: C901 'ws_note' is too complex (17)
+api/app/search.py:16:1: C901 'search' is too complex (27)
+api/app/search.py:173:128: E501 line too long (200 > 127 characters)
+api/app/search.py:196:128: E501 line too long (210 > 127 characters)
+api/app/search.py:199:128: E501 line too long (140 > 127 characters)
+api/app/search.py:219:128: E501 line too long (156 > 127 characters)
+api/app/search.py:253:128: E501 line too long (182 > 127 characters)
+api/app/search.py:261:128: E501 line too long (194 > 127 characters)
+api/app/search.py:278:128: E501 line too long (146 > 127 characters)
+api/app/search.py:286:128: E501 line too long (158 > 127 characters)
+api/app/search.py:306:128: E501 line too long (150 > 127 characters)
+api/app/srs.py:45:128: E501 line too long (176 > 127 characters)
+api/app/srs.py:61:128: E501 line too long (290 > 127 characters)
+api/app/srs.py:96:128: E501 line too long (162 > 127 characters)
+api/app/srs.py:107:128: E501 line too long (182 > 127 characters)
+api/app/srs.py:123:128: E501 line too long (240 > 127 characters)
+api/app/tasks.py:89:128: E501 line too long (153 > 127 characters)
+api/app/tasks.py:134:128: E501 line too long (138 > 127 characters)
+api/app/tasks.py:159:128: E501 line too long (153 > 127 characters)
+api/app/tasks.py:205:128: E501 line too long (202 > 127 characters)
+api/app/translate.py:59:128: E501 line too long (198 > 127 characters)
+api/app/translate.py:80:128: E501 line too long (147 > 127 characters)
+api/app/translate.py:87:128: E501 line too long (200 > 127 characters)
+api/app/tts.py:47:128: E501 line too long (178 > 127 characters)
+api/app/tts.py:64:128: E501 line too long (141 > 127 characters)
+api/app/tts.py:68:128: E501 line too long (185 > 127 characters)
+api/app/tts.py:107:128: E501 line too long (203 > 127 characters)
+api/app/tts.py:118:128: E501 line too long (211 > 127 characters)
+8     C901 'exchange' is too complex (11)
+2     E203 whitespace before ':'
+174   E501 line too long (141 > 127 characters)
+2     W391 blank line at end of file
+186
+All done! ✨ 🍰 ✨
+46 files would be left unchanged.
+ERROR: /home/runner/work/Athena/Athena/api/app/notes.py Imports are incorrectly sorted and/or formatted.
+ERROR: /home/runner/work/Athena/Athena/api/app/books.py Imports are incorrectly sorted and/or formatted.
+Error: Process completed with exit code 1.
