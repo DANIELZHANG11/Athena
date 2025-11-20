@@ -1,9 +1,18 @@
-import os
+import os  # force update
 import uuid
 
 import redis
-from fastapi import (APIRouter, Body, Depends, File, Header, HTTPException,
-                     Query, Response, UploadFile)
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from sqlalchemy import text
 
 from .auth import require_user
@@ -11,8 +20,14 @@ from .celery_app import celery_app
 from .db import engine
 from .search_sync import delete_book as delete_book_from_index
 from .search_sync import index_book
-from .storage import (make_object_key, presigned_get, presigned_put, read_head,
-                      stat_etag, upload_bytes)
+from .storage import (
+    make_object_key,
+    presigned_get,
+    presigned_put,
+    read_head,
+    stat_etag,
+    upload_bytes,
+)
 from .ws import broadcast as ws_broadcast
 
 BOOKS_BUCKET = os.getenv("MINIO_BUCKET", "athena")

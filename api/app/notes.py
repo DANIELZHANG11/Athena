@@ -1,11 +1,10 @@
 import base64
-import os
+import os  # force update
 import uuid
 from datetime import timedelta
 
 import redis
-from fastapi import (APIRouter, Body, Depends, Header, HTTPException, Query,
-                     Response)
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from sqlalchemy import text
 
 from .auth import require_user
