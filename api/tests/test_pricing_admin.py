@@ -10,7 +10,9 @@ async def test_pricing_admin_and_user_rules(monkeypatch):
     monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "op@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "op@athena.local"}
+        )
         code = r.json()["data"]["dev_code"]
         r = await client.post(
             "/api/v1/auth/email/verify-code",
@@ -50,7 +52,9 @@ async def test_pricing_admin_and_user_rules(monkeypatch):
         )
         assert r.status_code == 200
 
-        r = await client.get("/api/v1/pricing/rules", params={"service_type": "OCR", "region": "CN"})
+        r = await client.get(
+            "/api/v1/pricing/rules", params={"service_type": "OCR", "region": "CN"}
+        )
         assert r.status_code == 200
         remark = r.json()["data"][0]["remark"]
         assert "0.06" in remark

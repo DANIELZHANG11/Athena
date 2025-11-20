@@ -22,7 +22,9 @@ _last_snapshot_at: dict[str, float] = {}
 
 async def _load_version(user_id: str, note_id: str) -> int:
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT COALESCE(MAX(version_number), 0) FROM note_versions WHERE owner_id = current_setting('app.user_id')::uuid AND note_id = cast(:nid as uuid)"
@@ -35,7 +37,9 @@ async def _load_version(user_id: str, note_id: str) -> int:
 
 async def _snapshot(user_id: str, note_id: str, version: int, update_bytes: bytes):
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         vid = str(uuid.uuid4())
         await conn.execute(
             text(
@@ -48,7 +52,9 @@ async def _snapshot(user_id: str, note_id: str, version: int, update_bytes: byte
 @router.websocket("/ws/notes/{note_id}")
 async def ws_note(websocket: WebSocket, note_id: str):
     await websocket.accept()
-    token = websocket.query_params.get("token") or websocket.query_params.get("access_token")
+    token = websocket.query_params.get("token") or websocket.query_params.get(
+        "access_token"
+    )
     if not token:
         await websocket.send_text(json.dumps({"type": "error", "code": "unauthorized"}))
         await websocket.close()
@@ -57,7 +63,9 @@ async def ws_note(websocket: WebSocket, note_id: str):
         payload = jwt.decode(token, AUTH_SECRET)
         user_id = payload["sub"]
     except Exception:
-        await websocket.send_text(json.dumps({"type": "error", "code": "invalid_token"}))
+        await websocket.send_text(
+            json.dumps({"type": "error", "code": "invalid_token"})
+        )
         await websocket.close()
         return
     if note_id not in _versions:
@@ -67,7 +75,9 @@ async def ws_note(websocket: WebSocket, note_id: str):
     if note_id not in _clients:
         _clients[note_id] = set()
     _clients[note_id].add(websocket)
-    await websocket.send_text(json.dumps({"type": "ready", "version": _versions[note_id]}))
+    await websocket.send_text(
+        json.dumps({"type": "ready", "version": _versions[note_id]})
+    )
     try:
         while True:
             msg = await websocket.receive_text()
@@ -76,7 +86,9 @@ async def ws_note(websocket: WebSocket, note_id: str):
                 client_ver = int(data.get("client_version") or 0)
                 upd_b64 = data.get("update") or ""
                 if _versions[note_id] > client_ver:
-                    await websocket.send_text(json.dumps({"type": "conflict", "version": _versions[note_id]}))
+                    await websocket.send_text(
+                        json.dumps({"type": "conflict", "version": _versions[note_id]})
+                    )
                     continue
                 upd_bytes = base64.b64decode(upd_b64)
                 _versions[note_id] = _versions[note_id] + 1
@@ -105,7 +117,9 @@ async def ws_note(websocket: WebSocket, note_id: str):
                     _counters[note_id] = 0
                     _last_snapshot_at[note_id] = time.monotonic()
             else:
-                await websocket.send_text(json.dumps({"type": "error", "code": "bad_message"}))
+                await websocket.send_text(
+                    json.dumps({"type": "error", "code": "bad_message"})
+                )
     except WebSocketDisconnect:
         pass
     finally:

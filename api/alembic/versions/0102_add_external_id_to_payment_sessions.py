@@ -16,8 +16,12 @@ depends_on = None
 
 
 def upgrade():
-    op.execute("ALTER TABLE IF EXISTS payment_sessions ADD COLUMN IF NOT EXISTS external_id TEXT")
+    op.execute(
+        "ALTER TABLE IF EXISTS payment_sessions ADD COLUMN IF NOT EXISTS external_id TEXT"
+    )
 
 
 def downgrade():
-    op.execute("ALTER TABLE IF EXISTS payment_sessions DROP COLUMN IF EXISTS external_id")
+    op.execute(
+        "ALTER TABLE IF EXISTS payment_sessions DROP COLUMN IF EXISTS external_id"
+    )

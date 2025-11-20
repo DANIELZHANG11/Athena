@@ -38,11 +38,15 @@ async def get_settings(auth=Depends(require_user)):
     _require_admin(auth[0])
     async with engine.begin() as conn:
         await _ensure(conn)
-        res = await conn.execute(text("SELECT key, value, updated_at FROM system_settings ORDER BY key"))
+        res = await conn.execute(
+            text("SELECT key, value, updated_at FROM system_settings ORDER BY key")
+        )
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"key": r[0], "value": r[1], "updated_at": str(r[2])} for r in rows],
+            "data": [
+                {"key": r[0], "value": r[1], "updated_at": str(r[2])} for r in rows
+            ],
         }
 
 
@@ -169,11 +173,16 @@ async def get_flags(auth=Depends(require_user)):
     _require_admin(auth[0])
     async with engine.begin() as conn:
         await _ensure(conn)
-        res = await conn.execute(text("SELECT key, is_enabled, updated_at FROM feature_flags ORDER BY key"))
+        res = await conn.execute(
+            text("SELECT key, is_enabled, updated_at FROM feature_flags ORDER BY key")
+        )
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"key": r[0], "is_enabled": bool(r[1]), "updated_at": str(r[2])} for r in rows],
+            "data": [
+                {"key": r[0], "is_enabled": bool(r[1]), "updated_at": str(r[2])}
+                for r in rows
+            ],
         }
 
 
@@ -199,12 +208,17 @@ async def list_prompts(auth=Depends(require_user)):
     async with engine.begin() as conn:
         await _ensure(conn)
         res = await conn.execute(
-            text("SELECT id::text, name, content, updated_at FROM prompt_templates ORDER BY updated_at DESC")
+            text(
+                "SELECT id::text, name, content, updated_at FROM prompt_templates ORDER BY updated_at DESC"
+            )
         )
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"id": r[0], "name": r[1], "content": r[2], "updated_at": str(r[3])} for r in rows],
+            "data": [
+                {"id": r[0], "name": r[1], "content": r[2], "updated_at": str(r[3])}
+                for r in rows
+            ],
         }
 
 

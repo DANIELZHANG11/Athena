@@ -11,7 +11,9 @@ router = APIRouter(prefix="/api/v1/docs", tags=["docs"])
 async def latest_snapshot(doc_id: str, auth=Depends(require_user)):
     async with engine.begin() as conn:
         res = await conn.execute(
-            text("SELECT snapshot, created_at FROM doc_snapshots WHERE doc_id = :d ORDER BY created_at DESC LIMIT 1"),
+            text(
+                "SELECT snapshot, created_at FROM doc_snapshots WHERE doc_id = :d ORDER BY created_at DESC LIMIT 1"
+            ),
             {"d": doc_id},
         )
         row = res.fetchone()

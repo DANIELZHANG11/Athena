@@ -33,8 +33,11 @@ async def search(
             qnote = {
                 "query": {
                     "bool": {
-                        "must": ([{"match": {"content": q}}] if q else [{"match_all": {}}]),
-                        "filter": [{"match": {"user_id": user_id}}] + ([{"terms": {"tag_ids": tag_ids}}] if tag_ids else []),
+                        "must": (
+                            [{"match": {"content": q}}] if q else [{"match_all": {}}]
+                        ),
+                        "filter": [{"match": {"user_id": user_id}}]
+                        + ([{"terms": {"tag_ids": tag_ids}}] if tag_ids else []),
                     }
                 },
                 "highlight": {"fields": {"content": {}}},
@@ -54,8 +57,13 @@ async def search(
             qhl = {
                 "query": {
                     "bool": {
-                        "must": ([{"match": {"text_content": q}}] if q else [{"match_all": {}}]),
-                        "filter": [{"match": {"user_id": user_id}}] + ([{"terms": {"tag_ids": tag_ids}}] if tag_ids else []),
+                        "must": (
+                            [{"match": {"text_content": q}}]
+                            if q
+                            else [{"match_all": {}}]
+                        ),
+                        "filter": [{"match": {"user_id": user_id}}]
+                        + ([{"terms": {"tag_ids": tag_ids}}] if tag_ids else []),
                     }
                 },
                 "highlight": {"fields": {"text_content": {}}},
@@ -124,18 +132,30 @@ async def search(
                         elif k == "highlight":
                             fragments = hl.get("text_content", []) or []
                         else:
-                            fragments = (hl.get("title", []) or []) + (hl.get("author", []) or [])
+                            fragments = (hl.get("title", []) or []) + (
+                                hl.get("author", []) or []
+                            )
                         items.append(
                             {
                                 "kind": k,
                                 "id": src.get("id"),
-                                ("content" if k == "note" else ("comment" if k == "highlight" else "title")): (
+                                (
+                                    "content"
+                                    if k == "note"
+                                    else ("comment" if k == "highlight" else "title")
+                                ): (
                                     src.get("content")
                                     if k == "note"
-                                    else (src.get("text_content") if k == "highlight" else src.get("title"))
+                                    else (
+                                        src.get("text_content")
+                                        if k == "highlight"
+                                        else src.get("title")
+                                    )
                                 ),
                                 ("book_id" if k != "book" else "author"): (
-                                    src.get("book_id") if k != "book" else src.get("author")
+                                    src.get("book_id")
+                                    if k != "book"
+                                    else src.get("author")
                                 ),
                                 "score": float(h.get("_score") or 0),
                                 "highlight": {"fragments": fragments},
@@ -146,7 +166,9 @@ async def search(
                 used_es = False
     if not used_es:
         async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
             if kind in (None, "note"):
                 base = "SELECT 'note' as kind, id::text, content, book_id::text, updated_at, version, 0 AS score FROM notes WHERE user_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL"
                 params = {"q": q, "limit": limit, "offset": offset}
@@ -213,7 +235,9 @@ async def search(
                         }
                     )
     if response is not None:
-        response.headers["X-Search-Engine"] = "elasticsearch" if used_es else "postgres-tsvector"
+        response.headers["X-Search-Engine"] = (
+            "elasticsearch" if used_es else "postgres-tsvector"
+        )
     return {"status": "success", "data": items}
 
 
@@ -221,7 +245,9 @@ async def search(
 async def reindex(limit: int = Query(100, ge=1, le=1000), auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         resn = await conn.execute(
             text(
                 "SELECT id::text, book_id::text, content FROM notes WHERE user_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT :limit"
@@ -242,7 +268,9 @@ async def reindex(limit: int = Query(100, ge=1, le=1000), auth=Depends(require_u
 
 
 @router.post("/reindex_all")
-async def reindex_all(limit: int = Query(1000, ge=1, le=5000), auth=Depends(require_user)):
+async def reindex_all(
+    limit: int = Query(1000, ge=1, le=5000), auth=Depends(require_user)
+):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
         resn = await conn.execute(
@@ -265,10 +293,14 @@ async def reindex_all(limit: int = Query(1000, ge=1, le=5000), auth=Depends(requ
 
 
 @router.post("/reindex_books")
-async def reindex_books(limit: int = Query(1000, ge=1, le=5000), auth=Depends(require_user)):
+async def reindex_books(
+    limit: int = Query(1000, ge=1, le=5000), auth=Depends(require_user)
+):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         resb = await conn.execute(
             text(
                 "SELECT id::text, title, author FROM books WHERE user_id = current_setting('app.user_id')::uuid ORDER BY updated_at DESC LIMIT :limit"

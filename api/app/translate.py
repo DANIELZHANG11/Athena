@@ -51,7 +51,9 @@ async def translate(body: dict = Body(...), auth=Depends(require_user)):
     if not text_in:
         raise HTTPException(status_code=400, detail="invalid_text")
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT price_amount, unit_size, currency FROM pricing_rules WHERE service_type = 'AI_CALL' AND unit_type IN ('CHARS','TOKENS') AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1"
@@ -66,7 +68,9 @@ async def translate(body: dict = Body(...), auth=Depends(require_user)):
             cur = rule[2]
         if amt > 0:
             bal = await conn.execute(
-                text("SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid")
+                text(
+                    "SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"
+                )
             )
             b = bal.fetchone()
             if not b or int(b[0]) < amt:
@@ -86,7 +90,9 @@ async def translate(body: dict = Body(...), auth=Depends(require_user)):
             )
     out = _openrouter_translate(text_in, target) or _mock_translate(text_in, target)
     key = make_object_key(user_id, "translation.txt")
-    upload_bytes(os.getenv("MINIO_BUCKET", "athena"), key, out.encode("utf-8"), "text/plain")
+    upload_bytes(
+        os.getenv("MINIO_BUCKET", "athena"), key, out.encode("utf-8"), "text/plain"
+    )
     return {
         "status": "success",
         "data": {

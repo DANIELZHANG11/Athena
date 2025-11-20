@@ -22,7 +22,9 @@ async def start(body: dict = Body(...), auth=Depends(require_user)):
     device_id = body.get("device_id") or ""
     sid = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
 
         await conn.execute(
             text(
@@ -41,7 +43,9 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
     progress = float(body.get("progress") or 0)
     last_location = body.get("last_location") or None
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
 
         res = await conn.execute(
             text(
@@ -72,7 +76,9 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
                 {"d": delta_ms},
             )
         else:
-            midnight = datetime.combine(now_ts.date(), datetime.min.time(), tzinfo=timezone.utc)
+            midnight = datetime.combine(
+                now_ts.date(), datetime.min.time(), tzinfo=timezone.utc
+            )
             ms_prev = int(max(0, (midnight - prev_ts).total_seconds() * 1000))
             ms_now = max(0, delta_ms - ms_prev)
             if ms_prev > 0:
@@ -103,7 +109,11 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
                 )
         import json as _j
 
-        loc = _j.dumps(last_location) if isinstance(last_location, (dict, list)) else last_location
+        loc = (
+            _j.dumps(last_location)
+            if isinstance(last_location, (dict, list))
+            else last_location
+        )
         await conn.execute(
             text(
                 "INSERT INTO reading_progress(user_id, book_id, progress, updated_at, last_location) SELECT current_setting('app.user_id')::uuid, s.book_id, :p, now(), cast(:loc as jsonb) FROM reading_sessions s WHERE s.id = cast(:id as uuid) ON CONFLICT (user_id, book_id) DO UPDATE SET progress = EXCLUDED.progress, updated_at = now(), last_location = COALESCE(EXCLUDED.last_location, reading_progress.last_location)"
@@ -117,7 +127,9 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
 async def list_sessions(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, book_id::text, device_id, total_ms, last_heartbeat FROM reading_sessions WHERE user_id = current_setting('app.user_id')::uuid ORDER BY last_heartbeat DESC"
@@ -143,7 +155,9 @@ async def list_sessions(auth=Depends(require_user)):
 async def get_progress(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT book_id::text, progress, updated_at, last_location FROM reading_progress WHERE user_id = current_setting('app.user_id')::uuid ORDER BY updated_at DESC"
@@ -169,7 +183,9 @@ async def stop(body: dict = Body(...), auth=Depends(require_user)):
     user_id, _ = auth
     sid = body.get("session_id")
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         await conn.execute(
             text(
                 "UPDATE reading_sessions SET is_active = FALSE WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
@@ -186,7 +202,9 @@ async def alias_start(body: dict = Body(...), auth=Depends(require_user)):
 
 
 @alias.post("/{session_id}/heartbeat")
-async def alias_heartbeat(session_id: str, body: dict = Body(...), auth=Depends(require_user)):
+async def alias_heartbeat(
+    session_id: str, body: dict = Body(...), auth=Depends(require_user)
+):
     b = dict(body or {})
     b["session_id"] = session_id
     await heartbeat(b, auth)

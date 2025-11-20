@@ -10,7 +10,9 @@ async def test_ai_models_upsert_list(monkeypatch):
     monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "ai@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "ai@athena.local"}
+        )
         code = r.json()["data"]["dev_code"]
         r = await client.post(
             "/api/v1/auth/email/verify-code",

@@ -57,7 +57,9 @@ def presigned_get(bucket: str, key: str, expires_hours: int = 24) -> str:
     return _rewrite_public(url)
 
 
-def upload_bytes(bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+def upload_bytes(
+    bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream"
+) -> None:
     client = get_s3()
     ensure_bucket(client, bucket)
     client.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)

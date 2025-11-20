@@ -18,7 +18,9 @@ async def test_ocr_quota_membership(monkeypatch):
     monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "user@athena.local"}
+        )
         code = r.json()["data"]["dev_code"]
         r = await client.post(
             "/api/v1/auth/email/verify-code",
@@ -47,7 +49,9 @@ async def test_ocr_quota_membership(monkeypatch):
         )
         assert r.status_code == 200
 
-        r = await client.post("/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"})
+        r = await client.post(
+            "/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"}
+        )
         jid = r.json()["data"]["id"]
         await client.post(
             "/api/v1/billing/debug/grant-credits",
@@ -55,9 +59,19 @@ async def test_ocr_quota_membership(monkeypatch):
             json={"kind": "credits", "amount": 10000},
         )
         r = await client.get("/api/v1/billing/ledger", headers=h)
-        before = len(r.json()["data"]["data"]) if isinstance(r.json()["data"], dict) else len(r.json()["data"])
-        r = await client.post("/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3})
+        before = (
+            len(r.json()["data"]["data"])
+            if isinstance(r.json()["data"], dict)
+            else len(r.json()["data"])
+        )
+        r = await client.post(
+            "/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3}
+        )
         assert r.status_code == 200
         r = await client.get("/api/v1/billing/ledger", headers=h)
-        after = len(r.json()["data"]["data"]) if isinstance(r.json()["data"], dict) else len(r.json()["data"])
+        after = (
+            len(r.json()["data"]["data"])
+            if isinstance(r.json()["data"], dict)
+            else len(r.json()["data"])
+        )
         assert after >= before + 1

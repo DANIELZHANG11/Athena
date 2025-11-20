@@ -33,7 +33,9 @@ def _delete(url: str):
     retry_backoff=True,
     retry_kwargs={"max_retries": 8},
 )
-def task_index_note(self, id: str, user_id: str, book_id: str, content: str, tags: list[str] | None):
+def task_index_note(
+    self, id: str, user_id: str, book_id: str, content: str, tags: list[str] | None
+):
     if not ES_URL:
         return
     doc = {
@@ -142,7 +144,9 @@ def task_delete_book(self, id: str):
     _delete(url)
 
 
-def index_note(id: str, user_id: str, book_id: str, content: str, tags: list[str] | None):
+def index_note(
+    id: str, user_id: str, book_id: str, content: str, tags: list[str] | None
+):
     if not ES_URL:
         return
     try:

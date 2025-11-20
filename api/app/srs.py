@@ -36,7 +36,9 @@ async def create_card(body: dict = Body(...), auth=Depends(require_user)):
         raise HTTPException(status_code=400, detail="invalid_payload")
     rid = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         next_at = datetime.utcnow() + timedelta(days=1)
         await conn.execute(
             text(
@@ -51,7 +53,9 @@ async def create_card(body: dict = Body(...), auth=Depends(require_user)):
 async def list_due(limit: int = 50, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, front, back, deck_name, ease_factor, interval_days, repetitions, next_review_at FROM srs_reviews WHERE owner_id = current_setting('app.user_id')::uuid AND (next_review_at IS NULL OR next_review_at <= now()) ORDER BY next_review_at ASC NULLS FIRST LIMIT :l"
@@ -84,7 +88,9 @@ async def answer(id: str, body: dict = Body(...), auth=Depends(require_user)):
     if grade < 0 or grade > 5:
         raise HTTPException(status_code=400, detail="invalid_grade")
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT ease_factor, repetitions, interval_days FROM srs_reviews WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
@@ -109,7 +115,9 @@ async def answer(id: str, body: dict = Body(...), auth=Depends(require_user)):
 async def history(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, front, back, deck_name, last_grade, repetitions, interval_days, next_review_at, updated_at FROM srs_reviews WHERE owner_id = current_setting('app.user_id')::uuid ORDER BY updated_at DESC LIMIT :l OFFSET :o"

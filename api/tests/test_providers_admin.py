@@ -10,7 +10,9 @@ async def test_providers_crud(monkeypatch):
     monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "admin@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "admin@athena.local"}
+        )
         assert r.status_code == 200
         code = r.json()["data"]["dev_code"]
         r = await client.post(
@@ -36,7 +38,9 @@ async def test_providers_crud(monkeypatch):
             )
             assert r.status_code == 200
 
-        r = await client.get("/api/v1/admin/providers", headers=h, params={"service_type": "OCR"})
+        r = await client.get(
+            "/api/v1/admin/providers", headers=h, params={"service_type": "OCR"}
+        )
         assert r.status_code == 200
         rows = r.json()["data"]
         assert len(rows) >= 1

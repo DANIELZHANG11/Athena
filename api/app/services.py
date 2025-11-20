@@ -41,7 +41,9 @@ class MockTTS:
         captions = []
         t = 0.0
         for chunk in text.split():
-            captions.append({"start": round(t, 2), "end": round(t + 0.2, 2), "text": chunk})
+            captions.append(
+                {"start": round(t, 2), "end": round(t + 0.2, 2), "text": chunk}
+            )
             t += 0.2
         return buf.getvalue(), captions
 
@@ -50,7 +52,9 @@ class PaddleOCREngine:
     def __init__(self, lang: str | None = None):
         from paddleocr import PaddleOCR
 
-        self.ocr = PaddleOCR(use_angle_cls=True, lang=lang or os.getenv("OCR_LANG", "ch"))
+        self.ocr = PaddleOCR(
+            use_angle_cls=True, lang=lang or os.getenv("OCR_LANG", "ch")
+        )
 
     def _fetch_image(self, bucket: str, key: str) -> Any:
         import numpy as np
@@ -59,7 +63,11 @@ class PaddleOCREngine:
 
         from .storage import presigned_get
 
-        url = key if isinstance(key, str) and key.startswith("http") else presigned_get(bucket, key)
+        url = (
+            key
+            if isinstance(key, str) and key.startswith("http")
+            else presigned_get(bucket, key)
+        )
         data = requests.get(url, timeout=30).content
         img = Image.open(io.BytesIO(data)).convert("RGB")
         return np.array(img)
@@ -84,7 +92,9 @@ class LocalEmbedder:
     def __init__(self):
         from FlagEmbedding import BGEM3Embedding
 
-        cache = os.getenv("HF_HOME") or os.getenv("TRANSFORMERS_CACHE") or "/app/.hf_cache"
+        cache = (
+            os.getenv("HF_HOME") or os.getenv("TRANSFORMERS_CACHE") or "/app/.hf_cache"
+        )
         os.environ["HF_HOME"] = cache
         os.environ["TRANSFORMERS_CACHE"] = cache
         os.environ["HUGGINGFACE_HUB_CACHE"] = cache

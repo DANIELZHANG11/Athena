@@ -40,7 +40,9 @@ async def tts(body: dict = Body(...), auth=Depends(require_user)):
     if not input_text:
         raise HTTPException(status_code=400, detail="invalid_text")
     async with engine.begin() as conn:
-        await conn.exec_driver_sql("SELECT set_config('app.user_id', '%s', true)" % user_id)
+        await conn.exec_driver_sql(
+            "SELECT set_config('app.user_id', '%s', true)" % user_id
+        )
         res = await conn.exec_driver_sql(
             "SELECT price_amount, unit_size, currency FROM pricing_rules WHERE service_type = 'TTS' AND unit_type = 'CHARS' AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1"
         )
@@ -76,7 +78,8 @@ async def tts(body: dict = Body(...), auth=Depends(require_user)):
         req_id = str(_uuid.uuid4())
         async with engine.begin() as conn:
             await conn.exec_driver_sql(
-                "INSERT INTO tts_requests(id, user_id, duration_ms) VALUES ('%s', '%s'::uuid, 0)" % (req_id, user_id)
+                "INSERT INTO tts_requests(id, user_id, duration_ms) VALUES ('%s', '%s'::uuid, 0)"
+                % (req_id, user_id)
             )
     except Exception:
         pass
@@ -97,7 +100,9 @@ async def tts_heartbeat(body: dict = Body(...), auth=Depends(require_user)):
     if not req_id or delta_ms < 0:
         raise HTTPException(status_code=400, detail="invalid_request")
     async with engine.begin() as conn:
-        await conn.exec_driver_sql("SELECT set_config('app.user_id', '%s', true)" % user_id)
+        await conn.exec_driver_sql(
+            "SELECT set_config('app.user_id', '%s', true)" % user_id
+        )
         res = await conn.exec_driver_sql(
             "UPDATE tts_requests SET duration_ms = COALESCE(duration_ms,0) + %s, updated_at = now() WHERE id = cast('%s' as uuid) AND user_id = current_setting('app.user_id')::uuid RETURNING duration_ms"
             % (delta_ms, req_id)

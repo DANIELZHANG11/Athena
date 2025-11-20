@@ -53,7 +53,9 @@ def analyze_book_type(book_id: str, user_id: str):
 
     async def _run():
         async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
             res = await conn.execute(
                 text("SELECT minio_key FROM books WHERE id = cast(:id as uuid)"),
                 {"id": book_id},
@@ -104,7 +106,9 @@ def deep_analyze_book(book_id: str, user_id: str):
 
     async def _run():
         async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
             res = await conn.execute(
                 text("SELECT minio_key FROM books WHERE id = cast(:id as uuid)"),
                 {"id": book_id},
@@ -120,7 +124,9 @@ def deep_analyze_book(book_id: str, user_id: str):
             upload_bytes(
                 BUCKET,
                 rep_key,
-                json.dumps({"is_image_based": img, "confidence": conf, "ocr": ocr_res}).encode("utf-8"),
+                json.dumps(
+                    {"is_image_based": img, "confidence": conf, "ocr": ocr_res}
+                ).encode("utf-8"),
                 "application/json",
             )
             await conn.execute(
@@ -177,7 +183,9 @@ def generate_srs_card(highlight_id: str):
     async def _run():
         async with engine.begin() as conn:
             res = await conn.execute(
-                text("SELECT user_id::text, comment FROM highlights WHERE id = cast(:id as uuid)"),
+                text(
+                    "SELECT user_id::text, comment FROM highlights WHERE id = cast(:id as uuid)"
+                ),
                 {"id": highlight_id},
             )
             row = res.fetchone()

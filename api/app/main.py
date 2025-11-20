@@ -118,19 +118,31 @@ def root():
 async def rls_echo(x_user_id: str = Header(None), x_role: str = Header(None)):
     async with engine.begin() as conn:
         if x_user_id:
-            await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": x_user_id})
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": x_user_id}
+            )
         if x_role:
-            await conn.execute(text("SELECT set_config('app.role', :v, true)"), {"v": x_role})
-        res = await conn.execute(text("SELECT current_setting('app.user_id', true), current_setting('app.role', true)"))
+            await conn.execute(
+                text("SELECT set_config('app.role', :v, true)"), {"v": x_role}
+            )
+        res = await conn.execute(
+            text(
+                "SELECT current_setting('app.user_id', true), current_setting('app.role', true)"
+            )
+        )
         row = res.fetchone()
         return {"user_id": row[0], "role": row[1]}
 
 
 @app.post("/rls/progress")
-async def rls_progress(x_user_id: str = Header(None), book_id: str = "00000000-0000-0000-0000-000000000001"):
+async def rls_progress(
+    x_user_id: str = Header(None), book_id: str = "00000000-0000-0000-0000-000000000001"
+):
     async with engine.begin() as conn:
         if x_user_id:
-            await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": x_user_id})
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": x_user_id}
+            )
         await conn.execute(
             text(
                 "INSERT INTO reading_progress(user_id, book_id, progress) VALUES (cast(:u as uuid), cast(:b as uuid), 0.5) ON CONFLICT (user_id, book_id) DO UPDATE SET progress=EXCLUDED.progress, updated_at=now()"
@@ -143,7 +155,10 @@ async def rls_progress(x_user_id: str = Header(None), book_id: str = "00000000-0
             )
         )
         rows = res.fetchall()
-        return [{"user_id": str(r[0]), "book_id": str(r[1]), "progress": float(r[2])} for r in rows]
+        return [
+            {"user_id": str(r[0]), "book_id": str(r[1]), "progress": float(r[2])}
+            for r in rows
+        ]
 
 
 @app.get("/error")

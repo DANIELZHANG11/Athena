@@ -132,7 +132,9 @@ async def verify_email_code(payload: dict = Body(...)):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
         # 查或建用户（幂等）
-        res = await conn.execute(text("SELECT id::text FROM users WHERE email = :email"), {"email": addr})
+        res = await conn.execute(
+            text("SELECT id::text FROM users WHERE email = :email"), {"email": addr}
+        )
         row = res.fetchone()
         if not row:
             await conn.execute(
@@ -141,11 +143,15 @@ async def verify_email_code(payload: dict = Body(...)):
                 ),
                 {"uid": user_id, "email": addr},
             )
-            res = await conn.execute(text("SELECT id::text FROM users WHERE email = :email"), {"email": addr})
+            res = await conn.execute(
+                text("SELECT id::text FROM users WHERE email = :email"), {"email": addr}
+            )
             row = res.fetchone()
         user_id = row[0]
         await conn.execute(
-            text("INSERT INTO user_sessions(id, user_id) VALUES (cast(:id as uuid), cast(:uid as uuid))"),
+            text(
+                "INSERT INTO user_sessions(id, user_id) VALUES (cast(:id as uuid), cast(:uid as uuid))"
+            ),
             {"id": session_id, "uid": user_id},
         )
     tokens = issue_tokens(user_id, session_id)
@@ -186,7 +192,9 @@ async def logout(body: dict = Body(...), auth=Depends(require_user)):
     r.delete(f"refresh_session:{session_id}")
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE user_sessions SET revoked = TRUE WHERE id = cast(:id as uuid) AND user_id = cast(:uid as uuid)"),
+            text(
+                "UPDATE user_sessions SET revoked = TRUE WHERE id = cast(:id as uuid) AND user_id = cast(:uid as uuid)"
+            ),
             {"id": session_id, "uid": user_id},
         )
     return {"status": "success"}
@@ -196,7 +204,9 @@ async def logout(body: dict = Body(...), auth=Depends(require_user)):
 async def list_sessions(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, revoked, created_at FROM user_sessions WHERE user_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC"
@@ -205,7 +215,10 @@ async def list_sessions(auth=Depends(require_user)):
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"id": r[0], "is_active": not bool(r[1]), "created_at": str(r[2])} for r in rows],
+            "data": [
+                {"id": r[0], "is_active": not bool(r[1]), "created_at": str(r[2])}
+                for r in rows
+            ],
         }
 
 

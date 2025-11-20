@@ -3,7 +3,9 @@ import os
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://athena:athena_dev@postgres:5432/athena")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql+asyncpg://athena:athena_dev@postgres:5432/athena"
+)
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

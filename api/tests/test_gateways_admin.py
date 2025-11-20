@@ -11,7 +11,9 @@ async def test_payment_gateways_crud(monkeypatch):
     app.dependency_overrides[require_admin] = lambda: True
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "pay@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "pay@athena.local"}
+        )
         code = r.json()["data"]["dev_code"]
         r = await client.post(
             "/api/v1/auth/email/verify-code",

@@ -15,7 +15,9 @@ async def _ensure(conn):
 
 
 @router.get("/rules")
-async def list_rules(service_type: str | None = Query(None), region: str | None = Query(None)):
+async def list_rules(
+    service_type: str | None = Query(None), region: str | None = Query(None)
+):
     async with engine.begin() as conn:
         await _ensure(conn)
         base = "SELECT id::text, service_type, unit_type, unit_size, price_amount, currency, region, remark_template FROM pricing_rules WHERE is_active = TRUE"
@@ -180,7 +182,9 @@ async def admin_delete(rule_id: str, auth=Depends(require_user)):
     async with engine.begin() as conn:
         await _ensure(conn)
         await conn.execute(
-            text("UPDATE pricing_rules SET is_active = FALSE, updated_at = now() WHERE id = cast(:id as uuid)"),
+            text(
+                "UPDATE pricing_rules SET is_active = FALSE, updated_at = now() WHERE id = cast(:id as uuid)"
+            ),
             {"id": rule_id},
         )
     return {"status": "success"}

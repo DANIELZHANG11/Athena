@@ -142,7 +142,9 @@ async def list_conversations(auth=Depends(require_user)):
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"id": r[0], "title": r[1], "created_at": str(r[2])} for r in rows],
+            "data": [
+                {"id": r[0], "title": r[1], "created_at": str(r[2])} for r in rows
+            ],
         }
 
 
@@ -157,7 +159,9 @@ async def create_conversation(body: dict = Body({}), auth=Depends(require_user))
     book_ids = (body or {}).get("book_ids") or []
     async with engine.begin() as conn:
         await conn.execute(
-            text("INSERT INTO ai_conversations(id, owner_id, title) VALUES (cast(:id as uuid), cast(:uid as uuid), :t)"),
+            text(
+                "INSERT INTO ai_conversations(id, owner_id, title) VALUES (cast(:id as uuid), cast(:uid as uuid), :t)"
+            ),
             {"id": cid, "uid": user_id, "t": title},
         )
         await conn.execute(
@@ -182,5 +186,7 @@ async def list_messages(conversation_id: str, auth=Depends(require_user)):
         rows = res.fetchall()
         return {
             "status": "success",
-            "data": [{"role": r[0], "content": r[1], "created_at": str(r[2])} for r in rows],
+            "data": [
+                {"role": r[0], "content": r[1], "created_at": str(r[2])} for r in rows
+            ],
         }

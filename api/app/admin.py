@@ -354,7 +354,9 @@ async def credits_ledger(
 
 
 @router.get("/pricing/regions")
-async def list_regional_prices(limit: int = 50, offset: int = 0, _=Depends(require_admin)):
+async def list_regional_prices(
+    limit: int = 50, offset: int = 0, _=Depends(require_admin)
+):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.role', 'admin', true)"))
         res = await conn.execute(

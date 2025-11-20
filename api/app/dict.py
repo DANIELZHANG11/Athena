@@ -30,7 +30,9 @@ async def upload_init(body: dict = Body(...), auth=Depends(require_user)):
     key = make_object_key(user_id, f"dict-{pid}.bin")
     put_url = presigned_put(os.getenv("MINIO_BUCKET", "athena"), key)
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         await conn.execute(
             text(
                 "INSERT INTO dictionary_packages(id, owner_id, name, lang, version, minio_key, status) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :n, :l, :v, :k, 'uploading')"
@@ -55,7 +57,9 @@ async def upload_complete(
         if v:
             return {"status": "success"}
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "UPDATE dictionary_packages SET status = 'ready', updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL"
@@ -65,7 +69,9 @@ async def upload_complete(
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="not_found")
     if idempotency_key:
-        r.setex(f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), pid)
+        r.setex(
+            f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), pid
+        )
     return {"status": "success"}
 
 
@@ -73,7 +79,9 @@ async def upload_complete(
 async def list_packages(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, name, lang, version, minio_key, status, updated_at FROM dictionary_packages WHERE owner_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL ORDER BY updated_at DESC"
@@ -116,7 +124,9 @@ async def lookup(
             return {"status": "success", "data": {"definition": v}}
     definition = None
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         did = str(uuid.uuid4())
         await conn.execute(
             text(
@@ -144,7 +154,9 @@ async def lookup(
 async def history(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         res = await conn.execute(
             text(
                 "SELECT id::text, word, lang, definition, created_at FROM dict_history WHERE owner_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC LIMIT :l OFFSET :o"

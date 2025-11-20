@@ -11,7 +11,9 @@ router = APIRouter(prefix="/api/v1/profile", tags=["profile"])
 async def get_me(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         try:
             res = await conn.execute(
                 text(
@@ -85,7 +87,9 @@ async def patch_me(
         raise HTTPException(status_code=428, detail="missing_if_match")
     display_name = body.get("display_name")
     async with engine.begin() as conn:
-        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
         await conn.execute(
             text(
                 "UPDATE users SET display_name = COALESCE(:dn, display_name), updated_at = now() WHERE id = current_setting('app.user_id')::uuid"
