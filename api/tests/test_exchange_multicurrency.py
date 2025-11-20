@@ -15,7 +15,9 @@ async def test_exchange_wallet_multicurrency(monkeypatch):
     monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "test@athena.local"})
+        r = await client.post(
+            "/api/v1/auth/email/send-code", json={"email": "test@athena.local"}
+        )
         assert r.status_code == 200
         dev_code = r.json()["data"].get("dev_code")
         assert dev_code
@@ -28,7 +30,9 @@ async def test_exchange_wallet_multicurrency(monkeypatch):
         auth = {"Authorization": f"Bearer {tokens['access_token']}"}
 
         settings = {"wallet_exchange_rate": {"CNY": 100, "USD": 20000, "default": 100}}
-        r = await client.put("/api/v1/admin/system/settings", headers=auth, json=settings)
+        r = await client.put(
+            "/api/v1/admin/system/settings", headers=auth, json=settings
+        )
         assert r.status_code == 200
 
         payload = {

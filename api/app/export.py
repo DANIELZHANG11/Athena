@@ -128,7 +128,10 @@ async def export_ai(
         upload_bytes(bucket, key, text_content.encode("utf-8"), "text/plain")
     elif format in ("md", "markdown"):
         md = "# AI Conversation\n\n" + "\n\n".join(
-            ["## " + line.split("\n", 1)[0] + "\n" + line.split("\n", 1)[1] for line in lines]
+            [
+                "## " + line.split("\n", 1)[0] + "\n" + line.split("\n", 1)[1]
+                for line in lines
+            ]
         )
         upload_bytes(bucket, key, md.encode("utf-8"), "text/markdown")
     elif format == "pdf":
