@@ -8,10 +8,9 @@ Create Date: 2025-11-17
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision = '0102_ext_id_payment_sessions'
-down_revision = '0101_add_books_source_etag'
+revision = "0102_ext_id_payment_sessions"
+down_revision = "0101_add_books_source_etag"
 branch_labels = None
 depends_on = None
 

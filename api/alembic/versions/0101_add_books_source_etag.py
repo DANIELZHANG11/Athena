@@ -8,10 +8,11 @@ Create Date: 2025-11-16
 
 from alembic import op
 
-revision = '0101_add_books_source_etag'
-down_revision = '0100_squash_baseline'
+revision = "0101_add_books_source_etag"
+down_revision = "0100_squash_baseline"
 branch_labels = None
 depends_on = None
+
 
 def upgrade():
     op.execute(
@@ -23,6 +24,7 @@ def upgrade():
           WHERE source_etag IS NOT NULL;
         """
     )
+
 
 def downgrade():
     op.execute(

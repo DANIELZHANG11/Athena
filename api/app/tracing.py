@@ -1,11 +1,12 @@
 import os
 import time
-import uuid
+
 from fastapi import Request
-from opentracing import Tracer
 from jaeger_client import Config
+from opentracing import Tracer
 
 _tracer: Tracer | None = None
+
 
 def init_tracer():
     global _tracer
@@ -13,12 +14,16 @@ def init_tracer():
         return
     host = os.getenv("JAEGER_HOST", "jaeger")
     service = os.getenv("SERVICE_NAME", "athena-api")
-    cfg = Config(config={
-        'sampler': {'type': 'const', 'param': 1},
-        'local_agent': {'reporting_host': host, 'reporting_port': 6831},
-        'logging': False,
-    }, service_name=service)
+    cfg = Config(
+        config={
+            "sampler": {"type": "const", "param": 1},
+            "local_agent": {"reporting_host": host, "reporting_port": 6831},
+            "logging": False,
+        },
+        service_name=service,
+    )
     _tracer = cfg.initialize_tracer()
+
 
 async def tracer_middleware(request: Request, call_next):
     if _tracer is None:

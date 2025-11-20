@@ -1,12 +1,13 @@
-import os
-import json
 import base64
-import uuid
+import json
+import os
 import time
-from datetime import timedelta
+import uuid
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import jwt
 from sqlalchemy import text
+
 from .db import engine
 
 router = APIRouter()
@@ -18,18 +19,31 @@ _versions: dict[str, int] = {}
 _counters: dict[str, int] = {}
 _last_snapshot_at: dict[str, float] = {}
 
+
 async def _load_version(user_id: str, note_id: str) -> int:
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
-        res = await conn.execute(text("SELECT COALESCE(MAX(version_number), 0) FROM note_versions WHERE owner_id = current_setting('app.user_id')::uuid AND note_id = cast(:nid as uuid)"), {"nid": note_id})
+        res = await conn.execute(
+            text(
+                "SELECT COALESCE(MAX(version_number), 0) FROM note_versions WHERE owner_id = current_setting('app.user_id')::uuid AND note_id = cast(:nid as uuid)"
+            ),
+            {"nid": note_id},
+        )
         row = res.fetchone()
         return int(row[0] or 0)
+
 
 async def _snapshot(user_id: str, note_id: str, version: int, update_bytes: bytes):
     async with engine.begin() as conn:
         await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         vid = str(uuid.uuid4())
-        await conn.execute(text("INSERT INTO note_versions(id, owner_id, note_id, version_number, update_data) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, cast(:nid as uuid), :ver, :upd)"), {"id": vid, "nid": note_id, "ver": version, "upd": update_bytes})
+        await conn.execute(
+            text(
+                "INSERT INTO note_versions(id, owner_id, note_id, version_number, update_data) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, cast(:nid as uuid), :ver, :upd)"
+            ),
+            {"id": vid, "nid": note_id, "ver": version, "upd": update_bytes},
+        )
+
 
 @router.websocket("/ws/notes/{note_id}")
 async def ws_note(websocket: WebSocket, note_id: str):
@@ -69,7 +83,15 @@ async def ws_note(websocket: WebSocket, note_id: str):
                 _counters[note_id] = _counters[note_id] + 1
                 for ws in list(_clients.get(note_id, set())):
                     try:
-                        await ws.send_text(json.dumps({"type": "apply", "version": _versions[note_id], "update": upd_b64}))
+                        await ws.send_text(
+                            json.dumps(
+                                {
+                                    "type": "apply",
+                                    "version": _versions[note_id],
+                                    "update": upd_b64,
+                                }
+                            )
+                        )
                     except Exception:
                         pass
                 need_snap = False

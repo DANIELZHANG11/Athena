@@ -2,6 +2,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 
+
 def send_email(to_addr: str, subject: str, body: str):
     host = os.getenv("SMTP_HOST", "")
     port = int(os.getenv("SMTP_PORT", "0") or "0")

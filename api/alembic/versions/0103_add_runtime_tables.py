@@ -8,10 +8,11 @@ Create Date: 2025-11-19
 
 from alembic import op
 
-revision = '0103_add_runtime_tables'
-down_revision = '0102_ext_id_payment_sessions'
+revision = "0103_add_runtime_tables"
+down_revision = "0102_ext_id_payment_sessions"
 branch_labels = None
 depends_on = None
+
 
 def upgrade():
     op.execute(
@@ -140,6 +141,7 @@ def upgrade():
         CREATE INDEX IF NOT EXISTS idx_doc_events_doc ON doc_events(doc_id);
         """
     )
+
 
 def downgrade():
     op.execute(

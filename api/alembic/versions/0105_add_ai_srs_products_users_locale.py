@@ -8,10 +8,11 @@ Create Date: 2025-11-19
 
 from alembic import op
 
-revision = '0105_ai_srs_users_locale'
-down_revision = '0104_add_books_analysis_columns'
+revision = "0105_ai_srs_users_locale"
+down_revision = "0104_add_books_analysis_columns"
 branch_labels = None
 depends_on = None
+
 
 def upgrade():
     op.execute(
@@ -90,6 +91,7 @@ def upgrade():
         );
         """
     )
+
 
 def downgrade():
     op.execute(

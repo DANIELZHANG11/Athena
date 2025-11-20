@@ -1,8 +1,9 @@
 import os
 import uuid
 from datetime import timedelta
-import boto3
 from urllib.parse import urlparse, urlunparse
+
+import boto3
 
 
 def get_s3():
@@ -12,7 +13,12 @@ def get_s3():
     secure = os.getenv("MINIO_SECURE", "false").lower() == "true"
     scheme = "https" if secure else "http"
     endpoint_url = endpoint if endpoint.startswith("http") else f"{scheme}://{endpoint}"
-    return boto3.client("s3", endpoint_url=endpoint_url, aws_access_key_id=access, aws_secret_access_key=secret)
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=access,
+        aws_secret_access_key=secret,
+    )
 
 
 def ensure_bucket(client, bucket: str):
@@ -32,20 +38,30 @@ def make_object_key(user_id: str, filename: str) -> str:
 def presigned_put(bucket: str, key: str, expires_hours: int = 1) -> str:
     client = get_s3()
     ensure_bucket(client, bucket)
-    url = client.generate_presigned_url("put_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=int(timedelta(hours=expires_hours).total_seconds()))
+    url = client.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=int(timedelta(hours=expires_hours).total_seconds()),
+    )
     return _rewrite_public(url)
 
 
 def presigned_get(bucket: str, key: str, expires_hours: int = 24) -> str:
     client = get_s3()
     ensure_bucket(client, bucket)
-    url = client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=int(timedelta(hours=expires_hours).total_seconds()))
+    url = client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=int(timedelta(hours=expires_hours).total_seconds()),
+    )
     return _rewrite_public(url)
+
 
 def upload_bytes(bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
     client = get_s3()
     ensure_bucket(client, bucket)
     client.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
+
 
 def read_head(bucket: str, key: str, length: int = 65536) -> bytes | None:
     try:
@@ -60,6 +76,7 @@ def read_head(bucket: str, key: str, length: int = 65536) -> bytes | None:
     except Exception:
         return None
 
+
 def stat_etag(bucket: str, key: str) -> str | None:
     try:
         client = get_s3()
@@ -72,6 +89,7 @@ def stat_etag(bucket: str, key: str) -> str | None:
     except Exception:
         return None
 
+
 def _rewrite_public(url: str) -> str:
     pub = os.getenv("MINIO_PUBLIC_ENDPOINT", "").strip()
     if not pub:
@@ -79,6 +97,15 @@ def _rewrite_public(url: str) -> str:
     try:
         u = urlparse(url)
         p = urlparse(pub if pub.startswith("http") else f"http://{pub}")
-        return urlunparse((p.scheme or u.scheme, p.netloc or u.netloc, u.path, u.params, u.query, u.fragment))
+        return urlunparse(
+            (
+                p.scheme or u.scheme,
+                p.netloc or u.netloc,
+                u.path,
+                u.params,
+                u.query,
+                u.fragment,
+            )
+        )
     except Exception:
         return url

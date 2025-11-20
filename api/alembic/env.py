@@ -1,6 +1,7 @@
 import os
+
 from alembic import context
-from sqlalchemy import pool, create_engine
+from sqlalchemy import create_engine, pool
 
 config = context.config
 url = os.getenv("DATABASE_URL")
@@ -9,10 +10,12 @@ if url and "+asyncpg" in url:
 if url:
     config.set_main_option("sqlalchemy.url", url)
 
+
 def run_migrations_offline():
     context.configure(url=config.get_main_option("sqlalchemy.url"), literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online():
     connectable = create_engine(
@@ -24,8 +27,8 @@ def run_migrations_online():
         with context.begin_transaction():
             context.run_migrations()
 
+
 if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

@@ -8,10 +8,11 @@ Create Date: 2025-11-16
 
 from alembic import op
 
-revision = '0100_squash_baseline'
+revision = "0100_squash_baseline"
 down_revision = None
 branch_labels = None
 depends_on = None
+
 
 def upgrade():
     op.execute(
@@ -185,6 +186,7 @@ def upgrade():
         CREATE INDEX IF NOT EXISTS idx_credit_ledger_owner_created ON credit_ledger(owner_id, created_at DESC);
         """
     )
+
 
 def downgrade():
     op.execute(
