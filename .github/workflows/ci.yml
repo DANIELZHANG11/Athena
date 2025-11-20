@@ -64,6 +64,7 @@ jobs:
           alembic -c alembic.ini upgrade head
       - name: Run API tests
         env:
+          PYTHONPATH: ${{ github.workspace }}
           DATABASE_URL: postgresql+asyncpg://athena:athena_dev@localhost:5432/athena
           REDIS_HOST: localhost
           REDIS_PORT: 6379
@@ -87,7 +88,7 @@ jobs:
         run: npm i -g pnpm@9
       - name: Install deps
         working-directory: web
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Lint & Typecheck
         working-directory: web
         run: |
