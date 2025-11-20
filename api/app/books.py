@@ -18,7 +18,8 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
-from .search_sync import delete_book as delete_book_from_index, index_book
+from .search_sync import delete_book as delete_book_from_index
+from .search_sync import index_book
 from .storage import (
     make_object_key,
     presigned_get,

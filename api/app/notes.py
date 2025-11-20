@@ -10,9 +10,9 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
+from .search_sync import delete_highlight as delete_highlight_index
+from .search_sync import delete_note as delete_note_index
 from .search_sync import (
-    delete_highlight as delete_highlight_index,
-    delete_note as delete_note_index,
     index_highlight,
     index_note,
 )
