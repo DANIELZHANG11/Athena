@@ -89,7 +89,7 @@ function ChartTooltipContent({ active, payload, className, indicator = 'dot', hi
 }
 
 const ChartLegend = RechartsPrimitive.Legend
-function ChartLegendContent({ className, hideIcon = false, payload, verticalAlign = 'bottom', nameKey }: React.ComponentProps<'div'> & Pick<RechartsPrimitive.LegendProps, 'payload' | 'verticalAlign'> & { hideIcon?: boolean; nameKey?: string }) {
+function ChartLegendContent({ className, hideIcon = false, payload, verticalAlign = 'bottom', nameKey }: React.ComponentProps<'div'> & { payload?: any[]; verticalAlign?: 'top' | 'bottom' | 'middle'; hideIcon?: boolean; nameKey?: string }) {
   const { config } = useChart(); if (!payload?.length) return null
   return (
     <div className={cn('flex items-center justify-center gap-4', verticalAlign === 'top' ? 'pb-3' : 'pt-3', className)}>
