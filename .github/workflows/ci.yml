@@ -49,6 +49,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r api/requirements.txt
+      - name: Install linting tools
+        run: pip install flake8 black isort mypy types-requests types-python-jose types-redis
+      - name: Lint API
+        run: |
+          flake8 api --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 api --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          black --check api
+          isort --check-only api
+          mypy api --ignore-missing-imports
       - name: Wait for DB
         env:
           PGPASSWORD: athena_dev
@@ -96,6 +105,9 @@ jobs:
         run: |
           pnpm run typecheck
           pnpm run lint
+      - name: Lint Contracts
+        working-directory: web
+        run: pnpm run contracts:lint
       - name: Run unit tests
         working-directory: web
         run: pnpm run test:ci
