@@ -21,7 +21,6 @@ def init_tracer():
     _tracer = cfg.initialize_tracer()
 
 async def tracer_middleware(request: Request, call_next):
-    global _tracer
     if _tracer is None:
         return await call_next(request)
     name = f"HTTP {request.method} {request.url.path}"

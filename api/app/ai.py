@@ -28,17 +28,19 @@ AI_SSE_CACHE_MISS = Counter('ai_sse_cache_miss_total', 'AI SSE cache misses')
 
 @router.get("/stream")
 async def stream(prompt: str = Query(""), conversation_id: str | None = Query(None), access_token: str | None = Query(None), authorization: str | None = Header(None)):
+    if access_token:
+        authorization = "Bearer " + access_token
     try:
-        if access_token:
-            authorization = "Bearer " + access_token
         user_id, _ = require_user(authorization)
     except Exception:
         raise HTTPException(status_code=401, detail="unauthorized")
+    
+    text = prompt or "Hello"
+    qh = hashlib.sha256((text).encode()).hexdigest()
+    key = f"ai_cache:{user_id}:{qh}"
+
     async def gen():
         yield _sse("BEGIN")
-        text = prompt or "Hello"
-        qh = hashlib.sha256((text).encode()).hexdigest()
-        key = f"ai_cache:{user_id}:{qh}"
         cached = r.get(key)
         start = time.time()
         conv_id = conversation_id
@@ -77,6 +79,7 @@ async def stream(prompt: str = Query(""), conversation_id: str | None = Query(No
         AI_SSE_LATENCY.observe(dur)
         yield _sse(f"LATENCY={dur}ms")
         yield _sse("END")
+    
     headers = {"X-Cache-Hit": "true" if r.ttl(key) > 0 and r.get(key) else "false"}
     return StreamingResponse(gen(), media_type="text/event-stream", headers=headers)
 
