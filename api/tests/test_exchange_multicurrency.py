@@ -11,6 +11,7 @@ from api.app.main import app
 async def test_exchange_wallet_multicurrency(monkeypatch):
     monkeypatch.setenv("DEV_MODE", "true")
     monkeypatch.setenv("PAY_FAKE_WEBHOOK_SECRET", "s1")
+    monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "test@athena.local"})

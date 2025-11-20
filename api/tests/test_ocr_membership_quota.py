@@ -12,7 +12,9 @@ async def test_ocr_quota_membership(monkeypatch):
     mock_minio.bucket_exists.return_value = True
     mock_minio.make_bucket.return_value = None
     mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
-    monkeypatch.setattr('api.app.storage.get_minio', lambda: mock_minio)
+    monkeypatch.setattr('api.app.storage.get_s3', lambda: mock_minio)
+    monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
+    monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@athena.local"})

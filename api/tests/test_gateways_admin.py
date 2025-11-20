@@ -2,11 +2,13 @@ import os
 import pytest
 import httpx
 from api.app.main import app
+from api.app.admin import require_admin
 
 
 @pytest.mark.asyncio
 async def test_payment_gateways_crud(monkeypatch):
     monkeypatch.setenv("DEV_MODE", "true")
+    app.dependency_overrides[require_admin] = lambda: True
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post("/api/v1/auth/email/send-code", json={"email": "pay@athena.local"})
