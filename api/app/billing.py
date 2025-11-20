@@ -24,9 +24,7 @@ def _sig_ok(secret: str, body: bytes, sig: str | None) -> bool:
 async def get_balance(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"
@@ -57,9 +55,7 @@ async def get_balance(auth=Depends(require_user)):
 async def list_ledger(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT id::text, amount, currency, reason, related_id::text, direction, created_at FROM credit_ledger WHERE owner_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC LIMIT :l OFFSET :o"
@@ -88,9 +84,7 @@ async def list_ledger(limit: int = 50, offset: int = 0, auth=Depends(require_use
 async def list_products(limit: int = 50, offset: int = 0, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT id::text, code, name, credits, amount_minor, currency, updated_at FROM credit_products ORDER BY updated_at DESC LIMIT :l OFFSET :o"
@@ -124,17 +118,11 @@ async def create_session(payload: dict = Body(...), auth=Depends(require_user)):
     if not gateway or not isinstance(amount, int) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_request")
     sid = str(uuid.uuid4())
-    ret_url = payload.get("return_url") or os.getenv(
-        "PAY_RETURN_URL", "https://localhost/return"
-    )
-    cancel_url = payload.get("cancel_url") or os.getenv(
-        "PAY_CANCEL_URL", "https://localhost/cancel"
-    )
+    ret_url = payload.get("return_url") or os.getenv("PAY_RETURN_URL", "https://localhost/return")
+    cancel_url = payload.get("cancel_url") or os.getenv("PAY_CANCEL_URL", "https://localhost/cancel")
     meta = payload.get("metadata")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO payment_sessions(id, owner_id, gateway, amount, currency, status, return_url, cancel_url, metadata) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :g, :a, :c, 'pending', :r, :x, cast(:m as jsonb))"
@@ -154,17 +142,11 @@ async def create_session(payload: dict = Body(...), auth=Depends(require_user)):
 
 
 @router.post("/webhook/{gateway}")
-async def webhook(
-    gateway: str, request: Request, x_signature: str | None = Header(None)
-):
+async def webhook(gateway: str, request: Request, x_signature: str | None = Header(None)):
     # 统一签名读取与校验
     secret = os.getenv(f"PAY_{gateway.upper()}_WEBHOOK_SECRET", "")
     body = await request.body()
-    x_sig = (
-        request.headers.get("x-signature")
-        or request.headers.get("x_signature")
-        or x_signature
-    )
+    x_sig = request.headers.get("x-signature") or request.headers.get("x_signature") or x_signature
     if not _sig_ok(secret, body, x_sig):
         raise HTTPException(status_code=401, detail="bad_signature")
 
@@ -195,9 +177,7 @@ async def webhook(
             )
             logging.info(f"[WEBHOOK] Query session owner sid={session_id}")
             res = await conn.execute(
-                text(
-                    "SELECT owner_id FROM payment_sessions WHERE id = cast(:sid as uuid)"
-                ),
+                text("SELECT owner_id FROM payment_sessions WHERE id = cast(:sid as uuid)"),
                 {"sid": session_id},
             )
             row = res.fetchone()
@@ -205,9 +185,7 @@ async def webhook(
                 logging.error(f"[WEBHOOK] session_not_found sid={session_id}")
                 raise HTTPException(status_code=404, detail="session_not_found")
             owner_id = str(row[0])
-            logging.info(
-                f"[WEBHOOK] Update session status={status} external_id={external_id}"
-            )
+            logging.info(f"[WEBHOOK] Update session status={status} external_id={external_id}")
             await conn.execute(
                 text(
                     "UPDATE payment_sessions SET status = :st, external_id = :ext, updated_at = now() WHERE id = cast(:sid as uuid)"
@@ -215,12 +193,8 @@ async def webhook(
                 {"st": status, "ext": external_id, "sid": session_id},
             )
             if status == "succeeded" and isinstance(amount, int) and amount > 0:
-                logging.info(
-                    f"[WEBHOOK] Credit account owner={owner_id} amount={amount}"
-                )
-                await conn.execute(
-                    text("SELECT set_config('app.user_id', :v, true)"), {"v": owner_id}
-                )
+                logging.info(f"[WEBHOOK] Credit account owner={owner_id} amount={amount}")
+                await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": owner_id})
                 await conn.execute(
                     text(
                         "INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"
@@ -241,9 +215,7 @@ async def webhook(
                 )
             logging.info(f"[WEBHOOK] Mark event processed id={event_id}")
             await conn.execute(
-                text(
-                    "UPDATE payment_webhook_events SET processed = TRUE, updated_at = now() WHERE id = :id"
-                ),
+                text("UPDATE payment_webhook_events SET processed = TRUE, updated_at = now() WHERE id = :id"),
                 {"id": event_id},
             )
         return {"status": "success"}
@@ -260,9 +232,7 @@ async def consume_credit(payload: dict = Body(...), auth=Depends(require_user)):
     if not isinstance(amount, int) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_amount")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"
@@ -292,24 +262,16 @@ async def exchange(payload: dict = Body(...), auth=Depends(require_user)):
     user_id, _ = auth
     direction = payload.get("direction")  # wallet_to_credits | credits_to_wallet
     amount = payload.get("amount")
-    if (
-        direction not in ("wallet_to_credits", "credits_to_wallet")
-        or not isinstance(amount, (int, float))
-        or amount <= 0
-    ):
+    if direction not in ("wallet_to_credits", "credits_to_wallet") or not isinstance(amount, (int, float)) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_request")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"
             )
         )
-        sres = await conn.execute(
-            text("SELECT value FROM system_settings WHERE key = 'wallet_exchange_rate'")
-        )
+        sres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'wallet_exchange_rate'"))
         srow = sres.fetchone()
         val = srow and srow[0]
         rate = None
@@ -320,9 +282,7 @@ async def exchange(payload: dict = Body(...), auth=Depends(require_user)):
                 rate = None
         if rate is None:
             curres = await conn.execute(
-                text(
-                    "SELECT wallet_currency FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"
-                )
+                text("SELECT wallet_currency FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid")
             )
             currow = curres.fetchone()
             wc = (currow and currow[0]) or "CNY"
@@ -392,9 +352,7 @@ async def grant_credits(payload: dict = Body(...), auth=Depends(require_user)):
     if not isinstance(amount, (int, float)) or amount <= 0:
         raise HTTPException(status_code=400, detail="invalid_amount")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO credit_accounts(owner_id) VALUES (current_setting('app.user_id')::uuid) ON CONFLICT (owner_id) DO NOTHING"

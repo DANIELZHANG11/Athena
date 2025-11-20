@@ -18,8 +18,7 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
-from .search_sync import delete_book as delete_book_from_index
-from .search_sync import index_book
+from .search_sync import delete_book as delete_book_from_index, index_book
 from .storage import (
     make_object_key,
     presigned_get,
@@ -116,15 +115,11 @@ async def upload_complete(
     # 计算ETag并进行去重
     etag = stat_etag(BOOKS_BUCKET, key)
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
 
         if etag:
             res = await conn.execute(
-                text(
-                    "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
-                ),
+                text("SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"),
                 {"e": etag},
             )
             row = res.fetchone()
@@ -135,12 +130,8 @@ async def upload_complete(
                 if idempotency_key:
                     r.setex(idem_key, 24 * 3600, str(data))
                 try:
-                    celery_app.send_task(
-                        "tasks.analyze_book_type", args=[row[0], user_id]
-                    )
-                    celery_app.send_task(
-                        "tasks.deep_analyze_book", args=[row[0], user_id]
-                    )
+                    celery_app.send_task("tasks.analyze_book_type", args=[row[0], user_id])
+                    celery_app.send_task("tasks.deep_analyze_book", args=[row[0], user_id])
                 except Exception:
                     pass
                 return {"status": "success", "data": data}
@@ -181,14 +172,10 @@ async def upload_complete(
 
 async def _deep_analyze_and_standardize(book_id: str, user_id: str):
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         res = await conn.execute(
-            text(
-                "SELECT minio_key, is_digitalized, original_format FROM books WHERE id = cast(:id as uuid)"
-            ),
+            text("SELECT minio_key, is_digitalized, original_format FROM books WHERE id = cast(:id as uuid)"),
             {"id": book_id},
         )
         row = res.fetchone()
@@ -203,9 +190,7 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
         upload_bytes(
             BOOKS_BUCKET,
             rep_key,
-            json.dumps({"is_image_based": img_based, "confidence": conf}).encode(
-                "utf-8"
-            ),
+            json.dumps({"is_image_based": img_based, "confidence": conf}).encode("utf-8"),
             "application/json",
         )
         await conn.execute(
@@ -234,14 +219,10 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
         pass
     if fmt != "pdf":
         std_key = make_object_key(user_id, f"converted/{book_id}.epub")
-        upload_bytes(
-            BOOKS_BUCKET, std_key, b"standardized-epub", "application/epub+zip"
-        )
+        upload_bytes(BOOKS_BUCKET, std_key, b"standardized-epub", "application/epub+zip")
         async with engine.begin() as conn:
             await conn.execute(
-                text(
-                    "UPDATE books SET converted_epub_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"
-                ),
+                text("UPDATE books SET converted_epub_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"),
                 {"k": std_key, "id": book_id},
             )
         try:
@@ -257,9 +238,7 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
 async def processing_status(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT status FROM conversion_jobs WHERE owner_id = current_setting('app.user_id')::uuid AND book_id = cast(:bid as uuid) ORDER BY created_at DESC LIMIT 1"
@@ -270,11 +249,7 @@ async def processing_status(book_id: str, auth=Depends(require_user)):
         if not row:
             return {"status": "success", "data": {"status": "ACTIVE"}}
         st = row[0]
-        mapped = (
-            "ACTIVE"
-            if st in ("succeeded", "active")
-            else ("FAILED" if st == "failed" else "PENDING")
-        )
+        mapped = "ACTIVE" if st in ("succeeded", "active") else ("FAILED" if st == "failed" else "PENDING")
         return {"status": "success", "data": {"status": mapped}}
 
 
@@ -282,9 +257,7 @@ async def processing_status(book_id: str, auth=Depends(require_user)):
 async def presign_convert_output(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT output_key FROM conversion_jobs WHERE owner_id = current_setting('app.user_id')::uuid AND book_id = cast(:bid as uuid) AND status = 'completed' ORDER BY updated_at DESC LIMIT 1"
@@ -312,9 +285,7 @@ async def presign_put_converted(book_id: str, auth=Depends(require_user)):
 async def presign_get_source(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT minio_key, original_format FROM books WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
@@ -333,9 +304,7 @@ async def presign_get_source(book_id: str, auth=Depends(require_user)):
                 if u.hostname in ("127.0.0.1", "localhost"):
                     # 重写为主机网关域名，容器可达
                     host = "host.docker.internal" + (f":{u.port}" if u.port else "")
-                    key = urlunparse(
-                        (u.scheme, host, u.path, u.params, u.query, u.fragment)
-                    )
+                    key = urlunparse((u.scheme, host, u.path, u.params, u.query, u.fragment))
                 else:
                     # 直接外链下载并写入MinIO，保障后续内部访问
                     import urllib.request
@@ -344,13 +313,9 @@ async def presign_get_source(book_id: str, auth=Depends(require_user)):
                         data = resp.read()
                     ext = ("." + fmt) if fmt else ""
                     new_key = make_object_key(user_id, f"ingested-{book_id}{ext}")
-                    upload_bytes(
-                        BOOKS_BUCKET, new_key, data, "application/octet-stream"
-                    )
+                    upload_bytes(BOOKS_BUCKET, new_key, data, "application/octet-stream")
                     await conn.execute(
-                        text(
-                            "UPDATE books SET minio_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"
-                        ),
+                        text("UPDATE books SET minio_key = :k, updated_at = now() WHERE id = cast(:id as uuid)"),
                         {"k": new_key, "id": book_id},
                     )
                     key = new_key
@@ -373,17 +338,13 @@ async def presign_get_source(book_id: str, auth=Depends(require_user)):
 
 
 @router.post("/{book_id}/set_converted")
-async def set_converted(
-    book_id: str, body: dict = Body(...), auth=Depends(require_user)
-):
+async def set_converted(book_id: str, body: dict = Body(...), auth=Depends(require_user)):
     user_id, _ = auth
     key = body.get("key")
     if not key:
         raise HTTPException(status_code=400, detail="missing_key")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         await conn.execute(
             text(
@@ -394,9 +355,7 @@ async def set_converted(
     try:
         import json as _j
 
-        await ws_broadcast(
-            f"book:{book_id}", _j.dumps({"event": "STANDARDIZED", "epub_key": key})
-        )
+        await ws_broadcast(f"book:{book_id}", _j.dumps({"event": "STANDARDIZED", "epub_key": key}))
     except Exception:
         pass
     return {"status": "success"}
@@ -410,9 +369,7 @@ async def list_books(
 ):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         cond = "WHERE user_id = current_setting('app.user_id')::uuid"
         order = "ORDER BY updated_at DESC, id DESC"
@@ -509,9 +466,7 @@ async def list_books(
 async def get_book(book_id: str, auth=Depends(require_user), response: Response = None):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         res = await conn.execute(
             text(
@@ -586,14 +541,10 @@ async def register_book(body: dict = Body(...), auth=Depends(require_user)):
     original_format = (body.get("original_format") or "").lower()
     size = body.get("size") or None
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         res = await conn.execute(
-            text(
-                "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND minio_key = :key"
-            ),
+            text("SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND minio_key = :key"),
             {"key": object_url},
         )
         row = res.fetchone()
@@ -632,9 +583,7 @@ async def register_book(body: dict = Body(...), auth=Depends(require_user)):
 async def deep_analyze(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         res = await conn.execute(
             text(
@@ -678,16 +627,12 @@ async def deep_analyze(book_id: str, auth=Depends(require_user)):
 async def delete_book(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text("DELETE FROM shelf_items WHERE book_id = cast(:id as uuid)"),
             {"id": book_id},
         )
-        res = await conn.execute(
-            text("DELETE FROM books WHERE id = cast(:id as uuid)"), {"id": book_id}
-        )
+        res = await conn.execute(text("DELETE FROM books WHERE id = cast(:id as uuid)"), {"id": book_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="not_found")
     delete_book_from_index(book_id)
@@ -712,9 +657,7 @@ async def update_book(
     author = body.get("author")
     language = body.get("language")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 """
@@ -744,9 +687,7 @@ async def update_book(
 async def presign_book_download(book_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text("SELECT minio_key FROM books WHERE id = cast(:id as uuid)"),
             {"id": book_id},
@@ -761,16 +702,12 @@ async def presign_book_download(book_id: str, auth=Depends(require_user)):
 
 
 @router.post("/{book_id}/convert")
-async def request_convert(
-    book_id: str, body: dict = Body(...), auth=Depends(require_user)
-):
+async def request_convert(book_id: str, body: dict = Body(...), auth=Depends(require_user)):
     user_id, _ = auth
     target_format = (body.get("target_format") or "epub").lower()
     job_id = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text("SELECT minio_key FROM books WHERE id = cast(:id as uuid)"),
             {"id": book_id},
@@ -801,9 +738,7 @@ async def request_convert(
 async def list_jobs(status: str | None = Query(None), auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         if status:
             res = await conn.execute(
                 text(
@@ -834,15 +769,11 @@ async def list_jobs(status: str | None = Query(None), auth=Depends(require_user)
 
 
 @router.post("/jobs/{job_id}/complete")
-async def complete_job(
-    job_id: str, body: dict = Body(None), auth=Depends(require_user)
-):
+async def complete_job(job_id: str, body: dict = Body(None), auth=Depends(require_user)):
     user_id, _ = auth
     output_key = (body or {}).get("output_key") or ""
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "UPDATE conversion_jobs SET status='completed', output_key = COALESCE(:out, output_key), updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
@@ -857,9 +788,7 @@ async def fail_job(job_id: str, body: dict = Body(...), auth=Depends(require_use
     user_id, _ = auth
     message = body.get("error") or ""
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "UPDATE conversion_jobs SET status='failed', error = :msg, updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
@@ -873,9 +802,7 @@ async def fail_job(job_id: str, body: dict = Body(...), auth=Depends(require_use
 async def simulate_job(job_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT book_id::text FROM conversion_jobs WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
@@ -887,9 +814,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
             raise HTTPException(status_code=404, detail="not_found")
         book_id = row[0]
         out_key = f"converted/{book_id}.epub"
-        upload_bytes(
-            BOOKS_BUCKET, out_key, b"converted content", "application/epub+zip"
-        )
+        upload_bytes(BOOKS_BUCKET, out_key, b"converted content", "application/epub+zip")
         res2 = await conn.execute(
             text(
                 "SELECT price_amount, unit_size, currency FROM pricing_rules WHERE service_type = 'VECTORIZE' AND unit_type = 'CHARS' AND is_active = TRUE ORDER BY updated_at DESC LIMIT 1"
@@ -901,20 +826,14 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
 
             qty = 100000
             max(1, math.ceil(qty / int(rule[1])))
-            sres = await conn.execute(
-                text("SELECT key, value FROM system_settings WHERE key LIKE 'free_%'")
-            )
+            sres = await conn.execute(text("SELECT key, value FROM system_settings WHERE key LIKE 'free_%'"))
             settings = {r[0]: r[1] for r in sres.fetchall()}
             mtres = await conn.execute(
-                text(
-                    "SELECT membership_tier FROM users WHERE id = current_setting('app.user_id')::uuid"
-                )
+                text("SELECT membership_tier FROM users WHERE id = current_setting('app.user_id')::uuid")
             )
             mtrow = mtres.fetchone()
             tier = (mtrow and mtrow[0]) or "FREE"
-            tres = await conn.execute(
-                text("SELECT value FROM system_settings WHERE key = 'membership_tiers'")
-            )
+            tres = await conn.execute(text("SELECT value FROM system_settings WHERE key = 'membership_tiers'"))
             trow = tres.fetchone()
             mconf = trow and trow[0]
             free_chars = None
@@ -951,9 +870,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
                     )
                 )
                 bal = await conn.execute(
-                    text(
-                        "SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid"
-                    )
+                    text("SELECT balance FROM credit_accounts WHERE owner_id = current_setting('app.user_id')::uuid")
                 )
                 b = bal.fetchone()
                 if not b or int(b[0]) < amt:
@@ -1004,9 +921,7 @@ async def create_shelf(
             return {"status": "success", "data": {"id": cached}}
     shelf_id = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO shelves(id, user_id, name, description) VALUES (cast(:id as uuid), cast(:uid as uuid), :name, :desc)"
@@ -1026,9 +941,7 @@ async def list_shelves(
 ):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         cond = "WHERE user_id = current_setting('app.user_id')::uuid"
         order = "ORDER BY updated_at DESC, id DESC"
         params = {"limit": limit + 1}
@@ -1094,9 +1007,7 @@ async def update_shelf(
     name = body.get("name")
     description = body.get("description")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 """
@@ -1127,15 +1038,11 @@ async def add_item(
     if not book_id:
         raise HTTPException(status_code=400, detail="missing_book_id")
     if idempotency_key:
-        idem_key = (
-            f"idem:shelves:add_item:{user_id}:{shelf_id}:{book_id}:{idempotency_key}"
-        )
+        idem_key = f"idem:shelves:add_item:{user_id}:{shelf_id}:{book_id}:{idempotency_key}"
         if r.get(idem_key):
             return {"status": "success"}
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO shelf_items(shelf_id, book_id) VALUES (cast(:sid as uuid), cast(:bid as uuid)) ON CONFLICT DO NOTHING"
@@ -1151,9 +1058,7 @@ async def add_item(
 async def list_items(shelf_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 """
@@ -1191,19 +1096,13 @@ async def remove_item(
 ):
     user_id, _ = auth
     if idempotency_key:
-        idem_key = (
-            f"idem:shelves:remove_item:{user_id}:{shelf_id}:{book_id}:{idempotency_key}"
-        )
+        idem_key = f"idem:shelves:remove_item:{user_id}:{shelf_id}:{book_id}:{idempotency_key}"
         if r.get(idem_key):
             return {"status": "success"}
     async with engine.begin() as conn:
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
-        await conn.execute(
-            text(
-                "DELETE FROM shelf_items WHERE shelf_id = cast(:sid as uuid) AND book_id = cast(:bid as uuid)"
-            ),
+            text("DELETE FROM shelf_items WHERE shelf_id = cast(:sid as uuid) AND book_id = cast(:bid as uuid)"),
             {"sid": shelf_id, "bid": book_id},
         )
     if idempotency_key:
@@ -1212,9 +1111,7 @@ async def remove_item(
 
 
 @router.post("/upload_proxy")
-async def upload_proxy(
-    title: str | None = None, file: UploadFile = File(...), auth=Depends(require_user)
-):
+async def upload_proxy(title: str | None = None, file: UploadFile = File(...), auth=Depends(require_user)):
     user_id, _ = auth
     name = file.filename or "upload.bin"
     fmt = (name.split(".")[-1] or "bin").lower()
@@ -1232,15 +1129,11 @@ async def upload_proxy(
     img_based, conf = _quick_confidence(os.getenv("MINIO_BUCKET", "athena"), key)
     etag = stat_etag(os.getenv("MINIO_BUCKET", "athena"), key)
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await _ensure_books_fields(conn)
         if etag:
             res = await conn.execute(
-                text(
-                    "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
-                ),
+                text("SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"),
                 {"e": etag},
             )
             row = res.fetchone()

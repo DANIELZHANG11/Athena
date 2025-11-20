@@ -10,9 +10,9 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
-from .search_sync import delete_highlight as delete_highlight_index
-from .search_sync import delete_note as delete_note_index
 from .search_sync import (
+    delete_highlight as delete_highlight_from_index,
+    delete_note as delete_note_from_index,
     index_highlight,
     index_note,
 )
@@ -53,9 +53,7 @@ async def create_tag(
             return {"status": "success", "data": {"id": v}}
     tag_id = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO tags(id, user_id, name) VALUES (cast(:id as uuid), cast(:uid as uuid), :name) ON CONFLICT (user_id, name) WHERE deleted_at IS NULL DO NOTHING"
@@ -63,9 +61,7 @@ async def create_tag(
             {"id": tag_id, "uid": user_id, "name": name},
         )
     if idempotency_key:
-        r.setex(
-            f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), tag_id
-        )
+        r.setex(f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), tag_id)
     return {"status": "success", "data": {"id": tag_id}}
 
 
@@ -73,9 +69,7 @@ async def create_tag(
 async def list_tags(auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT id::text, name, updated_at, version FROM tags WHERE user_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL ORDER BY updated_at DESC"
@@ -112,9 +106,7 @@ async def update_tag(
         raise HTTPException(status_code=400, detail="invalid_if_match")
     name = body.get("name")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "UPDATE tags SET name = COALESCE(:name, name), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND deleted_at IS NULL AND version = :ver"
@@ -130,9 +122,7 @@ async def update_tag(
 async def delete_tag(tag_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "UPDATE tags SET deleted_at = now(), updated_at = now(), version = version + 1 WHERE id = cast(:id as uuid) AND deleted_at IS NULL"
@@ -163,9 +153,7 @@ async def create_note(
     location = body.get("location")
     offset = body.get("offset")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO notes(id, user_id, book_id, content, chapter, location, pos_offset, tsv) VALUES (cast(:id as uuid), cast(:uid as uuid), cast(:bid as uuid), :content, :chapter, :location, :offset, to_tsvector('simple', coalesce(:content,'') || ' ' || coalesce(:chapter,'')))"
@@ -189,9 +177,7 @@ async def create_note(
                     {"nid": note_id, "tid": t},
                 )
     if idempotency_key:
-        r.setex(
-            f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), note_id
-        )
+        r.setex(f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), note_id)
     index_note(note_id, user_id, book_id, content, tags)
     return {"status": "success", "data": {"id": note_id}}
 
@@ -204,9 +190,7 @@ async def list_notes(
 ):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         if cursor:
             ts, nid = decode_cursor(cursor)
             res = await conn.execute(
@@ -248,9 +232,7 @@ async def list_notes(
 async def get_note(note_id: str, auth=Depends(require_user), response: Response = None):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "SELECT id::text, content, book_id::text, chapter, location, pos_offset, updated_at, version FROM notes WHERE id = cast(:id as uuid) AND deleted_at IS NULL"
@@ -297,9 +279,7 @@ async def update_note(
     offset = body.get("offset")
     tags = body.get("tags")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "UPDATE notes SET content = COALESCE(:content, content), chapter = COALESCE(:chapter, chapter), location = COALESCE(:location, location), pos_offset = COALESCE(:offset, pos_offset), tsv = to_tsvector('simple', coalesce(COALESCE(:content, content),'') || ' ' || coalesce(COALESCE(:chapter, chapter),'')), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND deleted_at IS NULL AND version = :ver"
@@ -341,16 +321,14 @@ async def update_note(
 async def delete_note(note_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "UPDATE notes SET deleted_at = now(), updated_at = now(), version = version + 1 WHERE id = cast(:id as uuid) AND deleted_at IS NULL"
             ),
             {"id": note_id},
         )
-    delete_note_index(note_id)
+    delete_note_from_index(note_id)
     return {"status": "success"}
 
 
@@ -375,9 +353,7 @@ async def create_highlight(
             return {"status": "success", "data": {"id": v}}
     hid = str(uuid.uuid4())
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "INSERT INTO highlights(id, user_id, book_id, start_location, end_location, color, comment, tsv) VALUES (cast(:id as uuid), cast(:uid as uuid), cast(:bid as uuid), :s, :e, :c, :m, to_tsvector('simple', coalesce(:c,'') || ' ' || coalesce(:m,'')))"
@@ -400,9 +376,7 @@ async def create_highlight(
                 {"hid": hid, "tid": t},
             )
     if idempotency_key:
-        r.setex(
-            f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), hid
-        )
+        r.setex(f"idem:{idempotency_key}", int(timedelta(hours=24).total_seconds()), hid)
     index_highlight(hid, user_id, book_id, comment or "", color or "", tags)
     try:
         celery_app.send_task("tasks.generate_srs_card", args=[hid])
@@ -420,9 +394,7 @@ async def list_highlights(
 ):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         base = "SELECT id::text, book_id::text, start_location, end_location, color, comment, updated_at, version FROM highlights WHERE user_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL"
         params = {}
         if book_id:
@@ -430,9 +402,7 @@ async def list_highlights(
             params["bid"] = book_id
         if cursor:
             ts, hid = decode_cursor(cursor)
-            base += (
-                " AND (updated_at, id) < (cast(:ts as timestamptz), cast(:id as uuid))"
-            )
+            base += " AND (updated_at, id) < (cast(:ts as timestamptz), cast(:id as uuid))"
             params["ts"] = ts
             params["id"] = hid
         base += " ORDER BY updated_at DESC, id DESC LIMIT :limit"
@@ -478,9 +448,7 @@ async def update_highlight(
     comment = body.get("comment")
     tags = body.get("tags")
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         res = await conn.execute(
             text(
                 "UPDATE highlights SET color = COALESCE(:color, color), comment = COALESCE(:comment, comment), tsv = to_tsvector('simple', coalesce(COALESCE(:color, color),'') || ' ' || coalesce(COALESCE(:comment, comment),'')), version = version + 1, updated_at = now() WHERE id = cast(:id as uuid) AND deleted_at IS NULL AND version = :ver"
@@ -496,9 +464,7 @@ async def update_highlight(
             raise HTTPException(status_code=409, detail="version_conflict")
         if isinstance(tags, list):
             await conn.execute(
-                text(
-                    "DELETE FROM highlight_tags WHERE highlight_id = cast(:hid as uuid)"
-                ),
+                text("DELETE FROM highlight_tags WHERE highlight_id = cast(:hid as uuid)"),
                 {"hid": highlight_id},
             )
             for t in tags:
@@ -523,14 +489,12 @@ async def update_highlight(
 async def delete_highlight(highlight_id: str, auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
+        await conn.execute(text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id})
         await conn.execute(
             text(
                 "UPDATE highlights SET deleted_at = now(), updated_at = now(), version = version + 1 WHERE id = cast(:id as uuid) AND deleted_at IS NULL"
             ),
             {"id": highlight_id},
         )
-    delete_highlight_index(highlight_id)
+    delete_highlight_from_index(highlight_id)
     return {"status": "success"}
