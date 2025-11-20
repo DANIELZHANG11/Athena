@@ -1,5 +1,7 @@
 ### 🛡️ 雅典娜计划：CI/CD 修复五大宪章
 
+项目仓库地址：git@github.com:DANIELZHANG11/Athena.git
+
 #### 1. “架构降级”零容忍原则 (No Architectural Regression)
 *   **场景**：如果计费测试挂了，报错说“数据库锁超时”或“事务回滚”。
 *   **原则**：**绝对不允许**为了让测试通过，而移除 `FOR UPDATE` 锁或 `atomic update`（原子更新）逻辑。**绝对不允许**把数据库事务拆散。
