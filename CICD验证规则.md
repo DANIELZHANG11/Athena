@@ -1,4 +1,4 @@
-### 🛡️ 雅典娜计划：CI/CD 修复五大宪章
+### 🛡️ 雅典娜计划：CI/CD 修复五大宪章以及最新的错误提示：
 
 项目仓库地址：git@github.com:DANIELZHANG11/Athena.git
 
@@ -48,3 +48,265 @@
 
 ---
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
+
+Run alembic -c alembic.ini upgrade head
+Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.FeatureNotSupported: extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/bin/alembic", line 7, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 636, in main
+    CommandLine(prog=prog).main(argv=argv)
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 626, in main
+    self.run_cmd(cfg, options)
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 603, in run_cmd
+    fn(
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/command.py", line 406, in upgrade
+    script.run_env()
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/script/base.py", line 582, in run_env
+    util.load_python_file(self.dir, "env.py")
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 95, in load_python_file
+    module = load_module_py(module_id, path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 113, in load_module_py
+    spec.loader.exec_module(module)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 30, in <module>
+    run_migrations_online()
+  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 25, in run_migrations_online
+    context.run_migrations()
+  File "<string>", line 8, in run_migrations
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/environment.py", line 946, in run_migrations
+    self.get_context().run_migrations(**kw)
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/migration.py", line 628, in run_migrations
+    step.migration_fn(**kw)
+  File "/home/runner/work/Athena/Athena/api/alembic/versions/0100_squash_baseline.py", line 17, in upgrade
+    op.execute(
+  File "<string>", line 8, in execute
+  File "<string>", line 3, in execute
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/ops.py", line 2537, in execute
+    return operations.invoke(op)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/base.py", line 442, in invoke
+    return fn(self, operation)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/toimpl.py", line 224, in execute_sql
+    operations.migration_context.impl.execute(
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/ddl/impl.py", line 217, in execute
+    self._exec(sql, execution_options)
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/ddl/impl.py", line 210, in _exec
+    return conn.execute(construct, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1418, in execute
+    return meth(
+           ^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 515, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1640, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.NotSupportedError: (psycopg2.errors.FeatureNotSupported) extension "vector" is not available
+DETAIL:  Could not open extension control file "/usr/share/postgresql/16/extension/vector.control": No such file or directory.
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+
+[SQL: 
+        -- required extensions
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS vector;
+
+        -- Core tables for Athena baseline
+
+        CREATE TABLE IF NOT EXISTS shelves (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS books (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            title TEXT NOT NULL,
+            author TEXT,
+            language TEXT,
+            original_format TEXT,
+            minio_key TEXT NOT NULL,
+            size BIGINT,
+            cover_image_key TEXT,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS shelf_items (
+            shelf_id UUID NOT NULL,
+            book_id UUID NOT NULL,
+            position INTEGER,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (shelf_id, book_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS conversion_jobs (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            book_id UUID NOT NULL,
+            source_key TEXT NOT NULL,
+            target_format TEXT NOT NULL,
+            output_key TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            error TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_sessions (
+            id UUID PRIMARY KEY,
+            owner_id UUID NOT NULL,
+            gateway TEXT NOT NULL,
+            amount INT NOT NULL,
+            currency TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            return_url TEXT,
+            cancel_url TEXT,
+            metadata JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_webhook_events (
+            id TEXT PRIMARY KEY,
+            gateway TEXT NOT NULL,
+            session_id UUID,
+            payload JSONB,
+            processed BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS credit_accounts (
+            owner_id UUID PRIMARY KEY,
+            balance BIGINT NOT NULL DEFAULT 0,
+            currency TEXT,
+            wallet_amount NUMERIC NOT NULL DEFAULT 0,
+            wallet_currency TEXT NOT NULL DEFAULT 'CNY',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS credit_ledger (
+            id UUID PRIMARY KEY,
+            owner_id UUID NOT NULL,
+            amount BIGINT NOT NULL,
+            currency TEXT NOT NULL,
+            reason TEXT,
+            related_id UUID,
+            direction TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS ocr_jobs (
+            id UUID PRIMARY KEY,
+            owner_id UUID NOT NULL,
+            source_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'uploading',
+            result_text TEXT,
+            error TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS system_settings (
+            id UUID PRIMARY KEY,
+            key TEXT UNIQUE NOT NULL,
+            value JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS ai_models (
+            id UUID PRIMARY KEY,
+            provider TEXT NOT NULL,
+            model_id TEXT UNIQUE NOT NULL,
+            display_name TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_gateways (
+            id UUID PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            config JSONB NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS pricing_rules (
+            id UUID PRIMARY KEY,
+            service_type VARCHAR(32) NOT NULL,
+            unit_type VARCHAR(32) NOT NULL,
+            unit_size INTEGER NOT NULL,
+            price_amount NUMERIC(10,2) NOT NULL,
+            currency VARCHAR(10) NOT NULL,
+            region VARCHAR(10),
+            remark_template TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            version INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        CREATE TABLE IF NOT EXISTS service_providers (
+            id UUID PRIMARY KEY,
+            service_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            endpoint TEXT,
+            config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            priority INTEGER NOT NULL DEFAULT 0,
+            version INTEGER NOT NULL DEFAULT 1,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(service_type, name)
+        );
+
+        -- Useful indexes
+        CREATE INDEX IF NOT EXISTS idx_shelves_user_updated ON shelves(user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_books_user_updated ON books(user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_shelf_items_shelf ON shelf_items(shelf_id);
+        CREATE INDEX IF NOT EXISTS idx_conversion_jobs_user_status ON conversion_jobs(user_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_credit_ledger_owner_created ON credit_ledger(owner_id, created_at DESC);
+        ]
+(Background on this error at: https://sqlalche.me/e/20/tw8g)
+Error: Process completed with exit code 1.
+
+Run actions/setup-node@v4
+Found in cache @ /opt/hostedtoolcache/node/20.19.5/x64
+Environment details
+Error: Unable to locate executable file: pnpm. Please verify either the file path exists or the file can be found within a directory specified by the PATH environment variable. Also check the file mode to verify the file is executable.
