@@ -40,14 +40,18 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         # Actually, notes/highlights foreign key constraints might fail if book doesn't exist.
         # So we MUST create a book.
         
-        # Mock S3 for book creation
+        # Mock S3 for book creation - mock boto3.client directly
         mock_minio = MagicMock()
         mock_minio.head_bucket.return_value = None  # Bucket exists
         mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
         mock_minio.stat_object.return_value.etag = "fake-etag"
+        mock_minio.head_object.return_value = {"ETag": '"fake-etag"'}
+        mock_minio.put_object.return_value = None
+        mock_minio.get_object.return_value = {"Body": MagicMock()}
+        import boto3
+        monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: mock_minio)
         monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
         monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
-        monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
 
         r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
         key = r.json()["data"]["key"]

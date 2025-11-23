@@ -5,7 +5,7 @@ from api.app.main import app
 
 @pytest.mark.asyncio
 async def test_books_crud_flow(monkeypatch):
-    # Mock S3
+    # Mock S3 - mock boto3.client directly
     mock_minio = MagicMock()
     mock_minio.head_bucket.return_value = None  # Bucket exists
     mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
@@ -14,7 +14,12 @@ async def test_books_crud_flow(monkeypatch):
     mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
     mock_minio.presigned_get_object.return_value = "http://fake-download-url.com"
     mock_minio.stat_object.return_value.etag = "fake-etag"
-    monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
+    mock_minio.head_object.return_value = {"ETag": '"fake-etag"'}
+    mock_minio.put_object.return_value = None
+    mock_minio.get_object.return_value = {"Body": MagicMock()}
+    # Mock boto3.client to return our mock S3 client
+    import boto3
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: mock_minio)
     monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
     monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
 

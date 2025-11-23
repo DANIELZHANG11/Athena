@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import os
 import time
 
@@ -168,7 +169,7 @@ async def create_conversation(body: dict = Body({}), auth=Depends(require_user))
             text(
                 "INSERT INTO ai_conversation_contexts(conversation_id, owner_id, mode, book_ids) VALUES (cast(:cid as uuid), cast(:uid as uuid), :m, cast(:ids as jsonb)) ON CONFLICT (conversation_id) DO UPDATE SET mode = EXCLUDED.mode, book_ids = EXCLUDED.book_ids, updated_at = now()"
             ),
-            {"cid": cid, "uid": user_id, "m": mode, "ids": book_ids},
+            {"cid": cid, "uid": user_id, "m": mode, "ids": json.dumps(book_ids)},
         )
     return {"status": "success", "data": {"id": cid}}
 

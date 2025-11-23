@@ -97,7 +97,7 @@ async def update_user(
             text(
                 "INSERT INTO audit_logs(id, actor_id, action, entity, entity_id, before, after) VALUES (cast(:id as uuid), NULL, 'admin.update_user', 'users', cast(:eid as uuid), cast(:b as jsonb), cast(:a as jsonb))"
             ),
-            {"id": str(uuid.uuid4()), "eid": user_id, "b": b[0], "a": a[0]},
+            {"id": str(uuid.uuid4()), "eid": user_id, "b": json.dumps(b[0]) if b and b[0] else "{}", "a": json.dumps(a[0]) if a and a[0] else "{}"},
         )
     return {"status": "success"}
 

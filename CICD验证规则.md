@@ -55,7 +55,7 @@ F.F.....F...F.                                                           [100%]
 =================================== FAILURES ===================================
 ___________________________ test_admin_billing_flow ____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41d01a32d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc802298b50>
 
     @pytest.mark.asyncio
     async def test_admin_billing_flow(monkeypatch):
@@ -105,21 +105,28 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41d01a32d0>
                 headers={**h, "If-Match": user_etag},
                 json={"display_name": "Admin User"},
             )
+            if r.status_code != 200:
+                print(f"Admin update user failed: {r.status_code}")
+                print(f"Response: {r.text}")
 >           assert r.status_code == 200
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_admin_billing.py:59: AssertionError
+api/tests/test_admin_billing.py:62: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-803565
+628370
+Admin update user failed: 500
+Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cef4c410>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc7ffbd1610>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
         # Mock S3
         mock_minio = MagicMock()
+        mock_minio.head_bucket.return_value = None  # Bucket exists
+        mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
         mock_minio.bucket_exists.return_value = True
         mock_minio.make_bucket.return_value = None
         mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
@@ -166,14 +173,14 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cef4c410>
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:55: AssertionError
+api/tests/test_books.py:57: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-175138
+680967
 upload_init failed: 500
 Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cecd7bd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc7ff890a90>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -219,6 +226,8 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cecd7bd0>
     
             # Mock S3 for book creation
             mock_minio = MagicMock()
+            mock_minio.head_bucket.return_value = None  # Bucket exists
+            mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
             mock_minio.stat_object.return_value.etag = "fake-etag"
             monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
             monkeypatch.setattr(
@@ -233,12 +242,12 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cecd7bd0>
                   ^^^^^^^^^^^^^^^^
 E           KeyError: 'data'
 
-api/tests/test_notes.py:63: KeyError
+api/tests/test_notes.py:65: KeyError
 ----------------------------- Captured stdout call -----------------------------
-704254
+619400
 _____________________________ test_search_ai_flow ______________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cefee250>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc7ffc9e7d0>
 
     @pytest.mark.asyncio
     async def test_search_ai_flow(monkeypatch):
@@ -321,13 +330,18 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cefee250>
             r = await client.post(
                 "/api/v1/ai/conversations", headers=h, json={"title": "Test Chat"}
             )
+            if r.status_code != 200:
+                print(f"AI conversation creation failed: {r.status_code}")
+                print(f"Response: {r.text}")
 >           assert r.status_code == 200
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_search_ai.py:90: AssertionError
+api/tests/test_search_ai.py:93: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-370925
+727385
+AI conversation creation failed: 500
+Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 ------------------------------ Captured log call -------------------------------
 ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (0/20) now.
 ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (1/20) in 1.00 second.
@@ -376,5 +390,5 @@ FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
 FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
 FAILED api/tests/test_search_ai.py::test_search_ai_flow - assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
-4 failed, 10 passed, 2 warnings in 21.04s
+4 failed, 10 passed, 2 warnings in 21.14s
 Error: Process completed with exit code 1.
