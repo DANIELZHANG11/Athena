@@ -50,78 +50,123 @@
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
 
-Run alembic -c alembic.ini upgrade head
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
-    cursor.execute(statement, parameters)
-psycopg2.errors.StringDataRightTruncation: value too long for type character varying(32)
+Run pytest -q api/tests
+......FF.                                                                [100%]
+=================================== FAILURES ===================================
+__________________________ test_ocr_quota_membership ___________________________
 
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f73b60016d0>
 
-The above exception was the direct cause of the following exception:
+    @pytest.mark.asyncio
+    async def test_ocr_quota_membership(monkeypatch):
+        monkeypatch.setenv("DEV_MODE", "true")
+        mock_minio = MagicMock()
+        mock_minio.bucket_exists.return_value = True
+        mock_minio.make_bucket.return_value = None
+        mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
+        monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
+        monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
+        monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "user@athena.local"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "user@athena.local", "code": code},
+            )
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"***"}
+    
+            r = await client.put(
+                "/api/v1/admin/system/settings",
+                headers=h,
+                json={"membership_tiers": {"PRO": {"free_ocr_pages": 10}}},
+            )
+            assert r.status_code == 200
+    
+            r = await client.post(
+                "/api/v1/admin/pricing/rules",
+                headers=h,
+                json={
+                    "service_type": "OCR",
+                    "unit_type": "PAGES",
+                    "unit_size": 1,
+                    "price_amount": 0.05,
+                    "currency": "CNY",
+                },
+            )
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/bin/alembic", line 7, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 636, in main
-    CommandLine(prog=prog).main(argv=argv)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 626, in main
-    self.run_cmd(cfg, options)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 603, in run_cmd
-    fn(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/command.py", line 406, in upgrade
-    script.run_env()
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/script/base.py", line 582, in run_env
-    util.load_python_file(self.dir, "env.py")
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 95, in load_python_file
-    module = load_module_py(module_id, path)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 113, in load_module_py
-    spec.loader.exec_module(module)  # type: ignore
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
-  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 34, in <module>
-    run_migrations_online()
-  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 28, in run_migrations_online
-    context.run_migrations()
-  File "<string>", line 8, in run_migrations
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/environment.py", line 946, in run_migrations
-    self.get_context().run_migrations(**kw)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/migration.py", line 635, in run_migrations
-    head_maintainer.update_to_step(step)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/migration.py", line 867, in update_to_step
-    self._update_version(from_, to_)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/migration.py", line 802, in _update_version
-    ret = self.context.impl._exec(
-          ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/ddl/impl.py", line 210, in _exec
-    return conn.execute(construct, params)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1418, in execute
-    return meth(
-           ^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 515, in _execute_on_connection
-    return connection._execute_clauseelement(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1640, in _execute_clauseelement
-    ret = self._execute_context(
-          ^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
-    return self._exec_single_context(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
-    self._handle_dbapi_exception(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
-    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
-    cursor.execute(statement, parameters)
-sqlalchemy.exc.DataError: (psycopg2.errors.StringDataRightTruncation) value too long for type character varying(32)
+api/tests/test_ocr_membership_quota.py:50: AssertionError
+----------------------------- Captured stdout call -----------------------------
+358794
+______________________ test_pricing_admin_and_user_rules _______________________
 
-[SQL: UPDATE alembic_version SET version_num='0106_add_books_meta_and_content_tables' WHERE alembic_version.version_num = '0105_ai_srs_users_locale']
-(Background on this error at: https://sqlalche.me/e/20/9h9h)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f73b5db8a10>
+
+    @pytest.mark.asyncio
+    async def test_pricing_admin_and_user_rules(monkeypatch):
+        monkeypatch.setenv("DEV_MODE", "true")
+        monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "op@athena.local"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "op@athena.local", "code": code},
+            )
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"***"}
+    
+            r = await client.post(
+                "/api/v1/admin/pricing/rules",
+                headers=h,
+                json={
+                    "service_type": "OCR",
+                    "unit_type": "PAGES",
+                    "unit_size": 1,
+                    "price_amount": 0.05,
+                    "currency": "CNY",
+                    "region": "CN",
+                    "remark_template": "每{unit_size}页{price_amount}{currency}",
+                },
+            )
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+api/tests/test_pricing_admin.py:37: AssertionError
+----------------------------- Captured stdout call -----------------------------
+886855
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:283
+  <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
+
+tests/test_ai_models_admin.py::test_ai_models_upsert_list
+  /opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:761: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
+  /home/runner/work/Athena/Athena/api/tests/conftest.py:6
+  Replacing the event_loop fixture with a custom implementation is deprecated
+  and will lead to errors in the future.
+  If you want to request an asyncio event loop with a scope other than function
+  scope, use the "scope" argument to the asyncio mark when marking the tests.
+  If you want to return different types of event loops, use the event_loop_policy
+  fixture.
+  
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+FAILED api/tests/test_pricing_admin.py::test_pricing_admin_and_user_rules - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+2 failed, 7 passed, 2 warnings in 1.64s
 Error: Process completed with exit code 1.
