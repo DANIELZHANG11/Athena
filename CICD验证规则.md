@@ -56,7 +56,7 @@ Traceback (most recent call last):
     self.dialect.do_execute(
   File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
     cursor.execute(statement, parameters)
-psycopg2.errors.DuplicateTable: relation "ai_conversations" already exists
+psycopg2.errors.DuplicateTable: relation "payment_gateways" already exists
 
 
 The above exception was the direct cause of the following exception:
@@ -129,14 +129,16 @@ Traceback (most recent call last):
     self.dialect.do_execute(
   File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
     cursor.execute(statement, parameters)
-sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "ai_conversations" already exists
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "payment_gateways" already exists
 
 [SQL: 
-CREATE TABLE ai_conversations (
+CREATE TABLE payment_gateways (
 	id UUID NOT NULL, 
-	owner_id UUID NOT NULL, 
-	title VARCHAR(255) NOT NULL, 
-	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	name VARCHAR(50) NOT NULL, 
+	config JSONB NOT NULL, 
+	is_active BOOLEAN DEFAULT 'true' NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+	version INTEGER DEFAULT '1' NOT NULL, 
 	PRIMARY KEY (id)
 )
 
