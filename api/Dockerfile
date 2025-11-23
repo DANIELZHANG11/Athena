@@ -1,4 +1,4 @@
-FROM zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim
+FROM python:3.11-slim
 WORKDIR /app
 ENV HF_HOME=/app/.hf_cache
 ENV TRANSFORMERS_CACHE=/app/.hf_cache

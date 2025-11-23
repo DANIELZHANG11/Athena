@@ -50,154 +50,30 @@
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
 
-Run pytest -q api/tests
-......F..                                                                [100%]
-=================================== FAILURES ===================================
-__________________________ test_ocr_quota_membership ___________________________
+Run docker/build-push-action@v5
+GitHub Actions runtime token ACs
+Docker info
+Proxy configuration
+Buildx version
+Builder info
+/usr/bin/docker buildx build --file ./api/Dockerfile --iidfile /home/runner/work/_temp/docker-actions-toolkit-5f2kQf/build-iidfile-be278d2ac4.txt --attest type=provenance,mode=max,builder-id=https://github.com/DANIELZHANG11/Athena/actions/runs/19609256055 --tag athena-api:test --metadata-file /home/runner/work/_temp/docker-actions-toolkit-5f2kQf/build-metadata-c9967f8f58.json ./api
+#0 building with "builder-5a248c92-5d3b-4990-8253-70d93094ced2" instance using docker-container driver
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f53d0e4f4d0>
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 559B done
+#1 DONE 0.0s
 
-    @pytest.mark.asyncio
-    async def test_ocr_quota_membership(monkeypatch):
-        monkeypatch.setenv("DEV_MODE", "true")
-        mock_minio = MagicMock()
-        mock_minio.bucket_exists.return_value = True
-        mock_minio.make_bucket.return_value = None
-        mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
-        monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
-        monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
-        monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
-        monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
-    
-        # Mock Celery send_task to avoid Redis connection
-        mock_send_task = MagicMock()
-        monkeypatch.setattr("api.app.ocr.celery_app.send_task", mock_send_task)
-    
-        # Mock Redis for concurrency check
-        mock_redis = MagicMock()
-        mock_redis.scard.return_value = 0
-        mock_redis.sadd.return_value = 1
-        monkeypatch.setattr("api.app.ocr.r", mock_redis)
-    
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "user@athena.local"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "user@athena.local", "code": code},
-            )
-            auth_data = r.json()["data"]
-            token = auth_data["tokens"]["access_token"]
-            user_id = auth_data["user"]["id"]
-            h = {"Authorization": f"***"}
-    
-            r = await client.put(
-                "/api/v1/admin/system/settings",
-                headers=h,
-                json={"membership_tiers": {"PRO": {"free_ocr_pages": 10}}},
-            )
-            assert r.status_code == 200
-    
-            r = await client.post(
-                "/api/v1/admin/pricing/rules",
-                headers=h,
-                json={
-                    "service_type": "OCR",
-                    "unit_type": "PAGES",
-                    "unit_size": 1,
-                    "price_amount": 0.05,
-                    "currency": "CNY",
-                },
-            )
-            assert r.status_code == 200
-    
-            # Create a book directly in database for testing
-            import uuid
-    
-            from sqlalchemy import text as sql_text
-    
-            from api.app.db import engine as db_engine
-    
-            mock_book_id = str(uuid.uuid4())
-            async with db_engine.begin() as conn:
-                # Set session user for RLS if needed
-                await conn.execute(
-                    sql_text("SELECT set_config('app.user_id', :uid, true)"),
-                    {"uid": user_id},  # Get user_id from earlier auth
-                )
-                # Insert book record
-                await conn.execute(
-                    sql_text(
-                        """
-                        INSERT INTO books (id, user_id, title, author, original_format, minio_key, size, meta)
-                        VALUES (
-                            cast(:id as uuid),
-                            cast(:uid as uuid),
-                            :title,
-                            'Test Author',
-                            'pdf',
-                            'test/book.pdf',
-                            1024,
-                            '{"page_count": 3}'::jsonb
-                        )
-                    """
-                    ),
-                    {"id": mock_book_id, "uid": user_id, "title": "Test Book for OCR"},
-                )
-    
-            # Grant credits BEFORE OCR job to ensure sufficient balance
-            grant_res = await client.post(
-                "/api/v1/billing/debug/grant-credits",
-                headers=h,
-                json={"kind": "credits", "amount": 10000},
-            )
-            assert grant_res.status_code == 200, f"Grant credits failed: {grant_res.json()}"
-    
-            r = await client.post(
-                "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
-            )
-            print(f"OCR job response: status={r.status_code}, body={r.json()}")
-            assert r.status_code == 200, f"OCR job init failed: {r.json()}"
-            jid = r.json()["data"]["job_id"]
-            r = await client.get("/api/v1/billing/ledger", headers=h)
-            before = (
-                len(r.json()["data"]["data"])
-                if isinstance(r.json()["data"], dict)
-                else len(r.json()["data"])
-            )
-            r = await client.post(
-                "/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3}
-            )
->           assert r.status_code == 200
-E           assert 404 == 200
-E            +  where 404 = <Response [404 Not Found]>.status_code
-
-api/tests/test_ocr_membership_quota.py:123: AssertionError
------------------------------ Captured stdout call -----------------------------
-090452
-OCR job response: status=200, body={'status': 'success', 'data': {'job_id': '944a0aa7-5760-4c81-a1a7-d98c75ecd9fe'}}
-=============================== warnings summary ===============================
-<frozen importlib._bootstrap>:283
-  <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
-
-tests/test_ai_models_admin.py::test_ai_models_upsert_list
-  /opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:761: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
-  /home/runner/work/Athena/Athena/api/tests/conftest.py:6
-  Replacing the event_loop fixture with a custom implementation is deprecated
-  and will lead to errors in the future.
-  If you want to request an asyncio event loop with a scope other than function
-  scope, use the "scope" argument to the asyncio mark when marking the tests.
-  If you want to return different types of event loops, use the event_loop_policy
-  fixture.
-  
-    warnings.warn(
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-=========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - assert 404 == 200
- +  where 404 = <Response [404 Not Found]>.status_code
-1 failed, 8 passed, 2 warnings in 1.78s
-Error: Process completed with exit code 1.
+#2 [internal] load metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim
+#2 ERROR: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
+------
+ > [internal] load metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim:
+------
+WARNING: No output specified with docker-container driver. Build result will only remain in the build cache. To push result image into registry use --push or to load image into docker use --load
+Dockerfile:1
+--------------------
+   1 | >>> FROM zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim
+   2 |     WORKDIR /app
+   3 |     ENV HF_HOME=/app/.hf_cache
+--------------------
+ERROR: failed to build: failed to solve: zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: failed to resolve source metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
+Error: buildx failed with: ERROR: failed to build: failed to solve: zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: failed to resolve source metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
