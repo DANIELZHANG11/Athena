@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fce0bb97210>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f4706fe0e50>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -79,13 +79,76 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fce0bb97210>
             )
             auth_data = r.json()["data"]
             token = auth_data["tokens"]["access_token"]
->           user_id = auth_data["user_id"]
-                      ^^^^^^^^^^^^^^^^^^^^
-E           KeyError: 'user_id'
+            user_id = auth_data["user"]["id"]
+            h = {"Authorization": f"***"}
+    
+            r = await client.put(
+                "/api/v1/admin/system/settings",
+                headers=h,
+                json={"membership_tiers": {"PRO": {"free_ocr_pages": 10}}},
+            )
+            assert r.status_code == 200
+    
+            r = await client.post(
+                "/api/v1/admin/pricing/rules",
+                headers=h,
+                json={
+                    "service_type": "OCR",
+                    "unit_type": "PAGES",
+                    "unit_size": 1,
+                    "price_amount": 0.05,
+                    "currency": "CNY",
+                },
+            )
+            assert r.status_code == 200
+    
+            # Create a book directly in database for testing
+            import uuid
+    
+            from sqlalchemy import text as sql_text
+    
+            from api.app.db import engine as db_engine
+    
+            mock_book_id = str(uuid.uuid4())
+            async with db_engine.begin() as conn:
+                # Set session user for RLS if needed
+                await conn.execute(
+                    sql_text("SELECT set_config('app.user_id', :uid, true)"),
+                    {"uid": user_id},  # Get user_id from earlier auth
+                )
+                # Insert book record
+                await conn.execute(
+                    sql_text(
+                        """
+                        INSERT INTO books (id, user_id, title, author, original_format, minio_key, size, meta)
+                        VALUES (
+                            cast(:id as uuid),
+                            cast(:uid as uuid),
+                            :title,
+                            'Test Author',
+                            'pdf',
+                            'test/book.pdf',
+                            1024,
+                            '{"page_count": 3}'::jsonb
+                        )
+                    """
+                    ),
+                    {"id": mock_book_id, "uid": user_id, "title": "Test Book for OCR"},
+                )
+    
+            r = await client.post(
+                "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
+            )
+            print(f"OCR job response: status={r.status_code}, body={r.json()}")
+>           assert r.status_code == 200, f"OCR job init failed: {r.json()}"
+E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_ocr_membership_quota.py:31: KeyError
+api/tests/test_ocr_membership_quota.py:92: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-492805
+873838
+OCR job response: status=500, body={'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -104,6 +167,8 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - KeyError: 'user_id'
-1 failed, 8 passed, 2 warnings in 1.66s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
+assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+1 failed, 8 passed, 2 warnings in 1.96s
 Error: Process completed with exit code 1.
