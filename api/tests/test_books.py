@@ -17,9 +17,8 @@ async def test_books_crud_flow(monkeypatch):
     mock_minio.head_object.return_value = {"ETag": '"fake-etag"'}
     mock_minio.put_object.return_value = None
     mock_minio.get_object.return_value = {"Body": MagicMock()}
-    # Mock boto3.client to return our mock S3 client
-    import boto3
-    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: mock_minio)
+    # Mock boto3.client in the storage module
+    monkeypatch.setattr("api.app.storage.boto3.client", lambda *args, **kwargs: mock_minio)
     monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
     monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
 
