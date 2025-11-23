@@ -71,6 +71,8 @@ async def test_ocr_quota_membership(monkeypatch):
         r = await client.post(
             "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
         )
+        print(f"OCR job response: status={r.status_code}, body={r.json()}")
+        assert r.status_code == 200, f"OCR job init failed: {r.json()}"
         jid = r.json()["data"]["job_id"]
         await client.post(
             "/api/v1/billing/debug/grant-credits",

@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb82b4ba050>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1159c7b010>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -100,16 +100,39 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb82b4ba050>
             )
             assert r.status_code == 200
     
+            # Create a mock book first
+            mock_book_id = str(__import__("uuid").uuid4())
             r = await client.post(
-                "/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"}
+                "/api/v1/books/upload/init",
+                headers=h,
+                json={"title": "Test Book", "filename": "a.pdf"},
             )
->           jid = r.json()["data"]["id"]
+            if r.status_code == 200:
+                mock_book_id = r.json()["data"]["id"]
+    
+            # Mock the book meta to have page_count
+            from sqlalchemy import text as sql_text
+    
+            from api.app.db import engine as db_engine
+    
+            async with db_engine.begin() as conn:
+                await conn.execute(
+                    sql_text(
+                        "UPDATE books SET meta = '{\"page_count\": 3}'::jsonb WHERE id = cast(:bid as uuid)"
+                    ),
+                    {"bid": mock_book_id},
+                )
+    
+            r = await client.post(
+                "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
+            )
+>           jid = r.json()["data"]["job_id"]
                   ^^^^^^^^^^^^^^^^
 E           KeyError: 'data'
 
-api/tests/test_ocr_membership_quota.py:55: KeyError
+api/tests/test_ocr_membership_quota.py:78: KeyError
 ----------------------------- Captured stdout call -----------------------------
-822065
+816841
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -129,5 +152,5 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
 FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - KeyError: 'data'
-1 failed, 8 passed, 2 warnings in 1.87s
+1 failed, 8 passed, 2 warnings in 1.79s
 Error: Process completed with exit code 1.
