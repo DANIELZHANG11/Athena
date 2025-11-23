@@ -1,14 +1,14 @@
 """
 Add books.meta jsonb and create notes/tags/highlights tables with RLS
 
-Revision ID: 0106_add_books_meta_and_content_tables
+Revision ID: a7f3e9b2c1d4
 Revises: 0105_ai_srs_users_locale
 Create Date: 2025-11-23
 """
 
 from alembic import op
 
-revision = "0106_add_books_meta_and_content_tables"
+revision = "a7f3e9b2c1d4"
 down_revision = "0105_ai_srs_users_locale"
 branch_labels = None
 depends_on = None

@@ -1,15 +1,15 @@
 """
 Adjust tags unique to exclude soft-deleted via partial unique index
 
-Revision ID: 0107_adjust_tags_unique_partial_index
-Revises: 0106_add_books_meta_and_content_tables
+Revision ID: b8e4f0c3d2a5
+Revises: a7f3e9b2c1d4
 Create Date: 2025-11-23
 """
 
 from alembic import op
 
-revision = "0107_adjust_tags_unique_partial_index"
-down_revision = "0106_add_books_meta_and_content_tables"
+revision = "b8e4f0c3d2a5"
+down_revision = "a7f3e9b2c1d4"
 branch_labels = None
 depends_on = None
 
