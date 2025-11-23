@@ -16,20 +16,13 @@ async def test_notes_highlights_tags_flow(monkeypatch):
     monkeypatch.setattr("api.app.notes.celery_app.send_task", mock_send_task)
 
     # Mock Redis
+    # Mock Redis
     mock_redis = MagicMock()
     monkeypatch.setattr("api.app.notes.r", mock_redis)
 
-    # Mock Permissions - mock the underlying check_quota_status
-    async def mock_check_quota(*args, **kwargs):
-        return {
-            "user_id": "test",
-            "is_pro": True,
-            "can_upload": True,
-            "is_readonly": False,
-            "usage": {"books": 0, "storage": 0},
-            "limits": {"books": -1, "storage": -1}
-        }
-    monkeypatch.setattr("api.app.dependencies.check_quota_status", mock_check_quota)
+    # Mock Permissions - patch imported functions
+    monkeypatch.setattr("api.app.notes.require_write_permission", lambda: {"is_readonly": False})
+    monkeypatch.setattr("api.app.books.require_upload_permission", lambda: {"can_upload": True, "is_pro": True})
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -42,7 +35,7 @@ async def test_notes_highlights_tags_flow(monkeypatch):
 
         # 2. Create Book (Prerequisite)
         # We need a book_id for notes and highlights. 
-        # Since we are mocking everything, we can just generate a random UUID and insert it directly into DB 
+        # Since we are mocking everything, we can just generate a random UUID and insert it directly into DB
         # OR use the book API if we want integration. Let's use direct DB insertion for speed/isolation if possible,
         # but using API is easier since we already have auth.
         # However, upload_complete requires S3 mock. Let's reuse the S3 mock setup or just insert a fake book ID.
@@ -57,6 +50,7 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
 
         r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
+        assert r.status_code == 200
         key = r.json()["data"]["key"]
         r = await client.post("/api/v1/books/upload_complete", headers=h, json={
             "key": key,
