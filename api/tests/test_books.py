@@ -39,6 +39,9 @@ async def test_books_crud_flow(monkeypatch):
 
         # 2. Upload Init
         r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
+        if r.status_code != 200:
+            print(f"upload_init failed: {r.status_code}")
+            print(f"Response: {r.text}")
         assert r.status_code == 200
         key = r.json()["data"]["key"]
         assert key

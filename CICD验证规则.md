@@ -50,98 +50,399 @@
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
 
-Run alembic -c alembic.ini upgrade head
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
-    cursor.execute(statement, parameters)
-psycopg2.errors.DuplicateTable: relation "payment_gateways" already exists
+Run pytest -q api/tests
+F.F.....F...FF                                                           [100%]
+=================================== FAILURES ===================================
+___________________________ test_admin_billing_flow ____________________________
 
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fedf3433510>
 
-The above exception was the direct cause of the following exception:
+    @pytest.mark.asyncio
+    async def test_admin_billing_flow(monkeypatch):
+        # Mock Redis (used in some places implicitly or explicitly)
+        mock_redis = MagicMock()
+        monkeypatch.setattr(
+            "api.app.billing.r", mock_redis, raising=False
+        )  # billing might not use redis directly but good to be safe
+    
+        # Mock Webhook Signature Verification
+        monkeypatch.setattr("api.app.billing._sig_ok", lambda s, b, sig: True)
+    
+        # Enable Dev Mode for Grant Credits
+        monkeypatch.setenv("DEV_MODE", "true")
+    
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Auth & Admin Setup
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "admin@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "admin@test.com", "code": code},
+            )
+            auth_data = r.json()["data"]
+            token = auth_data["tokens"]["access_token"]
+            user_id = auth_data["user"]["id"]
+            h = {"Authorization": f"***"}
+    
+            # Set ADMIN_USER_ID to current user
+            monkeypatch.setenv("ADMIN_USER_ID", user_id)
+    
+            # --- Admin Tests ---
+    
+            # List Users
+            r = await client.get("/api/v1/admin/users", headers=h)
+            assert r.status_code == 200
+            users = r.json()["data"]
+            assert any(u["id"] == user_id for u in users)
+            user_etag = next(u["etag"] for u in users if u["id"] == user_id)
+    
+            # Update User
+            r = await client.patch(
+                f"/api/v1/admin/users/{user_id}",
+                headers={**h, "If-Match": user_etag},
+                json={"display_name": "Admin User"},
+            )
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-Traceback (most recent call last):
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/bin/alembic", line 7, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 636, in main
-    CommandLine(prog=prog).main(argv=argv)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 626, in main
-    self.run_cmd(cfg, options)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/config.py", line 603, in run_cmd
-    fn(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/command.py", line 406, in upgrade
-    script.run_env()
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/script/base.py", line 582, in run_env
-    util.load_python_file(self.dir, "env.py")
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 95, in load_python_file
-    module = load_module_py(module_id, path)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/util/pyfiles.py", line 113, in load_module_py
-    spec.loader.exec_module(module)  # type: ignore
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
-  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 34, in <module>
-    run_migrations_online()
-  File "/home/runner/work/Athena/Athena/api/alembic/env.py", line 28, in run_migrations_online
-    context.run_migrations()
-  File "<string>", line 8, in run_migrations
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/environment.py", line 946, in run_migrations
-    self.get_context().run_migrations(**kw)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/runtime/migration.py", line 628, in run_migrations
-    step.migration_fn(**kw)
-  File "/home/runner/work/Athena/Athena/api/alembic/versions/0111_add_missing_tables.py", line 60, in upgrade
-    op.create_table(
-  File "<string>", line 8, in create_table
-  File "<string>", line 3, in create_table
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/ops.py", line 1311, in create_table
-    return operations.invoke(op)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/base.py", line 442, in invoke
-    return fn(self, operation)
-           ^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/operations/toimpl.py", line 131, in create_table
-    operations.impl.create_table(table)
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/ddl/impl.py", line 369, in create_table
-    self._exec(schema.CreateTable(table))
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/alembic/ddl/impl.py", line 210, in _exec
-    return conn.execute(construct, params)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1418, in execute
-    return meth(
-           ^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/sql/ddl.py", line 180, in _execute_on_connection
-    return connection._execute_ddl(
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1529, in _execute_ddl
-    ret = self._execute_context(
-          ^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
-    return self._exec_single_context(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
-    self._handle_dbapi_exception(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
-    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
-    self.dialect.do_execute(
-  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
-    cursor.execute(statement, parameters)
-sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "payment_gateways" already exists
+api/tests/test_admin_billing.py:59: AssertionError
+----------------------------- Captured stdout call -----------------------------
+331793
+_____________________________ test_books_crud_flow _____________________________
 
-[SQL: 
-CREATE TABLE payment_gateways (
-	id UUID NOT NULL, 
-	name VARCHAR(50) NOT NULL, 
-	config JSONB NOT NULL, 
-	is_active BOOLEAN DEFAULT 'true' NOT NULL, 
-	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-	version INTEGER DEFAULT '1' NOT NULL, 
-	PRIMARY KEY (id)
-)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded305210>
 
-]
-(Background on this error at: https://sqlalche.me/e/20/f405)
+    @pytest.mark.asyncio
+    async def test_books_crud_flow(monkeypatch):
+        # Mock S3
+        mock_minio = MagicMock()
+        mock_minio.bucket_exists.return_value = True
+        mock_minio.make_bucket.return_value = None
+        mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
+        mock_minio.presigned_get_object.return_value = "http://fake-download-url.com"
+        mock_minio.stat_object.return_value.etag = "fake-etag"
+        monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
+        monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
+        monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
+    
+        # Mock Celery
+        mock_send_task = MagicMock()
+        monkeypatch.setattr("api.app.books.celery_app.send_task", mock_send_task)
+    
+        # Mock Redis
+        mock_redis = MagicMock()
+        monkeypatch.setattr("api.app.books.r", mock_redis)
+    
+        # Mock Permissions
+        monkeypatch.setattr("api.app.dependencies.require_upload_permission", lambda: True)
+        monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+    
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Auth
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "user@test.com", "code": code},
+            )
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"***"}
+    
+            # 2. Upload Init
+            r = await client.post(
+                "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
+            )
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+api/tests/test_books.py:52: AssertionError
+----------------------------- Captured stdout call -----------------------------
+800276
+_______________________ test_notes_highlights_tags_flow ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded3d32d0>
+
+    @pytest.mark.asyncio
+    async def test_notes_highlights_tags_flow(monkeypatch):
+        # Mock Search Sync
+        monkeypatch.setattr("api.app.notes.index_note", lambda *args: None)
+        monkeypatch.setattr("api.app.notes.delete_note_from_index", lambda *args: None)
+        monkeypatch.setattr("api.app.notes.index_highlight", lambda *args: None)
+        monkeypatch.setattr("api.app.notes.delete_highlight_from_index", lambda *args: None)
+    
+        # Mock Celery
+        mock_send_task = MagicMock()
+        monkeypatch.setattr("api.app.notes.celery_app.send_task", mock_send_task)
+    
+        # Mock Redis
+        mock_redis = MagicMock()
+        monkeypatch.setattr("api.app.notes.r", mock_redis)
+    
+        # Mock Permissions
+        monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+    
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Auth
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "user@test.com", "code": code},
+            )
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"***"}
+    
+            # 2. Create Book (Prerequisite)
+            # We need a book_id for notes and highlights.
+            # Since we are mocking everything, we can just generate a random UUID and insert it directly into DB
+            # OR use the book API if we want integration. Let's use direct DB insertion for speed/isolation if possible,
+            # but using API is easier since we already have auth.
+            # However, upload_complete requires S3 mock. Let's reuse the S3 mock setup or just insert a fake book ID.
+            # Actually, notes/highlights foreign key constraints might fail if book doesn't exist.
+            # So we MUST create a book.
+    
+            # Mock S3 for book creation
+            mock_minio = MagicMock()
+            mock_minio.stat_object.return_value.etag = "fake-etag"
+            monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
+            monkeypatch.setattr(
+                "api.app.books._quick_confidence", lambda b, k: (False, 0.0)
+            )
+            monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
+    
+            r = await client.post(
+                "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
+            )
+>           key = r.json()["data"]["key"]
+                  ^^^^^^^^^^^^^^^^
+E           KeyError: 'data'
+
+api/tests/test_notes.py:63: KeyError
+----------------------------- Captured stdout call -----------------------------
+597816
+_____________________________ test_search_ai_flow ______________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded32e910>
+
+    @pytest.mark.asyncio
+    async def test_search_ai_flow(monkeypatch):
+        # Mock Redis
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None  # No cache hit
+        mock_redis.ttl.return_value = 0
+        monkeypatch.setattr("api.app.ai.r", mock_redis)
+    
+        # Mock ES (Ensure it fails so we fallback to Postgres)
+        monkeypatch.setenv("ES_URL", "http://non-existent-es:9200")
+    
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Auth
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "user@test.com", "code": code},
+            )
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"***"}
+    
+            # 2. Search (Postgres Fallback)
+            # First, insert some data via Notes API (requires mocking notes dependencies again or just raw SQL)
+            # Let's use raw SQL for speed and isolation
+            import uuid
+    
+            from sqlalchemy import text
+    
+            from api.app.db import engine
+    
+            book_id = str(uuid.uuid4())
+            note_id = str(uuid.uuid4())
+    
+            async with engine.begin() as conn:
+                # Set user_id
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :uid, true)"),
+                    {"uid": r.json()["data"]["user"]["id"]},
+                )
+    
+                # Insert Dummy Book
+                await conn.execute(
+                    text(
+                        "INSERT INTO books(id, user_id, title, author, minio_key) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, 'Searchable Book', 'Author X', 'key')"
+                    ),
+                    {"id": book_id},
+                )
+    
+                # Insert Dummy Note
+                await conn.execute(
+                    text(
+                        "INSERT INTO notes(id, user_id, book_id, content, tsv) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, cast(:bid as uuid), 'Searchable Note Content', to_tsvector('simple', 'Searchable Note Content'))"
+                    ),
+                    {"id": note_id, "bid": book_id},
+                )
+    
+            # Search for Book
+            r = await client.get("/api/v1/search?q=Searchable&kind=book", headers=h)
+            assert r.status_code == 200
+            items = r.json()["data"]
+            assert any(i["title"] == "Searchable Book" for i in items)
+    
+            # Search for Note
+            r = await client.get("/api/v1/search?q=Content&kind=note", headers=h)
+            assert r.status_code == 200
+            items = r.json()["data"]
+            assert any(i["content"] == "Searchable Note Content" for i in items)
+    
+            # Reindex (Smoke Test)
+            r = await client.post("/api/v1/search/reindex", headers=h)
+            assert r.status_code == 200
+    
+            # 3. AI Flow
+            # Create Conversation
+            r = await client.post(
+                "/api/v1/ai/conversations", headers=h, json={"title": "Test Chat"}
+            )
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+api/tests/test_search_ai.py:90: AssertionError
+----------------------------- Captured stdout call -----------------------------
+396964
+------------------------------ Captured log call -------------------------------
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (0/20) now.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (1/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (2/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (3/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (4/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (5/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (6/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (7/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (8/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (9/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (10/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (11/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (12/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (13/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (14/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (15/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (16/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (17/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (18/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (19/20) in 1.00 second.
+CRITICAL celery.backends.redis:redis.py:132 
+Retry limit exceeded while trying to reconnect to the Celery redis result store backend. The Celery application must be restarted.
+________________________ test_user_profile_invite_flow _________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fedecf91810>
+
+    @pytest.mark.asyncio
+    async def test_user_profile_invite_flow(monkeypatch):
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Register User A (Inviter)
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "inviter@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "inviter@test.com", "code": code},
+            )
+            token_a = r.json()["data"]["tokens"]["access_token"]
+            h_a = {"Authorization": f"***"}
+    
+            # 2. Register User B (Invitee)
+            r = await client.post(
+                "/api/v1/auth/email/send-code", json={"email": "invitee@test.com"}
+            )
+            code = r.json()["data"]["dev_code"]
+            r = await client.post(
+                "/api/v1/auth/email/verify-code",
+                json={"email": "invitee@test.com", "code": code},
+            )
+            token_b = r.json()["data"]["tokens"]["access_token"]
+            h_b = {"Authorization": f"***"}
+    
+            # 3. Profile Update (User A)
+            r = await client.get("/api/v1/profile/me", headers=h_a)
+            assert r.status_code == 200
+            etag = r.json()["data"]["etag"]
+    
+            r = await client.patch(
+                "/api/v1/profile/me",
+                headers={**h_a, "If-Match": etag},
+                json={"display_name": "Super Inviter"},
+            )
+            assert r.status_code == 200
+    
+            r = await client.get("/api/v1/profile/me", headers=h_a)
+            assert r.json()["data"]["display_name"] == "Super Inviter"
+    
+            # 4. Generate Invite Code (User A)
+            r = await client.post("/api/v1/invites/generate", headers=h_a)
+            assert r.status_code == 200
+            invite_code = r.json()["data"]["code"]
+            assert invite_code
+    
+            # 5. Redeem Invite Code (User B)
+            r = await client.post(
+                "/api/v1/invites/redeem", headers=h_b, json={"code": invite_code}
+            )
+            assert r.status_code == 200
+    
+            # 6. Verify Duplicate Redemption Fails
+            r = await client.post(
+                "/api/v1/invites/redeem", headers=h_b, json={"code": invite_code}
+            )
+>           assert r.status_code == 400
+E           assert 404 == 400
+E            +  where 404 = <Response [404 Not Found]>.status_code
+
+api/tests/test_user_flow.py:66: AssertionError
+----------------------------- Captured stdout call -----------------------------
+922341
+744533
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:283
+  <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
+
+tests/test_admin_billing.py::test_admin_billing_flow
+  /opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:761: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
+  /home/runner/work/Athena/Athena/api/tests/conftest.py:6
+  Replacing the event_loop fixture with a custom implementation is deprecated
+  and will lead to errors in the future.
+  If you want to request an asyncio event loop with a scope other than function
+  scope, use the "scope" argument to the asyncio mark when marking the tests.
+  If you want to return different types of event loops, use the event_loop_policy
+  fixture.
+  
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED api/tests/test_admin_billing.py::test_admin_billing_flow - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
+FAILED api/tests/test_search_ai.py::test_search_ai_flow - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+FAILED api/tests/test_user_flow.py::test_user_profile_invite_flow - assert 404 == 400
+ +  where 404 = <Response [404 Not Found]>.status_code
+5 failed, 9 passed, 2 warnings in 21.12s
 Error: Process completed with exit code 1.
