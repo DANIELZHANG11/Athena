@@ -28,7 +28,7 @@ async def init_job(body: dict = Body(...), auth=Depends(require_user)):
     async with engine.begin() as conn:
         # 1. Get Book Metadata (Page Count)
         bres = await conn.execute(
-            text("SELECT meta FROM books WHERE id = cast(:bid as uuid) AND user_id = cast(:uid as uuid)"),
+            text("SELECT meta, minio_key FROM books WHERE id = cast(:bid as uuid) AND user_id = cast(:uid as uuid)"),
             {"bid": book_id, "uid": user_id}
         )
         book_row = bres.fetchone()
@@ -36,6 +36,7 @@ async def init_job(body: dict = Body(...), auth=Depends(require_user)):
             raise HTTPException(status_code=404, detail="book_not_found")
         
         meta = book_row[0] or {}
+        source_key = book_row[1]
         page_count = meta.get("page_count", 0)
         if page_count <= 0:
              page_count = 1 
@@ -105,8 +106,8 @@ async def init_job(body: dict = Body(...), auth=Depends(require_user)):
         # 7. Create Job
         job_id = str(uuid.uuid4())
         await conn.execute(
-            text("INSERT INTO ocr_jobs (id, book_id, user_id, status, page_count, deduction_strategy, deduction_amount) VALUES (cast(:jid as uuid), cast(:bid as uuid), cast(:uid as uuid), 'pending', :pc, :ds, :da)"),
-            {"jid": job_id, "bid": book_id, "uid": user_id, "pc": page_count, "ds": strategy, "da": cost}
+            text("INSERT INTO ocr_jobs (id, book_id, user_id, owner_id, source_key, status, page_count, deduction_strategy, deduction_amount) VALUES (cast(:jid as uuid), cast(:bid as uuid), cast(:uid as uuid), cast(:uid as uuid), :sk, 'pending', :pc, :ds, :da)"),
+            {"jid": job_id, "bid": book_id, "uid": user_id, "sk": source_key, "pc": page_count, "ds": strategy, "da": cost}
         )
         
         # 8. Enqueue Task

@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fe2908750>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1b8aa10a90>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -136,19 +136,27 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fe2908750>
                     {"id": mock_book_id, "uid": user_id, "title": "Test Book for OCR"},
                 )
     
+            # Grant credits BEFORE OCR job to ensure sufficient balance
+            grant_res = await client.post(
+                "/api/v1/billing/debug/grant-credits",
+                headers=h,
+                json={"kind": "credits", "amount": 10000},
+            )
+            assert grant_res.status_code == 200, f"Grant credits failed: {grant_res.json()}"
+    
             r = await client.post(
                 "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
             )
             print(f"OCR job response: status={r.status_code}, body={r.json()}")
 >           assert r.status_code == 200, f"OCR job init failed: {r.json()}"
-E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'insufficient_credits_for_ocr', 'message': 'insufficient_credits_for_ocr'}}
-E           assert 402 == 200
-E            +  where 402 = <Response [402 Payment Required]>.status_code
+E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_ocr_membership_quota.py:92: AssertionError
+api/tests/test_ocr_membership_quota.py:100: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-020800
-OCR job response: status=402, body={'status': 'error', 'error': {'code': 'insufficient_credits_for_ocr', 'message': 'insufficient_credits_for_ocr'}}
+278185
+OCR job response: status=500, body={'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -167,8 +175,8 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'insufficient_credits_for_ocr', 'message': 'insufficient_credits_for_ocr'}}
-assert 402 == 200
- +  where 402 = <Response [402 Payment Required]>.status_code
-1 failed, 8 passed, 2 warnings in 1.75s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
+assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+1 failed, 8 passed, 2 warnings in 1.65s
 Error: Process completed with exit code 1.
