@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c974a90>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fcf1db75450>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
@@ -82,48 +82,66 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c974a90>
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.books.r", mock_redis)
     
-        # Mock Permissions - patch the imported functions in books module
-        monkeypatch.setattr(
-            "api.app.books.require_upload_permission",
-            lambda: {"can_upload": True, "is_pro": True},
-        )
-        monkeypatch.setattr(
-            "api.app.books.require_write_permission", lambda: {"is_readonly": False}
-        )
+        # Mock Permissions using dependency_overrides
+        from api.app.dependencies import (require_upload_permission,
+                                          require_write_permission)
     
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # 1. Auth
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "user@test.com", "code": code},
-            )
-            token = r.json()["data"]["tokens"]["access_token"]
-            h = {"Authorization": f"***"}
+        app.dependency_overrides[require_upload_permission] = lambda: {
+            "can_upload": True,
+            "is_pro": True,
+        }
+        app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
     
-            # 2. Upload Init
-            r = await client.post(
-                "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
-            )
-            if r.status_code != 200:
-                print(f"upload_init failed: {r.status_code}")
-                print(f"Response: {r.text}")
->           assert r.status_code == 200
-E           assert 500 == 200
-E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+        try:
+            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                # 1. Auth
+                r = await client.post(
+                    "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
+                )
+                code = r.json()["data"]["dev_code"]
+                r = await client.post(
+                    "/api/v1/auth/email/verify-code",
+                    json={"email": "user@test.com", "code": code},
+                )
+                token = r.json()["data"]["tokens"]["access_token"]
+                h = {"Authorization": f"***"}
+    
+                # 2. Upload Init
+                r = await client.post(
+                    "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
+                )
+                if r.status_code != 200:
+                    print(f"upload_init failed: {r.status_code}")
+                    print(f"Response: {r.text}")
+                assert r.status_code == 200
+                key = r.json()["data"]["key"]
+                assert key
+    
+                # 3. Upload Complete
+                r = await client.post(
+                    "/api/v1/books/upload_complete",
+                    headers=h,
+                    json={
+                        "key": key,
+                        "title": "Test Book",
+                        "author": "Tester",
+                        "original_format": "pdf",
+                        "size": 1024,
+                    },
+                )
+>               assert r.status_code == 200
+E               assert 500 == 200
+E                +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:64: AssertionError
+api/tests/test_books.py:84: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-595322
-upload_init failed: 500
-Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
+920785
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c958290>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fcf1db02790>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -138,69 +156,74 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c958290>
         monkeypatch.setattr("api.app.notes.celery_app.send_task", mock_send_task)
     
         # Mock Redis
-        # Mock Redis
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.notes.r", mock_redis)
     
-        # Mock Permissions - patch imported functions
-        monkeypatch.setattr(
-            "api.app.notes.require_write_permission", lambda: {"is_readonly": False}
-        )
-        monkeypatch.setattr(
-            "api.app.books.require_upload_permission",
-            lambda: {"can_upload": True, "is_pro": True},
-        )
+        # Mock Permissions using dependency_overrides
+        from api.app.dependencies import (require_upload_permission,
+                                          require_write_permission)
     
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # 1. Auth
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "user@test.com", "code": code},
-            )
-            token = r.json()["data"]["tokens"]["access_token"]
-            h = {"Authorization": f"***"}
+        app.dependency_overrides[require_upload_permission] = lambda: {
+            "can_upload": True,
+            "is_pro": True,
+        }
+        app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
     
-            # 2. Create Book (Prerequisite)
-            # We need a book_id for notes and highlights.
-            # Since we are mocking everything, we can just generate a random UUID and insert it directly into DB
-            # OR use the book API if we want integration. Let's use direct DB insertion for speed/isolation if possible,
-            # but using API is easier since we already have auth.
-            # However, upload_complete requires S3 mock. Let's reuse the S3 mock setup or just insert a fake book ID.
-            # Actually, notes/highlights foreign key constraints might fail if book doesn't exist.
-            # So we MUST create a book.
+        try:
+            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                # 1. Auth
+                r = await client.post(
+                    "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
+                )
+                code = r.json()["data"]["dev_code"]
+                r = await client.post(
+                    "/api/v1/auth/email/verify-code",
+                    json={"email": "user@test.com", "code": code},
+                )
+                token = r.json()["data"]["tokens"]["access_token"]
+                h = {"Authorization": f"***"}
     
-            # Mock S3 for book creation - mock functions in books module
-            monkeypatch.setattr(
-                "api.app.books.presigned_put",
-                lambda bucket, key, **kwargs: "http://fake-upload-url.com",
-            )
-            monkeypatch.setattr(
-                "api.app.books.presigned_get",
-                lambda bucket, key, **kwargs: "http://fake-download-url.com",
-            )
-            monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
-            monkeypatch.setattr(
-                "api.app.books.upload_bytes", lambda bucket, key, data, content_type: None
-            )
-            monkeypatch.setattr(
-                "api.app.books._quick_confidence", lambda b, k: (False, 0.0)
-            )
+                # 2. Create Book (Prerequisite)
+                # Mock S3 for book creation - mock functions in books module
+                monkeypatch.setattr(
+                    "api.app.books.presigned_put",
+                    lambda bucket, key, **kwargs: "http://fake-upload-url.com",
+                )
+                monkeypatch.setattr(
+                    "api.app.books.presigned_get",
+                    lambda bucket, key, **kwargs: "http://fake-download-url.com",
+                )
+                monkeypatch.setattr(
+                    "api.app.books.stat_etag", lambda bucket, key: "fake-etag"
+                )
+                monkeypatch.setattr(
+                    "api.app.books.upload_bytes",
+                    lambda bucket, key, data, content_type: None,
+                )
+                monkeypatch.setattr(
+                    "api.app.books._quick_confidence", lambda b, k: (False, 0.0)
+                )
     
-            r = await client.post(
-                "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
-            )
->           assert r.status_code == 200
-E           assert 500 == 200
-E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+                r = await client.post(
+                    "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
+                )
+                assert r.status_code == 200
+                key = r.json()["data"]["key"]
+                r = await client.post(
+                    "/api/v1/books/upload_complete",
+                    headers=h,
+                    json={"key": key, "title": "Test Book", "original_format": "pdf"},
+                )
+>               book_id = r.json()["data"]["id"]
+                          ^^^^^^^^^^^^^^^^
+E               KeyError: 'data'
 
-api/tests/test_notes.py:78: AssertionError
+api/tests/test_notes.py:83: KeyError
 ----------------------------- Captured stdout call -----------------------------
-520022
+890923
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -221,7 +244,6 @@ tests/test_admin_billing.py::test_admin_billing_flow
 =========================== short test summary info ============================
 FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
-FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - assert 500 == 200
- +  where 500 = <Response [500 Internal Server Error]>.status_code
+FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
 2 failed, 12 passed, 2 warnings in 21.18s
 Error: Process completed with exit code 1.

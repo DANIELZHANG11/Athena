@@ -103,92 +103,99 @@ async def upload_complete(
     idempotency_key: str | None = Header(None),
     auth=Depends(require_user),
 ):
-    user_id, _ = auth
-    key = body.get("key")
-    if not key:
-        raise HTTPException(status_code=400, detail="missing_key")
-    title = body.get("title") or "Untitled"
-    author = body.get("author") or ""
-    language = body.get("language") or ""
-    original_format = body.get("original_format") or ""
-    size = body.get("size") or None
-    if idempotency_key:
-        idem_key = f"idem:books:upload_complete:{user_id}:{idempotency_key}"
-        cached = r.get(idem_key)
-        if cached:
-            return {"status": "success", "data": eval(cached)}
-    book_id = str(uuid.uuid4())
-    # 计算ETag并进行去重
-    etag = stat_etag(BOOKS_BUCKET, key)
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
-
-        if etag:
-            res = await conn.execute(
-                text(
-                    "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
-                ),
-                {"e": etag},
-            )
-            row = res.fetchone()
-            if row:
-                download_url = presigned_get(BOOKS_BUCKET, key)
-                index_book(row[0], user_id, title, author)
-                data = {"id": row[0], "download_url": download_url}
-                if idempotency_key:
-                    r.setex(idem_key, 24 * 3600, str(data))
-                try:
-                    celery_app.send_task(
-                        "tasks.analyze_book_type", args=[row[0], user_id]
-                    )
-                    celery_app.send_task(
-                        "tasks.deep_analyze_book", args=[row[0], user_id]
-                    )
-                except Exception:
-                    pass
-                return {"status": "success", "data": data}
-    img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
-    await conn.execute(
-        text(
-            """
-        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag)
-        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag)
-        """
-        ),
-        {
-            "id": book_id,
-            "uid": user_id,
-            "title": title,
-            "author": author,
-            "language": language,
-            "fmt": original_format,
-            "key": key,
-            "size": size,
-            "dig": (conf >= 0.8),
-            "conf": conf,
-            "etag": etag,
-        },
-    )
-    # 初始化 meta.page_count 为占位，后台任务将补齐
-    await conn.execute(
-        text(
-            "UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', 1, 'needs_manual', true) WHERE id = cast(:id as uuid)"
-        ),
-        {"id": book_id},
-    )
-    download_url = presigned_get(BOOKS_BUCKET, key)
-    index_book(book_id, user_id, title, author)
-    data = {"id": book_id, "download_url": download_url}
-    if idempotency_key:
-        r.setex(idem_key, 24 * 3600, str(data))
     try:
-        celery_app.send_task("tasks.analyze_book_type", args=[book_id, user_id])
-        celery_app.send_task("tasks.deep_analyze_book", args=[book_id, user_id])
-    except Exception:
-        pass
-    return {"status": "success", "data": data}
+        user_id, _ = auth
+        key = body.get("key")
+        if not key:
+            raise HTTPException(status_code=400, detail="missing_key")
+        title = body.get("title") or "Untitled"
+        author = body.get("author") or ""
+        language = body.get("language") or ""
+        original_format = body.get("original_format") or ""
+        size = body.get("size") or None
+        if idempotency_key:
+            idem_key = f"idem:books:upload_complete:{user_id}:{idempotency_key}"
+            cached = r.get(idem_key)
+            if cached:
+                return {"status": "success", "data": eval(cached)}
+        book_id = str(uuid.uuid4())
+        # 计算ETag并进行去重
+        etag = stat_etag(BOOKS_BUCKET, key)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+
+            if etag:
+                res = await conn.execute(
+                    text(
+                        "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
+                    ),
+                    {"e": etag},
+                )
+                row = res.fetchone()
+                if row:
+                    download_url = presigned_get(BOOKS_BUCKET, key)
+                    index_book(row[0], user_id, title, author)
+                    data = {"id": row[0], "download_url": download_url}
+                    if idempotency_key:
+                        r.setex(idem_key, 24 * 3600, str(data))
+                    try:
+                        celery_app.send_task(
+                            "tasks.analyze_book_type", args=[row[0], user_id]
+                        )
+                        celery_app.send_task(
+                            "tasks.deep_analyze_book", args=[row[0], user_id]
+                        )
+                    except Exception:
+                        pass
+                    return {"status": "success", "data": data}
+        img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    """
+            INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag)
+            VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag)
+            """
+                ),
+                {
+                    "id": book_id,
+                    "uid": user_id,
+                    "title": title,
+                    "author": author,
+                    "language": language,
+                    "fmt": original_format,
+                    "key": key,
+                    "size": size,
+                    "dig": (conf >= 0.8),
+                    "conf": conf,
+                    "etag": etag,
+                },
+            )
+            # 初始化 meta.page_count 为占位，后台任务将补齐
+            await conn.execute(
+                text(
+                    "UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', 1, 'needs_manual', true) WHERE id = cast(:id as uuid)"
+                ),
+                {"id": book_id},
+            )
+        download_url = presigned_get(BOOKS_BUCKET, key)
+        index_book(book_id, user_id, title, author)
+        data = {"id": book_id, "download_url": download_url}
+        if idempotency_key:
+            r.setex(idem_key, 24 * 3600, str(data))
+        try:
+            celery_app.send_task("tasks.analyze_book_type", args=[book_id, user_id])
+            celery_app.send_task("tasks.deep_analyze_book", args=[book_id, user_id])
+        except Exception:
+            pass
+        return {"status": "success", "data": data}
+    except Exception as e:
+        import traceback
+        print(f"upload_complete ERROR: {type(e).__name__}: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise
 
 
 async def _deep_analyze_and_standardize(book_id: str, user_id: str):
