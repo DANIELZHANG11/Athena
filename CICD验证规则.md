@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1b8aa10a90>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f57f5ef3710>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -155,8 +155,31 @@ E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
 api/tests/test_ocr_membership_quota.py:100: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-278185
+938247
 OCR job response: status=500, body={'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
+------------------------------ Captured log call -------------------------------
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (0/20) now.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (1/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (2/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (3/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (4/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (5/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (6/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (7/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (8/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (9/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (10/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (11/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (12/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (13/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (14/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (15/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (16/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (17/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (18/20) in 1.00 second.
+ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (19/20) in 1.00 second.
+CRITICAL celery.backends.redis:redis.py:132 
+Retry limit exceeded while trying to reconnect to the Celery redis result store backend. The Celery application must be restarted.
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -178,5 +201,5 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
 assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
-1 failed, 8 passed, 2 warnings in 1.65s
+1 failed, 8 passed, 2 warnings in 20.98s
 Error: Process completed with exit code 1.

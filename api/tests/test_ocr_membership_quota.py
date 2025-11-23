@@ -15,7 +15,19 @@ async def test_ocr_quota_membership(monkeypatch):
     mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
     monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
     monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
+    monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
     monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
+    
+    # Mock Celery send_task to avoid Redis connection
+    mock_send_task = MagicMock()
+    monkeypatch.setattr("api.app.ocr.celery_app.send_task", mock_send_task)
+    
+    # Mock Redis for concurrency check
+    mock_redis = MagicMock()
+    mock_redis.scard.return_value = 0
+    mock_redis.sadd.return_value = 1
+    monkeypatch.setattr("api.app.ocr.r", mock_redis)
+
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         r = await client.post(
