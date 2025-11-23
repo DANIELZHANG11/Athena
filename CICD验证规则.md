@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dc989d690>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c974a90>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
@@ -82,18 +82,14 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dc989d690>
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.books.r", mock_redis)
     
-        # Mock Permissions - mock the underlying check_quota_status
-        async def mock_check_quota(*args, **kwargs):
-            return {
-                "user_id": "test",
-                "is_pro": True,
-                "can_upload": True,
-                "is_readonly": False,
-                "usage": {"books": 0, "storage": 0},
-                "limits": {"books": -1, "storage": -1},
-            }
-    
-        monkeypatch.setattr("api.app.dependencies.check_quota_status", mock_check_quota)
+        # Mock Permissions - patch the imported functions in books module
+        monkeypatch.setattr(
+            "api.app.books.require_upload_permission",
+            lambda: {"can_upload": True, "is_pro": True},
+        )
+        monkeypatch.setattr(
+            "api.app.books.require_write_permission", lambda: {"is_readonly": False}
+        )
     
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -120,14 +116,14 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dc989d690>
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:68: AssertionError
+api/tests/test_books.py:64: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-186455
+595322
 upload_init failed: 500
 Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dcbc81fd0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f980c958290>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -142,21 +138,18 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dcbc81fd0>
         monkeypatch.setattr("api.app.notes.celery_app.send_task", mock_send_task)
     
         # Mock Redis
+        # Mock Redis
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.notes.r", mock_redis)
     
-        # Mock Permissions - mock the underlying check_quota_status
-        async def mock_check_quota(*args, **kwargs):
-            return {
-                "user_id": "test",
-                "is_pro": True,
-                "can_upload": True,
-                "is_readonly": False,
-                "usage": {"books": 0, "storage": 0},
-                "limits": {"books": -1, "storage": -1},
-            }
-    
-        monkeypatch.setattr("api.app.dependencies.check_quota_status", mock_check_quota)
+        # Mock Permissions - patch imported functions
+        monkeypatch.setattr(
+            "api.app.notes.require_write_permission", lambda: {"is_readonly": False}
+        )
+        monkeypatch.setattr(
+            "api.app.books.require_upload_permission",
+            lambda: {"can_upload": True, "is_pro": True},
+        )
     
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -201,13 +194,13 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f8dcbc81fd0>
             r = await client.post(
                 "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
             )
->           key = r.json()["data"]["key"]
-                  ^^^^^^^^^^^^^^^^
-E           KeyError: 'data'
+>           assert r.status_code == 200
+E           assert 500 == 200
+E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_notes.py:81: KeyError
+api/tests/test_notes.py:78: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-848215
+520022
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -228,6 +221,7 @@ tests/test_admin_billing.py::test_admin_billing_flow
 =========================== short test summary info ============================
 FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
-FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
-2 failed, 12 passed, 2 warnings in 21.01s
+FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - assert 500 == 200
+ +  where 500 = <Response [500 Internal Server Error]>.status_code
+2 failed, 12 passed, 2 warnings in 21.18s
 Error: Process completed with exit code 1.

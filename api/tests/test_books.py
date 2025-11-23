@@ -20,79 +20,83 @@ async def test_books_crud_flow(monkeypatch):
     mock_redis = MagicMock()
     monkeypatch.setattr("api.app.books.r", mock_redis)
 
-    # Mock Permissions - patch the imported functions in books module
-    monkeypatch.setattr("api.app.books.require_upload_permission", lambda: {"can_upload": True, "is_pro": True})
-    monkeypatch.setattr("api.app.books.require_write_permission", lambda: {"is_readonly": False})
+    # Mock Permissions using dependency_overrides
+    from api.app.dependencies import require_upload_permission, require_write_permission
+    
+    app.dependency_overrides[require_upload_permission] = lambda: {"can_upload": True, "is_pro": True}
+    app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
+    
+    try:
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Auth
+            r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@test.com"})
+            code = r.json()["data"]["dev_code"]
+            r = await client.post("/api/v1/auth/email/verify-code", json={"email": "user@test.com", "code": code})
+            token = r.json()["data"]["tokens"]["access_token"]
+            h = {"Authorization": f"Bearer {token}"}
 
+            # 2. Upload Init
+            r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
+            if r.status_code != 200:
+                print(f"upload_init failed: {r.status_code}")
+                print(f"Response: {r.text}")
+            assert r.status_code == 200
+            key = r.json()["data"]["key"]
+            assert key
 
-    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. Auth
-        r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@test.com"})
-        code = r.json()["data"]["dev_code"]
-        r = await client.post("/api/v1/auth/email/verify-code", json={"email": "user@test.com", "code": code})
-        token = r.json()["data"]["tokens"]["access_token"]
-        h = {"Authorization": f"Bearer {token}"}
+            # 3. Upload Complete
+            r = await client.post("/api/v1/books/upload_complete", headers=h, json={
+                "key": key,
+                "title": "Test Book",
+                "author": "Tester",
+                "original_format": "pdf",
+                "size": 1024
+            })
+            assert r.status_code == 200
+            book_id = r.json()["data"]["id"]
+            assert book_id
 
-        # 2. Upload Init
-        r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
-        if r.status_code != 200:
-            print(f"upload_init failed: {r.status_code}")
-            print(f"Response: {r.text}")
-        assert r.status_code == 200
-        key = r.json()["data"]["key"]
-        assert key
+            # 4. Get Book Detail
+            r = await client.get(f"/api/v1/books/{book_id}", headers=h)
+            assert r.status_code == 200
+            data = r.json()["data"]
+            assert data["title"] == "Test Book"
+            assert data["author"] == "Tester"
+            etag = r.headers.get("ETag")
+            assert etag
 
-        # 3. Upload Complete
-        r = await client.post("/api/v1/books/upload_complete", headers=h, json={
-            "key": key,
-            "title": "Test Book",
-            "author": "Tester",
-            "original_format": "pdf",
-            "size": 1024
-        })
-        assert r.status_code == 200
-        book_id = r.json()["data"]["id"]
-        assert book_id
+            # 5. List Books
+            r = await client.get("/api/v1/books", headers=h)
+            assert r.status_code == 200
+            items = r.json()["data"]["items"]
+            assert len(items) >= 1
+            assert items[0]["id"] == book_id
 
-        # 4. Get Book Detail
-        r = await client.get(f"/api/v1/books/{book_id}", headers=h)
-        assert r.status_code == 200
-        data = r.json()["data"]
-        assert data["title"] == "Test Book"
-        assert data["author"] == "Tester"
-        etag = r.headers.get("ETag")
-        assert etag
+            # 6. Update Book
+            r = await client.patch(f"/api/v1/books/{book_id}", headers={**h, "If-Match": etag}, json={"title": "Updated Title"})
+            assert r.status_code == 200
+            
+            r = await client.get(f"/api/v1/books/{book_id}", headers=h)
+            assert r.json()["data"]["title"] == "Updated Title"
 
-        # 5. List Books
-        r = await client.get("/api/v1/books", headers=h)
-        assert r.status_code == 200
-        items = r.json()["data"]["items"]
-        assert len(items) >= 1
-        assert items[0]["id"] == book_id
+            # 7. Convert Request
+            r = await client.post(f"/api/v1/books/{book_id}/convert", headers=h, json={"target_format": "epub"})
+            assert r.status_code == 200
+            job_id = r.json()["data"]["job_id"]
 
-        # 6. Update Book
-        r = await client.patch(f"/api/v1/books/{book_id}", headers={**h, "If-Match": etag}, json={"title": "Updated Title"})
-        assert r.status_code == 200
-        
-        r = await client.get(f"/api/v1/books/{book_id}", headers=h)
-        assert r.json()["data"]["title"] == "Updated Title"
+            # 8. List Jobs
+            r = await client.get("/api/v1/books/jobs/list", headers=h)
+            assert r.status_code == 200
+            jobs = r.json()["data"]
+            assert any(j["id"] == job_id for j in jobs)
 
-        # 7. Convert Request
-        r = await client.post(f"/api/v1/books/{book_id}/convert", headers=h, json={"target_format": "epub"})
-        assert r.status_code == 200
-        job_id = r.json()["data"]["job_id"]
+            # 9. Delete Book
+            r = await client.delete(f"/api/v1/books/{book_id}", headers=h)
+            assert r.status_code == 200
 
-        # 8. List Jobs
-        r = await client.get("/api/v1/books/jobs/list", headers=h)
-        assert r.status_code == 200
-        jobs = r.json()["data"]
-        assert any(j["id"] == job_id for j in jobs)
-
-        # 9. Delete Book
-        r = await client.delete(f"/api/v1/books/{book_id}", headers=h)
-        assert r.status_code == 200
-
-        # Verify Deletion
-        r = await client.get(f"/api/v1/books/{book_id}", headers=h)
-        assert r.status_code == 404
+            # Verify Deletion
+            r = await client.get(f"/api/v1/books/{book_id}", headers=h)
+            assert r.status_code == 404
+    finally:
+        app.dependency_overrides = {}
