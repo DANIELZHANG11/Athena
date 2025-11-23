@@ -25,7 +25,7 @@ async def test_user_profile_invite_flow(monkeypatch):
         assert r.status_code == 200
         etag = r.json()["data"]["etag"]
         
-        r = await client.patch("/api/v1/profile/me", headers=h_a, json={"display_name": "Super Inviter"}, headers={**h_a, "If-Match": etag})
+        r = await client.patch("/api/v1/profile/me", headers={**h_a, "If-Match": etag}, json={"display_name": "Super Inviter"})
         assert r.status_code == 200
 
         r = await client.get("/api/v1/profile/me", headers=h_a)

@@ -72,7 +72,7 @@ async def test_books_crud_flow(monkeypatch):
         assert items[0]["id"] == book_id
 
         # 6. Update Book
-        r = await client.patch(f"/api/v1/books/{book_id}", headers=h, json={"title": "Updated Title"}, headers={**h, "If-Match": etag})
+        r = await client.patch(f"/api/v1/books/{book_id}", headers={**h, "If-Match": etag}, json={"title": "Updated Title"})
         assert r.status_code == 200
         
         r = await client.get(f"/api/v1/books/{book_id}", headers=h)

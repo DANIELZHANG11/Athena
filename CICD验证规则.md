@@ -50,30 +50,123 @@
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
 
-Run docker/build-push-action@v5
-GitHub Actions runtime token ACs
-Docker info
-Proxy configuration
-Buildx version
-Builder info
-/usr/bin/docker buildx build --file ./api/Dockerfile --iidfile /home/runner/work/_temp/docker-actions-toolkit-5f2kQf/build-iidfile-be278d2ac4.txt --attest type=provenance,mode=max,builder-id=https://github.com/DANIELZHANG11/Athena/actions/runs/19609256055 --tag athena-api:test --metadata-file /home/runner/work/_temp/docker-actions-toolkit-5f2kQf/build-metadata-c9967f8f58.json ./api
-#0 building with "builder-5a248c92-5d3b-4990-8253-70d93094ced2" instance using docker-container driver
+Run pytest -q api/tests
 
-#1 [internal] load build definition from Dockerfile
-#1 transferring dockerfile: 559B done
-#1 DONE 0.0s
+==================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_admin_billing.py _________________
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/python.py:498: in importtestmodule
+    mod = import_path(
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1204: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1176: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1147: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:690: in _load_unlocked
+    ???
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:177: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:359: in _rewrite_test
+    co = compile(tree, strfn, "exec", dont_inherit=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/home/runner/work/Athena/Athena/api/tests/test_admin_billing.py", line 58
+E       headers={**h, "If-Match": user_etag},
+E       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   SyntaxError: keyword argument repeated: headers
+_____________________ ERROR collecting tests/test_books.py _____________________
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/python.py:498: in importtestmodule
+    mod = import_path(
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1204: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1176: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1147: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:690: in _load_unlocked
+    ???
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:177: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:359: in _rewrite_test
+    co = compile(tree, strfn, "exec", dont_inherit=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/home/runner/work/Athena/Athena/api/tests/test_books.py", line 93
+E       headers={**h, "If-Match": etag},
+E       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   SyntaxError: keyword argument repeated: headers
+_____________________ ERROR collecting tests/test_notes.py _____________________
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/python.py:498: in importtestmodule
+    mod = import_path(
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1204: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1176: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1147: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:690: in _load_unlocked
+    ???
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:177: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:359: in _rewrite_test
+    co = compile(tree, strfn, "exec", dont_inherit=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/home/runner/work/Athena/Athena/api/tests/test_notes.py", line 89
+E       headers={**h, "If-Match": tag_etag},
+E       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   SyntaxError: keyword argument repeated: headers
+___________________ ERROR collecting tests/test_user_flow.py ___________________
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/python.py:498: in importtestmodule
+    mod = import_path(
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1204: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1176: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1147: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:690: in _load_unlocked
+    ???
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:177: in exec_module
+    source_stat, co = _rewrite_test(fn, self.config)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/_pytest/assertion/rewrite.py:359: in _rewrite_test
+    co = compile(tree, strfn, "exec", dont_inherit=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E     File "/home/runner/work/Athena/Athena/api/tests/test_user_flow.py", line 44
+E       headers={**h_a, "If-Match": etag},
+E       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   SyntaxError: keyword argument repeated: headers
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:283
+  <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
 
-#2 [internal] load metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim
-#2 ERROR: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
-------
- > [internal] load metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim:
-------
-WARNING: No output specified with docker-container driver. Build result will only remain in the build cache. To push result image into registry use --push or to load image into docker use --load
-Dockerfile:1
---------------------
-   1 | >>> FROM zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim
-   2 |     WORKDIR /app
-   3 |     ENV HF_HOME=/app/.hf_cache
---------------------
-ERROR: failed to build: failed to solve: zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: failed to resolve source metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
-Error: buildx failed with: ERROR: failed to build: failed to solve: zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: failed to resolve source metadata for zukubq0aouv2k2.xuanyuan.run/library/python:3.11-slim: unable to fetch descriptor (sha256:193fdd0bbcb3d2ae612bd6cc3548d2f7c78d65b549fcaa8af75624c47474444d) which reports content size of zero: invalid argument
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR api/tests/test_admin_billing.py
+ERROR api/tests/test_books.py
+ERROR api/tests/test_notes.py
+ERROR api/tests/test_user_flow.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 4 errors during collection !!!!!!!!!!!!!!!!!!!!
+1 warning, 4 errors in 1.86s
+Error: Process completed with exit code 2.

@@ -70,7 +70,7 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         tag_etag = next(t["etag"] for t in tags if t["id"] == tag_id)
 
         # Update Tag
-        r = await client.patch(f"/api/v1/tags/{tag_id}", headers=h, json={"name": "Very Important"}, headers={**h, "If-Match": tag_etag})
+        r = await client.patch(f"/api/v1/tags/{tag_id}", headers={**h, "If-Match": tag_etag}, json={"name": "Very Important"})
         assert r.status_code == 200
 
         # 4. Notes CRUD
@@ -99,7 +99,7 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         assert any(n["id"] == note_id for n in notes)
 
         # Update Note
-        r = await client.patch(f"/api/v1/notes/{note_id}", headers=h, json={"content": "Updated Note"}, headers={**h, "If-Match": note_etag})
+        r = await client.patch(f"/api/v1/notes/{note_id}", headers={**h, "If-Match": note_etag}, json={"content": "Updated Note"})
         assert r.status_code == 200
 
         # Delete Note
@@ -127,7 +127,7 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         hl_etag = next(h["etag"] for h in hls if h["id"] == hl_id)
 
         # Update Highlight
-        r = await client.patch(f"/api/v1/highlights/{hl_id}", headers=h, json={"color": "red"}, headers={**h, "If-Match": hl_etag})
+        r = await client.patch(f"/api/v1/highlights/{hl_id}", headers={**h, "If-Match": hl_etag}, json={"color": "red"})
         assert r.status_code == 200
 
         # Delete Highlight

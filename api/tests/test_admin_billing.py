@@ -41,7 +41,7 @@ async def test_admin_billing_flow(monkeypatch):
         user_etag = next(u["etag"] for u in users if u["id"] == user_id)
 
         # Update User
-        r = await client.patch(f"/api/v1/admin/users/{user_id}", headers=h, json={"display_name": "Admin User"}, headers={**h, "If-Match": user_etag})
+        r = await client.patch(f"/api/v1/admin/users/{user_id}", headers={**h, "If-Match": user_etag}, json={"display_name": "Admin User"})
         assert r.status_code == 200
         
         # Gateways CRUD
@@ -55,7 +55,7 @@ async def test_admin_billing_flow(monkeypatch):
         assert any(g["id"] == gid for g in gateways)
         g_etag = next(g["etag"] for g in gateways if g["id"] == gid)
 
-        r = await client.patch(f"/api/v1/admin/gateways/{gid}", headers=h, json={"is_active": False}, headers={**h, "If-Match": g_etag})
+        r = await client.patch(f"/api/v1/admin/gateways/{gid}", headers={**h, "If-Match": g_etag}, json={"is_active": False})
         assert r.status_code == 200
 
         # Translations CRUD
@@ -69,7 +69,7 @@ async def test_admin_billing_flow(monkeypatch):
         assert any(t["id"] == tid for t in trans)
         t_etag = next(t["etag"] for t in trans if t["id"] == tid)
 
-        r = await client.patch(f"/api/v1/admin/translations/{tid}", headers=h, json={"value": "Hi"}, headers={**h, "If-Match": t_etag})
+        r = await client.patch(f"/api/v1/admin/translations/{tid}", headers={**h, "If-Match": t_etag}, json={"value": "Hi"})
         assert r.status_code == 200
 
         r = await client.delete(f"/api/v1/admin/translations/{tid}", headers=h)
