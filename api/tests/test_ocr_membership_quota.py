@@ -49,10 +49,29 @@ async def test_ocr_quota_membership(monkeypatch):
         )
         assert r.status_code == 200
 
+        # Create a mock book first
+        mock_book_id = str(__import__("uuid").uuid4())
         r = await client.post(
-            "/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"}
+            "/api/v1/books/upload/init",
+            headers=h,
+            json={"title": "Test Book", "filename": "a.pdf"},
         )
-        jid = r.json()["data"]["id"]
+        if r.status_code == 200:
+            mock_book_id = r.json()["data"]["id"]
+        
+        # Mock the book meta to have page_count
+        from api.app.db import engine as db_engine
+        from sqlalchemy import text as sql_text
+        async with db_engine.begin() as conn:
+            await conn.execute(
+                sql_text("UPDATE books SET meta = '{\"page_count\": 3}'::jsonb WHERE id = cast(:bid as uuid)"),
+                {"bid": mock_book_id}
+            )
+        
+        r = await client.post(
+            "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
+        )
+        jid = r.json()["data"]["job_id"]
         await client.post(
             "/api/v1/billing/debug/grant-credits",
             headers=h,

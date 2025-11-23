@@ -51,11 +51,11 @@
 
 
 Run pytest -q api/tests
-......FF.                                                                [100%]
+......F..                                                                [100%]
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f73b60016d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb82b4ba050>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -98,54 +98,18 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f73b60016d0>
                     "currency": "CNY",
                 },
             )
->           assert r.status_code == 200
-E           assert 500 == 200
-E            +  where 500 = <Response [500 Internal Server Error]>.status_code
-
-api/tests/test_ocr_membership_quota.py:50: AssertionError
------------------------------ Captured stdout call -----------------------------
-358794
-______________________ test_pricing_admin_and_user_rules _______________________
-
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f73b5db8a10>
-
-    @pytest.mark.asyncio
-    async def test_pricing_admin_and_user_rules(monkeypatch):
-        monkeypatch.setenv("DEV_MODE", "true")
-        monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "op@athena.local"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "op@athena.local", "code": code},
-            )
-            token = r.json()["data"]["tokens"]["access_token"]
-            h = {"Authorization": f"***"}
+            assert r.status_code == 200
     
             r = await client.post(
-                "/api/v1/admin/pricing/rules",
-                headers=h,
-                json={
-                    "service_type": "OCR",
-                    "unit_type": "PAGES",
-                    "unit_size": 1,
-                    "price_amount": 0.05,
-                    "currency": "CNY",
-                    "region": "CN",
-                    "remark_template": "每{unit_size}页{price_amount}{currency}",
-                },
+                "/api/v1/ocr/jobs/init", headers=h, json={"filename": "a.png"}
             )
->           assert r.status_code == 200
-E           assert 500 == 200
-E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+>           jid = r.json()["data"]["id"]
+                  ^^^^^^^^^^^^^^^^
+E           KeyError: 'data'
 
-api/tests/test_pricing_admin.py:37: AssertionError
+api/tests/test_ocr_membership_quota.py:55: KeyError
 ----------------------------- Captured stdout call -----------------------------
-886855
+822065
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -164,9 +128,6 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - assert 500 == 200
- +  where 500 = <Response [500 Internal Server Error]>.status_code
-FAILED api/tests/test_pricing_admin.py::test_pricing_admin_and_user_rules - assert 500 == 200
- +  where 500 = <Response [500 Internal Server Error]>.status_code
-2 failed, 7 passed, 2 warnings in 1.64s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - KeyError: 'data'
+1 failed, 8 passed, 2 warnings in 1.87s
 Error: Process completed with exit code 1.
