@@ -97,6 +97,13 @@ async def init_job(body: dict = Body(...), auth=Depends(require_user)):
              )
              if upd.rowcount == 0:
                  raise HTTPException(status_code=402, detail="insufficient_credits_for_ocr")
+             
+             # Add Ledger Entry
+             lid = str(uuid.uuid4())
+             await conn.execute(
+                 text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, related_id, direction) VALUES (cast(:id as uuid), cast(:uid as uuid), :amt, 'CREDITS', 'ocr_deduction', cast(:bid as uuid), 'debit')"),
+                 {"id": lid, "uid": user_id, "amt": required_credits, "bid": book_id}
+             )
 
         # 6. Concurrency Check
         active_jobs = r.scard("ocr:active_jobs")

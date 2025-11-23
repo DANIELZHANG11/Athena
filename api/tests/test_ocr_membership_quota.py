@@ -105,22 +105,22 @@ async def test_ocr_quota_membership(monkeypatch):
         )
         assert grant_res.status_code == 200, f"Grant credits failed: {grant_res.json()}"
 
-        r = await client.post(
-            "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
-        )
-        print(f"OCR job response: status={r.status_code}, body={r.json()}")
-        assert r.status_code == 200, f"OCR job init failed: {r.json()}"
-        jid = r.json()["data"]["job_id"]
+        # Check ledger before OCR job
         r = await client.get("/api/v1/billing/ledger", headers=h)
         before = (
             len(r.json()["data"]["data"])
             if isinstance(r.json()["data"], dict)
             else len(r.json()["data"])
         )
+
         r = await client.post(
-            "/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3}
+            "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
         )
-        assert r.status_code == 200
+        print(f"OCR job response: status={r.status_code}, body={r.json()}")
+        assert r.status_code == 200, f"OCR job init failed: {r.json()}"
+        jid = r.json()["data"]["job_id"]
+        
+        # Check ledger after OCR job (should have deduction entry)
         r = await client.get("/api/v1/billing/ledger", headers=h)
         after = (
             len(r.json()["data"]["data"])

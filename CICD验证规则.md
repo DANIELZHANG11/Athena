@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f57f5ef3710>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f53d0e4f4d0>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -66,7 +66,19 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f57f5ef3710>
         mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
         monkeypatch.setattr("api.app.storage.get_s3", lambda: mock_minio)
         monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
+        monkeypatch.setattr("api.app.admin_panel._require_admin", lambda uid: True)
         monkeypatch.setattr("api.app.pricing._require_admin", lambda uid: True)
+    
+        # Mock Celery send_task to avoid Redis connection
+        mock_send_task = MagicMock()
+        monkeypatch.setattr("api.app.ocr.celery_app.send_task", mock_send_task)
+    
+        # Mock Redis for concurrency check
+        mock_redis = MagicMock()
+        mock_redis.scard.return_value = 0
+        mock_redis.sadd.return_value = 1
+        monkeypatch.setattr("api.app.ocr.r", mock_redis)
+    
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             r = await client.post(
@@ -148,38 +160,25 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f57f5ef3710>
                 "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
             )
             print(f"OCR job response: status={r.status_code}, body={r.json()}")
->           assert r.status_code == 200, f"OCR job init failed: {r.json()}"
-E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
-E           assert 500 == 200
-E            +  where 500 = <Response [500 Internal Server Error]>.status_code
+            assert r.status_code == 200, f"OCR job init failed: {r.json()}"
+            jid = r.json()["data"]["job_id"]
+            r = await client.get("/api/v1/billing/ledger", headers=h)
+            before = (
+                len(r.json()["data"]["data"])
+                if isinstance(r.json()["data"], dict)
+                else len(r.json()["data"])
+            )
+            r = await client.post(
+                "/api/v1/ocr/jobs/complete", headers=h, json={"id": jid, "pages": 3}
+            )
+>           assert r.status_code == 200
+E           assert 404 == 200
+E            +  where 404 = <Response [404 Not Found]>.status_code
 
-api/tests/test_ocr_membership_quota.py:100: AssertionError
+api/tests/test_ocr_membership_quota.py:123: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-938247
-OCR job response: status=500, body={'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
------------------------------- Captured log call -------------------------------
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (0/20) now.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (1/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (2/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (3/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (4/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (5/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (6/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (7/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (8/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (9/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (10/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (11/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (12/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (13/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (14/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (15/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (16/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (17/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (18/20) in 1.00 second.
-ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (19/20) in 1.00 second.
-CRITICAL celery.backends.redis:redis.py:132 
-Retry limit exceeded while trying to reconnect to the Celery redis result store backend. The Celery application must be restarted.
+090452
+OCR job response: status=200, body={'status': 'success', 'data': {'job_id': '944a0aa7-5760-4c81-a1a7-d98c75ecd9fe'}}
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -198,8 +197,7 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'internal_error', 'message': 'internal_error'}}
-assert 500 == 200
- +  where 500 = <Response [500 Internal Server Error]>.status_code
-1 failed, 8 passed, 2 warnings in 20.98s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - assert 404 == 200
+ +  where 404 = <Response [404 Not Found]>.status_code
+1 failed, 8 passed, 2 warnings in 1.78s
 Error: Process completed with exit code 1.
