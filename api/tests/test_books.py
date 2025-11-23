@@ -20,8 +20,8 @@ async def test_books_crud_flow(monkeypatch):
     mock_redis = MagicMock()
     monkeypatch.setattr("api.app.books.r", mock_redis)
 
-    # Mock Permissions - return proper quota dict
-    def mock_quota(*args, **kwargs):
+    # Mock Permissions - mock the underlying check_quota_status
+    async def mock_check_quota(*args, **kwargs):
         return {
             "user_id": "test",
             "is_pro": True,
@@ -30,8 +30,7 @@ async def test_books_crud_flow(monkeypatch):
             "usage": {"books": 0, "storage": 0},
             "limits": {"books": -1, "storage": -1}
         }
-    monkeypatch.setattr("api.app.dependencies.require_upload_permission", mock_quota)
-    monkeypatch.setattr("api.app.dependencies.require_write_permission", mock_quota)
+    monkeypatch.setattr("api.app.dependencies.check_quota_status", mock_check_quota)
 
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)

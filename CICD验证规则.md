@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83a590>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7faae4502cd0>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
@@ -82,9 +82,19 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83a590>
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.books.r", mock_redis)
     
-        # Mock Permissions
-        monkeypatch.setattr("api.app.dependencies.require_upload_permission", lambda: True)
-        monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+        # Mock Permissions - return proper quota dict
+        def mock_quota(*args, **kwargs):
+            return {
+                "user_id": "test",
+                "is_pro": True,
+                "can_upload": True,
+                "is_readonly": False,
+                "usage": {"books": 0, "storage": 0},
+                "limits": {"books": -1, "storage": -1},
+            }
+    
+        monkeypatch.setattr("api.app.dependencies.require_upload_permission", mock_quota)
+        monkeypatch.setattr("api.app.dependencies.require_write_permission", mock_quota)
     
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -111,14 +121,14 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83a590>
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:59: AssertionError
+api/tests/test_books.py:69: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-377788
+581460
 upload_init failed: 500
 Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83b150>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7faae42ba2d0>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -136,8 +146,18 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83b150>
         mock_redis = MagicMock()
         monkeypatch.setattr("api.app.notes.r", mock_redis)
     
-        # Mock Permissions
-        monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+        # Mock Permissions - return proper quota dict
+        def mock_quota(*args, **kwargs):
+            return {
+                "user_id": "test",
+                "is_pro": True,
+                "can_upload": True,
+                "is_readonly": False,
+                "usage": {"books": 0, "storage": 0},
+                "limits": {"books": -1, "storage": -1},
+            }
+    
+        monkeypatch.setattr("api.app.dependencies.require_write_permission", mock_quota)
     
         transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -186,9 +206,9 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83b150>
                   ^^^^^^^^^^^^^^^^
 E           KeyError: 'data'
 
-api/tests/test_notes.py:71: KeyError
+api/tests/test_notes.py:81: KeyError
 ----------------------------- Captured stdout call -----------------------------
-413091
+831695
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -210,5 +230,5 @@ tests/test_admin_billing.py::test_admin_billing_flow
 FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
 FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
-2 failed, 12 passed, 2 warnings in 21.39s
+2 failed, 12 passed, 2 warnings in 21.10s
 Error: Process completed with exit code 1.
