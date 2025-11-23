@@ -20,6 +20,7 @@ from .dict import packages_router as dict_packages_router
 from .docs import router as docs_router
 from .export import router as export_router
 from .notes import highlights_router, notes_router, tags_router
+from .invites import router as invites_router
 from .ocr import router as ocr_router
 from .pricing import admin as pricing_admin_router
 from .pricing import router as pricing_router
@@ -102,6 +103,7 @@ async def generic_exc_handler(request: Request, exc: Exception):
 app.include_router(ocr_router)
 app.include_router(srs_router)
 app.include_router(profile_router)
+app.include_router(invites_router)
 
 
 @app.get("/health")
