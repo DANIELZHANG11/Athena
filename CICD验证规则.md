@@ -55,27 +55,23 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6382eee750>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83a590>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
-        # Mock S3 - mock boto3.client directly
-        mock_minio = MagicMock()
-        mock_minio.head_bucket.return_value = None  # Bucket exists
-        mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
-        mock_minio.bucket_exists.return_value = True
-        mock_minio.make_bucket.return_value = None
-        mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
-        mock_minio.presigned_get_object.return_value = "http://fake-download-url.com"
-        mock_minio.stat_object.return_value.etag = "fake-etag"
-        mock_minio.head_object.return_value = {"ETag": '"fake-etag"'}
-        mock_minio.put_object.return_value = None
-        mock_minio.get_object.return_value = {"Body": MagicMock()}
-        # Mock boto3.client in the storage module
+        # Mock S3 - mock functions in books module (imported from storage)
         monkeypatch.setattr(
-            "api.app.storage.boto3.client", lambda *args, **kwargs: mock_minio
+            "api.app.books.presigned_put",
+            lambda bucket, key, **kwargs: "http://fake-upload-url.com",
         )
-        monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
+        monkeypatch.setattr(
+            "api.app.books.presigned_get",
+            lambda bucket, key, **kwargs: "http://fake-download-url.com",
+        )
+        monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
+        monkeypatch.setattr(
+            "api.app.books.upload_bytes", lambda bucket, key, data, content_type: None
+        )
         monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
     
         # Mock Celery
@@ -115,14 +111,14 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6382eee750>
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:63: AssertionError
+api/tests/test_books.py:59: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-209114
+377788
 upload_init failed: 500
 Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f63831df450>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6b6a83b150>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -166,19 +162,19 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f63831df450>
             # Actually, notes/highlights foreign key constraints might fail if book doesn't exist.
             # So we MUST create a book.
     
-            # Mock S3 for book creation - mock boto3.client directly
-            mock_minio = MagicMock()
-            mock_minio.head_bucket.return_value = None  # Bucket exists
-            mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
-            mock_minio.stat_object.return_value.etag = "fake-etag"
-            mock_minio.head_object.return_value = {"ETag": '"fake-etag"'}
-            mock_minio.put_object.return_value = None
-            mock_minio.get_object.return_value = {"Body": MagicMock()}
-            # Mock boto3.client in the storage module
+            # Mock S3 for book creation - mock functions in books module
             monkeypatch.setattr(
-                "api.app.storage.boto3.client", lambda *args, **kwargs: mock_minio
+                "api.app.books.presigned_put",
+                lambda bucket, key, **kwargs: "http://fake-upload-url.com",
             )
-            monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
+            monkeypatch.setattr(
+                "api.app.books.presigned_get",
+                lambda bucket, key, **kwargs: "http://fake-download-url.com",
+            )
+            monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
+            monkeypatch.setattr(
+                "api.app.books.upload_bytes", lambda bucket, key, data, content_type: None
+            )
             monkeypatch.setattr(
                 "api.app.books._quick_confidence", lambda b, k: (False, 0.0)
             )
@@ -192,7 +188,7 @@ E           KeyError: 'data'
 
 api/tests/test_notes.py:71: KeyError
 ----------------------------- Captured stdout call -----------------------------
-045551
+413091
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead

@@ -19,8 +19,17 @@ async def test_notes_highlights_tags_flow(monkeypatch):
     mock_redis = MagicMock()
     monkeypatch.setattr("api.app.notes.r", mock_redis)
 
-    # Mock Permissions
-    monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+    # Mock Permissions - return proper quota dict
+    def mock_quota(*args, **kwargs):
+        return {
+            "user_id": "test",
+            "is_pro": True,
+            "can_upload": True,
+            "is_readonly": False,
+            "usage": {"books": 0, "storage": 0},
+            "limits": {"books": -1, "storage": -1}
+        }
+    monkeypatch.setattr("api.app.dependencies.require_write_permission", mock_quota)
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
