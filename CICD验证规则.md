@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f20d943b510>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fce0bb97210>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -77,65 +77,15 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f20d943b510>
                 "/api/v1/auth/email/verify-code",
                 json={"email": "user@athena.local", "code": code},
             )
-            token = r.json()["data"]["tokens"]["access_token"]
-            h = {"Authorization": f"***"}
-    
-            r = await client.put(
-                "/api/v1/admin/system/settings",
-                headers=h,
-                json={"membership_tiers": {"PRO": {"free_ocr_pages": 10}}},
-            )
-            assert r.status_code == 200
-    
-            r = await client.post(
-                "/api/v1/admin/pricing/rules",
-                headers=h,
-                json={
-                    "service_type": "OCR",
-                    "unit_type": "PAGES",
-                    "unit_size": 1,
-                    "price_amount": 0.05,
-                    "currency": "CNY",
-                },
-            )
-            assert r.status_code == 200
-    
-            # Create a mock book first
-            mock_book_id = str(__import__("uuid").uuid4())
-            r = await client.post(
-                "/api/v1/books/upload/init",
-                headers=h,
-                json={"title": "Test Book", "filename": "a.pdf"},
-            )
-            if r.status_code == 200:
-                mock_book_id = r.json()["data"]["id"]
-    
-            # Mock the book meta to have page_count
-            from sqlalchemy import text as sql_text
-    
-            from api.app.db import engine as db_engine
-    
-            async with db_engine.begin() as conn:
-                await conn.execute(
-                    sql_text(
-                        "UPDATE books SET meta = '{\"page_count\": 3}'::jsonb WHERE id = cast(:bid as uuid)"
-                    ),
-                    {"bid": mock_book_id},
-                )
-    
-            r = await client.post(
-                "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
-            )
-            print(f"OCR job response: status={r.status_code}, body={r.json()}")
->           assert r.status_code == 200, f"OCR job init failed: {r.json()}"
-E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
-E           assert 404 == 200
-E            +  where 404 = <Response [404 Not Found]>.status_code
+            auth_data = r.json()["data"]
+            token = auth_data["tokens"]["access_token"]
+>           user_id = auth_data["user_id"]
+                      ^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'user_id'
 
-api/tests/test_ocr_membership_quota.py:79: AssertionError
+api/tests/test_ocr_membership_quota.py:31: KeyError
 ----------------------------- Captured stdout call -----------------------------
-262827
-OCR job response: status=404, body={'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
+492805
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -154,8 +104,6 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
-assert 404 == 200
- +  where 404 = <Response [404 Not Found]>.status_code
-1 failed, 8 passed, 2 warnings in 1.84s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - KeyError: 'user_id'
+1 failed, 8 passed, 2 warnings in 1.66s
 Error: Process completed with exit code 1.

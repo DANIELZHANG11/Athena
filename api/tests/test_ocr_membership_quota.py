@@ -28,7 +28,7 @@ async def test_ocr_quota_membership(monkeypatch):
         )
         auth_data = r.json()["data"]
         token = auth_data["tokens"]["access_token"]
-        user_id = auth_data["user_id"]
+        user_id = auth_data["user"]["id"]
         h = {"Authorization": f"Bearer {token}"}
 
         r = await client.put(
