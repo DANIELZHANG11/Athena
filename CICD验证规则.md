@@ -51,11 +51,11 @@
 
 
 Run pytest -q api/tests
-F.F.....F...FF                                                           [100%]
+F.F.....F...F.                                                           [100%]
 =================================== FAILURES ===================================
 ___________________________ test_admin_billing_flow ____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fedf3433510>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41d01a32d0>
 
     @pytest.mark.asyncio
     async def test_admin_billing_flow(monkeypatch):
@@ -111,10 +111,10 @@ E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
 api/tests/test_admin_billing.py:59: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-331793
+803565
 _____________________________ test_books_crud_flow _____________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded305210>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cef4c410>
 
     @pytest.mark.asyncio
     async def test_books_crud_flow(monkeypatch):
@@ -159,16 +159,21 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded305210>
             r = await client.post(
                 "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
             )
+            if r.status_code != 200:
+                print(f"upload_init failed: {r.status_code}")
+                print(f"Response: {r.text}")
 >           assert r.status_code == 200
 E           assert 500 == 200
 E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
-api/tests/test_books.py:52: AssertionError
+api/tests/test_books.py:55: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-800276
+175138
+upload_init failed: 500
+Response: {"status":"error","error":{"code":"internal_error","message":"internal_error"}}
 _______________________ test_notes_highlights_tags_flow ________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded3d32d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cecd7bd0>
 
     @pytest.mark.asyncio
     async def test_notes_highlights_tags_flow(monkeypatch):
@@ -230,10 +235,10 @@ E           KeyError: 'data'
 
 api/tests/test_notes.py:63: KeyError
 ----------------------------- Captured stdout call -----------------------------
-597816
+704254
 _____________________________ test_search_ai_flow ______________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7feded32e910>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f41cefee250>
 
     @pytest.mark.asyncio
     async def test_search_ai_flow(monkeypatch):
@@ -322,7 +327,7 @@ E            +  where 500 = <Response [500 Internal Server Error]>.status_code
 
 api/tests/test_search_ai.py:90: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-396964
+370925
 ------------------------------ Captured log call -------------------------------
 ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (0/20) now.
 ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (1/20) in 1.00 second.
@@ -346,77 +351,6 @@ ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (18/
 ERROR    celery.backends.redis:redis.py:391 Connection to Redis lost: Retry (19/20) in 1.00 second.
 CRITICAL celery.backends.redis:redis.py:132 
 Retry limit exceeded while trying to reconnect to the Celery redis result store backend. The Celery application must be restarted.
-________________________ test_user_profile_invite_flow _________________________
-
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fedecf91810>
-
-    @pytest.mark.asyncio
-    async def test_user_profile_invite_flow(monkeypatch):
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # 1. Register User A (Inviter)
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "inviter@test.com"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "inviter@test.com", "code": code},
-            )
-            token_a = r.json()["data"]["tokens"]["access_token"]
-            h_a = {"Authorization": f"***"}
-    
-            # 2. Register User B (Invitee)
-            r = await client.post(
-                "/api/v1/auth/email/send-code", json={"email": "invitee@test.com"}
-            )
-            code = r.json()["data"]["dev_code"]
-            r = await client.post(
-                "/api/v1/auth/email/verify-code",
-                json={"email": "invitee@test.com", "code": code},
-            )
-            token_b = r.json()["data"]["tokens"]["access_token"]
-            h_b = {"Authorization": f"***"}
-    
-            # 3. Profile Update (User A)
-            r = await client.get("/api/v1/profile/me", headers=h_a)
-            assert r.status_code == 200
-            etag = r.json()["data"]["etag"]
-    
-            r = await client.patch(
-                "/api/v1/profile/me",
-                headers={**h_a, "If-Match": etag},
-                json={"display_name": "Super Inviter"},
-            )
-            assert r.status_code == 200
-    
-            r = await client.get("/api/v1/profile/me", headers=h_a)
-            assert r.json()["data"]["display_name"] == "Super Inviter"
-    
-            # 4. Generate Invite Code (User A)
-            r = await client.post("/api/v1/invites/generate", headers=h_a)
-            assert r.status_code == 200
-            invite_code = r.json()["data"]["code"]
-            assert invite_code
-    
-            # 5. Redeem Invite Code (User B)
-            r = await client.post(
-                "/api/v1/invites/redeem", headers=h_b, json={"code": invite_code}
-            )
-            assert r.status_code == 200
-    
-            # 6. Verify Duplicate Redemption Fails
-            r = await client.post(
-                "/api/v1/invites/redeem", headers=h_b, json={"code": invite_code}
-            )
->           assert r.status_code == 400
-E           assert 404 == 400
-E            +  where 404 = <Response [404 Not Found]>.status_code
-
-api/tests/test_user_flow.py:66: AssertionError
------------------------------ Captured stdout call -----------------------------
-922341
-744533
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -442,7 +376,5 @@ FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
 FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
 FAILED api/tests/test_search_ai.py::test_search_ai_flow - assert 500 == 200
  +  where 500 = <Response [500 Internal Server Error]>.status_code
-FAILED api/tests/test_user_flow.py::test_user_profile_invite_flow - assert 404 == 400
- +  where 404 = <Response [404 Not Found]>.status_code
-5 failed, 9 passed, 2 warnings in 21.12s
+4 failed, 10 passed, 2 warnings in 21.04s
 Error: Process completed with exit code 1.

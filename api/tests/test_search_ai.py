@@ -62,6 +62,9 @@ async def test_search_ai_flow(monkeypatch):
         # 3. AI Flow
         # Create Conversation
         r = await client.post("/api/v1/ai/conversations", headers=h, json={"title": "Test Chat"})
+        if r.status_code != 200:
+            print(f"AI conversation creation failed: {r.status_code}")
+            print(f"Response: {r.text}")
         assert r.status_code == 200
         cid = r.json()["data"]["id"]
 

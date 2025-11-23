@@ -7,6 +7,8 @@ from api.app.main import app
 async def test_books_crud_flow(monkeypatch):
     # Mock S3
     mock_minio = MagicMock()
+    mock_minio.head_bucket.return_value = None  # Bucket exists
+    mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
     mock_minio.bucket_exists.return_value = True
     mock_minio.make_bucket.return_value = None
     mock_minio.presigned_put_object.return_value = "http://fake-upload-url.com"
@@ -27,6 +29,7 @@ async def test_books_crud_flow(monkeypatch):
     # Mock Permissions
     monkeypatch.setattr("api.app.dependencies.require_upload_permission", lambda: True)
     monkeypatch.setattr("api.app.dependencies.require_write_permission", lambda: True)
+
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

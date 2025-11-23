@@ -42,6 +42,9 @@ async def test_admin_billing_flow(monkeypatch):
 
         # Update User
         r = await client.patch(f"/api/v1/admin/users/{user_id}", headers={**h, "If-Match": user_etag}, json={"display_name": "Admin User"})
+        if r.status_code != 200:
+            print(f"Admin update user failed: {r.status_code}")
+            print(f"Response: {r.text}")
         assert r.status_code == 200
         
         # Gateways CRUD

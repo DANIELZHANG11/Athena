@@ -42,6 +42,8 @@ async def test_notes_highlights_tags_flow(monkeypatch):
         
         # Mock S3 for book creation
         mock_minio = MagicMock()
+        mock_minio.head_bucket.return_value = None  # Bucket exists
+        mock_minio.generate_presigned_url.return_value = "http://fake-presigned-url.com"
         mock_minio.stat_object.return_value.etag = "fake-etag"
         monkeypatch.setattr("api.app.books.stat_etag", lambda b, k: "fake-etag")
         monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
