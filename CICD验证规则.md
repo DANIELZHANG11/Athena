@@ -55,7 +55,7 @@ Run pytest -q api/tests
 =================================== FAILURES ===================================
 __________________________ test_ocr_quota_membership ___________________________
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1159c7b010>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f20d943b510>
 
     @pytest.mark.asyncio
     async def test_ocr_quota_membership(monkeypatch):
@@ -126,13 +126,16 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1159c7b010>
             r = await client.post(
                 "/api/v1/ocr/jobs", headers=h, json={"book_id": mock_book_id}
             )
->           jid = r.json()["data"]["job_id"]
-                  ^^^^^^^^^^^^^^^^
-E           KeyError: 'data'
+            print(f"OCR job response: status={r.status_code}, body={r.json()}")
+>           assert r.status_code == 200, f"OCR job init failed: {r.json()}"
+E           AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
+E           assert 404 == 200
+E            +  where 404 = <Response [404 Not Found]>.status_code
 
-api/tests/test_ocr_membership_quota.py:78: KeyError
+api/tests/test_ocr_membership_quota.py:79: AssertionError
 ----------------------------- Captured stdout call -----------------------------
-816841
+262827
+OCR job response: status=404, body={'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
 =============================== warnings summary ===============================
 <frozen importlib._bootstrap>:283
   <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
@@ -151,6 +154,8 @@ tests/test_ai_models_admin.py::test_ai_models_upsert_list
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - KeyError: 'data'
-1 failed, 8 passed, 2 warnings in 1.79s
+FAILED api/tests/test_ocr_membership_quota.py::test_ocr_quota_membership - AssertionError: OCR job init failed: {'status': 'error', 'error': {'code': 'book_not_found', 'message': 'book_not_found'}}
+assert 404 == 200
+ +  where 404 = <Response [404 Not Found]>.status_code
+1 failed, 8 passed, 2 warnings in 1.84s
 Error: Process completed with exit code 1.

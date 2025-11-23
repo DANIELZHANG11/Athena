@@ -26,7 +26,9 @@ async def test_ocr_quota_membership(monkeypatch):
             "/api/v1/auth/email/verify-code",
             json={"email": "user@athena.local", "code": code},
         )
-        token = r.json()["data"]["tokens"]["access_token"]
+        auth_data = r.json()["data"]
+        token = auth_data["tokens"]["access_token"]
+        user_id = auth_data["user_id"]
         h = {"Authorization": f"Bearer {token}"}
 
         r = await client.put(
@@ -49,23 +51,38 @@ async def test_ocr_quota_membership(monkeypatch):
         )
         assert r.status_code == 200
 
-        # Create a mock book first
-        mock_book_id = str(__import__("uuid").uuid4())
-        r = await client.post(
-            "/api/v1/books/upload/init",
-            headers=h,
-            json={"title": "Test Book", "filename": "a.pdf"},
-        )
-        if r.status_code == 200:
-            mock_book_id = r.json()["data"]["id"]
-        
-        # Mock the book meta to have page_count
+        # Create a book directly in database for testing
+        import uuid
         from api.app.db import engine as db_engine
         from sqlalchemy import text as sql_text
+        
+        mock_book_id = str(uuid.uuid4())
         async with db_engine.begin() as conn:
+            # Set session user for RLS if needed
             await conn.execute(
-                sql_text("UPDATE books SET meta = '{\"page_count\": 3}'::jsonb WHERE id = cast(:bid as uuid)"),
-                {"bid": mock_book_id}
+                sql_text("SELECT set_config('app.user_id', :uid, true)"),
+                {"uid": user_id}  # Get user_id from earlier auth
+            )
+            # Insert book record
+            await conn.execute(
+                sql_text("""
+                    INSERT INTO books (id, user_id, title, author, original_format, minio_key, size, meta)
+                    VALUES (
+                        cast(:id as uuid),
+                        cast(:uid as uuid),
+                        :title,
+                        'Test Author',
+                        'pdf',
+                        'test/book.pdf',
+                        1024,
+                        '{"page_count": 3}'::jsonb
+                    )
+                """),
+                {
+                    "id": mock_book_id,
+                    "uid": user_id,
+                    "title": "Test Book for OCR"
+                }
             )
         
         r = await client.post(
