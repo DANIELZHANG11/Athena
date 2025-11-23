@@ -39,6 +39,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --color-system-blue: #007AFF;
+  --color-label: rgba(0,0,0,0.85);
+  --color-secondary-label: rgba(60,60,67,0.6);
+  --color-system-fill: rgba(120,120,128,0.2);
 }
 
 .dark {
@@ -76,6 +80,10 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+  --color-system-blue: #0A84FF;
+  --color-label: rgba(255,255,255,0.85);
+  --color-secondary-label: rgba(235,235,245,0.6);
+  --color-system-fill: rgba(120,120,128,0.36);
 }
 
 @theme inline {

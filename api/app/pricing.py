@@ -74,7 +74,7 @@ async def admin_list(auth=Depends(require_user)):
         await _ensure(conn)
         res = await conn.execute(
             text(
-                "SELECT id::text, service_type, unit_type, unit_size, price_amount, currency, region, remark_template, is_active, version, updated_at FROM pricing_rules ORDER BY updated_at DESC"
+                "SELECT id::text, service_type, unit_type, unit_size, price_amount, currency, region, remark_template, platform, sku_id, is_active, version, updated_at FROM pricing_rules ORDER BY updated_at DESC"
             )
         )
         rows = res.fetchall()
@@ -90,9 +90,11 @@ async def admin_list(auth=Depends(require_user)):
                     "currency": r[5],
                     "region": r[6],
                     "remark_template": r[7],
-                    "is_active": bool(r[8]),
-                    "version": int(r[9]),
-                    "updated_at": str(r[10]),
+                    "platform": r[8],
+                    "sku_id": r[9],
+                    "is_active": bool(r[10]),
+                    "version": int(r[11]),
+                    "updated_at": str(r[12]),
                 }
                 for r in rows
             ],
@@ -107,7 +109,7 @@ async def admin_create(body: dict = Body(...), auth=Depends(require_user)):
         await _ensure(conn)
         await conn.execute(
             text(
-                "INSERT INTO pricing_rules(id, service_type, unit_type, unit_size, price_amount, currency, region, remark_template, is_active) VALUES (cast(:id as uuid), :st, :ut, :us, :pa, :cur, :rg, :rt, COALESCE(:ia, TRUE))"
+                "INSERT INTO pricing_rules(id, service_type, unit_type, unit_size, price_amount, currency, region, remark_template, platform, sku_id, is_active) VALUES (cast(:id as uuid), :st, :ut, :us, :pa, :cur, :rg, :rt, COALESCE(:pf, 'web'), :sku, COALESCE(:ia, TRUE))"
             ),
             {
                 "id": rid,
@@ -118,6 +120,8 @@ async def admin_create(body: dict = Body(...), auth=Depends(require_user)):
                 "cur": body.get("currency"),
                 "rg": body.get("region"),
                 "rt": body.get("remark_template"),
+                "pf": body.get("platform"),
+                "sku": body.get("sku_id"),
                 "ia": body.get("is_active"),
             },
         )
@@ -148,6 +152,8 @@ async def admin_update(
         "currency",
         "region",
         "remark_template",
+        "platform",
+        "sku_id",
         "is_active",
     ]:
         if k in body:

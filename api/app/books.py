@@ -18,6 +18,7 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
+from .dependencies import require_upload_permission, require_write_permission
 from .search_sync import delete_book as delete_book_from_index
 from .search_sync import index_book
 from .storage import (
@@ -82,7 +83,11 @@ def _quick_confidence(bucket: str, key: str) -> tuple[bool, float]:
 
 
 @router.post("/upload_init")
-async def upload_init(body: dict = Body(...), auth=Depends(require_user)):
+async def upload_init(
+    body: dict = Body(...),
+    quota=Depends(require_upload_permission),
+    auth=Depends(require_user),
+):
     user_id, _ = auth
     filename = body.get("filename")
     if not filename:
@@ -144,28 +149,35 @@ async def upload_complete(
                 except Exception:
                     pass
                 return {"status": "success", "data": data}
-        img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
-        await conn.execute(
-            text(
-                """
-            INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag)
-            VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag)
+    img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
+    await conn.execute(
+        text(
             """
-            ),
-            {
-                "id": book_id,
-                "uid": user_id,
-                "title": title,
-                "author": author,
-                "language": language,
-                "fmt": original_format,
-                "key": key,
-                "size": size,
-                "dig": (conf >= 0.8),
-                "conf": conf,
-                "etag": etag,
-            },
-        )
+        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag)
+        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag)
+        """
+        ),
+        {
+            "id": book_id,
+            "uid": user_id,
+            "title": title,
+            "author": author,
+            "language": language,
+            "fmt": original_format,
+            "key": key,
+            "size": size,
+            "dig": (conf >= 0.8),
+            "conf": conf,
+            "etag": etag,
+        },
+    )
+    # 初始化 meta.page_count 为占位，后台任务将补齐
+    await conn.execute(
+        text(
+            "UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', 1, 'needs_manual', true) WHERE id = cast(:id as uuid)"
+        ),
+        {"id": book_id},
+    )
     download_url = presigned_get(BOOKS_BUCKET, key)
     index_book(book_id, user_id, title, author)
     data = {"id": book_id, "download_url": download_url}
@@ -668,6 +680,13 @@ async def deep_analyze(book_id: str, auth=Depends(require_user)):
                 "id": book_id,
             },
         )
+        # 若未设置页数则补充占位
+        await conn.execute(
+            text(
+                "UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', 1) WHERE id = cast(:id as uuid) AND (meta->>'page_count') IS NULL"
+            ),
+            {"id": book_id},
+        )
     return {
         "status": "success",
         "data": {"is_digitalized": (not img_based and conf >= 0.8), "confidence": conf},
@@ -675,7 +694,7 @@ async def deep_analyze(book_id: str, auth=Depends(require_user)):
 
 
 @router.delete("/{book_id}")
-async def delete_book(book_id: str, auth=Depends(require_user)):
+async def delete_book(book_id: str, quota=Depends(require_write_permission), auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
         await conn.execute(
@@ -699,6 +718,7 @@ async def update_book(
     book_id: str,
     body: dict = Body(...),
     if_match: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -782,7 +802,7 @@ async def request_convert(
         await conn.execute(
             text(
                 """
-            INSERT INTO conversion_jobs(id, owner_id, book_id, source_key, target_format, status)
+            INSERT INTO conversion_jobs(id, user_id, book_id, source_key, target_format, status)
             VALUES (cast(:id as uuid), cast(:uid as uuid), cast(:bid as uuid), :src, :fmt, 'pending')
             """
             ),
@@ -807,14 +827,14 @@ async def list_jobs(status: str | None = Query(None), auth=Depends(require_user)
         if status:
             res = await conn.execute(
                 text(
-                    "SELECT id::text, book_id::text, target_format, status, created_at FROM conversion_jobs WHERE owner_id = current_setting('app.user_id')::uuid AND status = :st ORDER BY created_at DESC"
+                    "SELECT id::text, book_id::text, target_format, status, created_at FROM conversion_jobs WHERE user_id = current_setting('app.user_id')::uuid AND status = :st ORDER BY created_at DESC"
                 ),
                 {"st": status},
             )
         else:
             res = await conn.execute(
                 text(
-                    "SELECT id::text, book_id::text, target_format, status, created_at FROM conversion_jobs WHERE owner_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC"
+                    "SELECT id::text, book_id::text, target_format, status, created_at FROM conversion_jobs WHERE user_id = current_setting('app.user_id')::uuid ORDER BY created_at DESC"
                 )
             )
         rows = res.fetchall()
@@ -845,7 +865,7 @@ async def complete_job(
         )
         await conn.execute(
             text(
-                "UPDATE conversion_jobs SET status='completed', output_key = COALESCE(:out, output_key), updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
+                "UPDATE conversion_jobs SET status='completed', output_key = COALESCE(:out, output_key), updated_at = now() WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
             ),
             {"id": job_id, "out": output_key},
         )
@@ -862,7 +882,7 @@ async def fail_job(job_id: str, body: dict = Body(...), auth=Depends(require_use
         )
         await conn.execute(
             text(
-                "UPDATE conversion_jobs SET status='failed', error = :msg, updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
+                "UPDATE conversion_jobs SET status='failed', error = :msg, updated_at = now() WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
             ),
             {"id": job_id, "msg": message},
         )
@@ -878,7 +898,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
         )
         res = await conn.execute(
             text(
-                "SELECT book_id::text FROM conversion_jobs WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
+                "SELECT book_id::text FROM conversion_jobs WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
             ),
             {"id": job_id},
         )
@@ -959,7 +979,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
                 if not b or int(b[0]) < amt:
                     await conn.execute(
                         text(
-                            "UPDATE conversion_jobs SET status='failed', updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
+                            "UPDATE conversion_jobs SET status='failed', updated_at = now() WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
                         ),
                         {"id": job_id},
                     )
@@ -979,7 +999,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
                 )
         await conn.execute(
             text(
-                "UPDATE conversion_jobs SET status='completed', output_key = :out, updated_at = now() WHERE id = cast(:id as uuid) AND owner_id = current_setting('app.user_id')::uuid"
+                "UPDATE conversion_jobs SET status='completed', output_key = :out, updated_at = now() WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
             ),
             {"id": job_id, "out": out_key},
         )
@@ -990,6 +1010,7 @@ async def simulate_job(job_id: str, auth=Depends(require_user)):
 async def create_shelf(
     body: dict = Body(...),
     idempotency_key: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -1082,6 +1103,7 @@ async def update_shelf(
     shelf_id: str,
     body: dict = Body(...),
     if_match: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -1120,6 +1142,7 @@ async def add_item(
     shelf_id: str,
     body: dict = Body(...),
     idempotency_key: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -1187,6 +1210,7 @@ async def remove_item(
     shelf_id: str,
     book_id: str,
     idempotency_key: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -1213,7 +1237,10 @@ async def remove_item(
 
 @router.post("/upload_proxy")
 async def upload_proxy(
-    title: str | None = None, file: UploadFile = File(...), auth=Depends(require_user)
+    title: str | None = None,
+    file: UploadFile = File(...),
+    quota=Depends(require_upload_permission),
+    auth=Depends(require_user),
 ):
     user_id, _ = auth
     name = file.filename or "upload.bin"

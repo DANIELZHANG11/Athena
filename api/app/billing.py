@@ -431,3 +431,28 @@ async def grant_credits(payload: dict = Body(...), auth=Depends(require_user)):
                 {"id": lid, "amt": credits},
             )
     return {"status": "success"}
+
+
+@router.post("/iap/verify")
+async def verify_iap(payload: dict = Body(...), auth=Depends(require_user)):
+    user_id, _ = auth
+    receipt = payload.get("receipt")
+    platform = payload.get("platform")  # apple | google
+    if not receipt or not platform:
+        raise HTTPException(status_code=400, detail="missing_receipt_or_platform")
+    
+    # TODO: Implement actual verification with Apple/Google APIs
+    # For now, we just log it and return success if it's a sandbox receipt
+    logging.info(f"[IAP] Verify {platform} receipt for user {user_id}")
+    
+    valid = False
+    # Mock validation logic
+    if platform == "apple" and len(receipt) > 10:
+        valid = True
+    elif platform == "google" and len(receipt) > 10:
+        valid = True
+        
+    if not valid:
+         raise HTTPException(status_code=400, detail="invalid_receipt")
+         
+    return {"status": "success", "data": {"valid": True}}

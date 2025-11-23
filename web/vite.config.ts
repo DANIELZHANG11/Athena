@@ -16,12 +16,15 @@ export default defineConfig({
       },
       workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'] }
     })
-  ]
-  ,server: {
+  ],
+  server: {
+    host: true,
+    hmr: { protocol: 'ws' },
     proxy: {
       '/api': {
-        target: 'http://localhost',
-        changeOrigin: true
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true
       }
     }
   }

@@ -2,9 +2,10 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primar
 export default function Button({ children, onClick, variant = 'secondary', style, ...rest }: Props) {
   const base = {
     padding: 'var(--space-sm) var(--space-md)',
-    borderRadius: 8,
+    borderRadius: variant === 'primary' ? 999 : 8,
     border: 'none',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    fontWeight: variant === 'primary' ? 600 : 'var(--font-weight-medium)'
   } as React.CSSProperties
   const theme = variant === 'primary'
     ? { background: 'var(--color-system-blue)', color: '#fff' }

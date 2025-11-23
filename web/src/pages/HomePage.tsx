@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import Button from '../components/ui/Button'
 import Hero from '../landing/Hero'
 import FeatureCards from '../landing/FeatureCards'
 import BookGrid from '../landing/BookGrid'
@@ -20,7 +21,7 @@ export default function HomePage() {
       <CTASection />
       <section style={{ background: '#f7f7f9', color: '#555', padding: '24px 0' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', display: 'flex', justifyContent: 'center' }}>
-          <button onClick={() => nav('/library')} style={{ padding: '12px 20px', borderRadius: 999, background: '#007AFF', color: '#fff', border: 'none', fontWeight: 600 }}>开始浏览</button>
+          <Button variant="primary" onClick={() => nav('/library')}>开始浏览</Button>
         </div>
       </section>
       <Footer />

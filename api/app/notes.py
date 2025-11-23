@@ -10,6 +10,7 @@ from sqlalchemy import text
 from .auth import require_user
 from .celery_app import celery_app
 from .db import engine
+from .dependencies import require_write_permission
 from .search_sync import delete_highlight as delete_highlight_from_index
 from .search_sync import delete_note as delete_note_from_index
 from .search_sync import index_highlight, index_note
@@ -143,6 +144,7 @@ async def delete_tag(tag_id: str, auth=Depends(require_user)):
 async def create_note(
     body: dict = Body(...),
     idempotency_key: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -279,6 +281,7 @@ async def update_note(
     note_id: str,
     body: dict = Body(...),
     if_match: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -335,7 +338,7 @@ async def update_note(
 
 
 @notes_router.delete("/{note_id}")
-async def delete_note(note_id: str, auth=Depends(require_user)):
+async def delete_note(note_id: str, quota=Depends(require_write_permission), auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
         await conn.execute(
@@ -355,6 +358,7 @@ async def delete_note(note_id: str, auth=Depends(require_user)):
 async def create_highlight(
     body: dict = Body(...),
     idempotency_key: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -462,6 +466,7 @@ async def update_highlight(
     highlight_id: str,
     body: dict = Body(...),
     if_match: str | None = Header(None),
+    quota=Depends(require_write_permission),
     auth=Depends(require_user),
 ):
     user_id, _ = auth
@@ -517,7 +522,7 @@ async def update_highlight(
 
 
 @highlights_router.delete("/{highlight_id}")
-async def delete_highlight(highlight_id: str, auth=Depends(require_user)):
+async def delete_highlight(highlight_id: str, quota=Depends(require_write_permission), auth=Depends(require_user)):
     user_id, _ = auth
     async with engine.begin() as conn:
         await conn.execute(
