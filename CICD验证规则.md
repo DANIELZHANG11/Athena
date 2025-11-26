@@ -58,8 +58,6 @@ Run pnpm run typecheck
 Error: src/components/ui/alert-dialog.tsx(6,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/calendar.tsx(7,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/pagination.tsx(3,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
-Error: src/hooks/use-toast.ts(153,13): error TS2353: Object literal may only specify known properties, and 'open' does not exist in type 'ToasterToast'.
-Error: src/hooks/use-toast.ts(154,28): error TS7006: Parameter 'open' implicitly has an 'any' type.
 Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.

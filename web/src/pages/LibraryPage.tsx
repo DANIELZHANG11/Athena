@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import BookCard from '../components/BookCard'
-import { Button } from '../components/ui/button'
-import Modal from '../components/ui/Modal'
-import { Input } from '../components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { useTranslation } from 'react-i18next'
 
 export default function LibraryPage() {

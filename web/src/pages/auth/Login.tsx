@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Button } from '../../components/ui/button'
+import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import { Mail, Lock, AlertCircle, CheckCircle } from 'lucide-react'
 
