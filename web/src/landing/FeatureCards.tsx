@@ -1,22 +1,20 @@
 import { motion } from 'framer-motion'
-import { Book, Headphones, Sparkles, Users } from 'lucide-react'
-
-const features = [
-  { icon: <Book className="w-10 h-10" />, title: 'Read Books', description: 'Dive into millions of ebooks with customizable reading experience.', accent: '#007AFF' },
-  { icon: <Headphones className="w-10 h-10" />, title: 'Listen to Audiobooks', description: 'Enjoy professional narrations while you commute, exercise, or relax.', accent: '#FF9500' },
-  { icon: <Sparkles className="w-10 h-10" />, title: 'Personalized Recommendations', description: 'Get tailored suggestions based on your reading preferences.', accent: '#34C759' },
-  { icon: <Users className="w-10 h-10" />, title: 'Family Sharing', description: 'Share your library with up to five family members at no extra cost.', accent: '#AF52DE' },
-]
+import { Cloud, Sparkles, FileText, Headphones } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 export default function FeatureCards() {
+  const { t } = useTranslation('landing')
+
+  const features = [
+    { icon: <Cloud className="w-10 h-10" />, key: 'sync', accent: '#007AFF' },
+    { icon: <Sparkles className="w-10 h-10" />, key: 'ai', accent: '#5856D6' },
+    { icon: <FileText className="w-10 h-10" />, key: 'notes', accent: '#34C759' },
+    { icon: <Headphones className="w-10 h-10" />, key: 'listen', accent: '#FF9500' },
+  ]
+
   return (
     <div className="py-32 bg-white">
       <div className="max-w-7xl mx-auto px-6">
-        <motion.div initial={{ y: 60, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8 }} className="text-center mb-20">
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-6" style={{ fontWeight: 700, lineHeight: 1.1 }}>A novel reading and</h2>
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-8" style={{ fontWeight: 700, lineHeight: 1.1 }}>listening experience.</h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">Everything you need for your reading journey, all in one beautifully designed app.</p>
-        </motion.div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {features.map((feature, index) => (
             <motion.div key={index} initial={{ y: 80, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8, delay: index * 0.15 }} className="bg-gray-50 rounded-3xl p-10 hover:bg-gray-100 transition-colors group">
@@ -34,8 +32,8 @@ export default function FeatureCards() {
               >
                 <div className="text-black">{feature.icon}</div>
               </motion.div>
-              <h3 className="text-3xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>{feature.title}</h3>
-              <p className="text-lg text-gray-600 leading-relaxed">{feature.description}</p>
+              <h3 className="text-3xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>{t(`features.${feature.key}.title`)}</h3>
+              <p className="text-lg text-gray-600 leading-relaxed">{t(`features.${feature.key}.description`)}</p>
             </motion.div>
           ))}
         </div>

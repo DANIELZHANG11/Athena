@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 
 interface Book { id: number; title: string; author: string; image: string }
 
@@ -34,6 +35,7 @@ const bookCovers: Book[] = filenames.map((fn, idx) => {
 })
 
 export default function BookGrid() {
+  const { t } = useTranslation('landing')
   const itemsAll = bookCovers
   const Card = ({ book }: { book: Book }) => (
     <div className="book-card rounded-lg shadow-lg transition-transform duration-300 hover:scale-x-[1.08] hover:scale-y-[1.12] hover:shadow-2xl hover:z-10 relative flex flex-col items-center justify-start p-1 md:p-2 cursor-default" style={{ width: 180, willChange: 'transform', background: '#fff' }}>
@@ -58,9 +60,9 @@ export default function BookGrid() {
     <div className="py-24 bg-gray-50">
       <div className="max-w-7xl mx-auto px-6">
         <motion.div initial={{ y: 60, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8 }} className="text-center mb-16">
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-6" style={{ fontWeight: 700, lineHeight: 1.1 }}>A library you'll want</h2>
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-8" style={{ fontWeight: 700, lineHeight: 1.1 }}>to get lost in.</h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">With millions of titles across every genre, there's something for everyone. Discover bestsellers, classics, and hidden gems curated just for you.</p>
+          <h2 className="text-5xl md:text-6xl text-gray-900 mb-6" style={{ fontWeight: 700, lineHeight: 1.1 }}>{t('bookGrid.titleLine1')}</h2>
+          <h2 className="text-5xl md:text-6xl text-gray-900 mb-8" style={{ fontWeight: 700, lineHeight: 1.1 }}>{t('bookGrid.titleLine2')}</h2>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">{t('bookGrid.description')}</p>
         </motion.div>
         <motion.div initial={{ y: 80, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8, delay: 0.2 }}>
           <Track items={itemsAll} delay={0} />

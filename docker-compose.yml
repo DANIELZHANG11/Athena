@@ -3,6 +3,7 @@ services:
     image: zukubq0aouv2k2.xuanyuan.run/traefik:v3.0
     command:
       - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
       - --entrypoints.web.address=:80
       - --api.insecure=true
     ports:
@@ -11,6 +12,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   api:
     build:
       context: ./api
@@ -59,9 +65,14 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./api:/app
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   prometheus:
     image: zukubq0aouv2k2.xuanyuan.run/prom/prometheus:latest
-    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    command: [ "--config.file=/etc/prometheus/prometheus.yml" ]
     ports:
       - "9090:9090"
     volumes:
@@ -69,6 +80,11 @@ services:
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     depends_on:
       - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   grafana:
     image: zukubq0aouv2k2.xuanyuan.run/grafana/grafana:latest
     ports:
@@ -79,11 +95,21 @@ services:
     depends_on:
       - prometheus
       - loki
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   loki:
     image: grafana/loki:2.9.0
     ports:
       - "3100:3100"
-    command: ["-config.file=/etc/loki/local-config.yaml"]
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   jaeger:
     image: jaegertracing/all-in-one:1.56
     ports:
@@ -93,14 +119,24 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     depends_on:
       - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   backup:
     image: zukubq0aouv2k2.xuanyuan.run/postgres:16
-    profiles: ["manual"]
-    entrypoint: ["bash","-lc","pg_dump -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} | gzip > /backups/athena_$(date +%Y%m%d_%H%M).sql.gz"]
+    profiles: [ "manual" ]
+    entrypoint: [ "bash", "-lc", "pg_dump -h postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} | gzip > /backups/athena_$(date +%Y%m%d_%H%M).sql.gz" ]
     environment:
       - PGPASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./backups:/backups
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   postgres:
     image: zukubq0aouv2k2.xuanyuan.run/ankane/pgvector:latest
     environment:
@@ -110,38 +146,58 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "athena"]
+      test: [ "CMD", "pg_isready", "-U", "athena" ]
       interval: 10s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   valkey:
-    image: valkey/valkey:7
-    command: ["valkey-server", "--appendonly", "yes"]
+    image: zukubq0aouv2k2.xuanyuan.run/redis:7
+    command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
       - valkey_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   seaweed:
-    image: chrislusf/seaweedfs:latest
-    command: ["server", "-s3", "-s3.port=8333", "-dir=/data"]
+    image: zukubq0aouv2k2.xuanyuan.run/chrislusf/seaweedfs:latest
+    command: [ "server", "-s3", "-s3.port=8333", "-dir=/data" ]
     ports:
       - "8333:8333"
       - "8888:8888"
     volumes:
       - seaweed_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   opensearch:
-    image: opensearchproject/opensearch:latest
+    image: zukubq0aouv2k2.xuanyuan.run/opensearchproject/opensearch:latest
     environment:
       - discovery.type=single-node
-      - plugins.security.disabled=true
+      - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9200:9200"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health" ]
       interval: 10s
       timeout: 5s
       retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   pgbouncer:
-    image: brainsam/pgbouncer:latest
+    image: zukubq0aouv2k2.xuanyuan.run/brainsam/pgbouncer:latest
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -154,6 +210,42 @@ services:
       - LISTEN_PORT=6432
     depends_on:
       - postgres
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # -------------------------------------------------------------------------
+  # Tolgee (Translation Platform)
+  # -------------------------------------------------------------------------
+  tolgee_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: tolgee
+      POSTGRES_PASSWORD: tolgee_password
+      POSTGRES_DB: tolgee
+    volumes:
+      - tolgee_postgres_data:/var/lib/postgresql/data
+    networks:
+      - athena-network
+
+  tolgee:
+    image: tolgee/tolgee:latest
+    ports:
+      - "8085:8080"
+    environment:
+      TOLGEE_DB_URL: jdbc:postgresql://tolgee_db:5432/tolgee
+      TOLGEE_DB_USER: tolgee
+      TOLGEE_DB_PASSWORD: tolgee_password
+      TOLGEE_AUTHENTICATION_ENABLED: true
+      TOLGEE_AUTHENTICATION_INITIAL_USERNAME: admin
+      TOLGEE_AUTHENTICATION_INITIAL_PASSWORD: admin
+    depends_on:
+      - tolgee_db
+    networks:
+      - athena-network
+
   calibre:
     image: zukubq0aouv2k2.xuanyuan.run/linuxserver/calibre:latest
     environment:
@@ -168,21 +260,37 @@ services:
       - "8081:8081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
   worker:
     build:
       context: ./api
     environment:
       - CELERY_BROKER_URL=redis://valkey:6379/0
       - CELERY_BACKEND_URL=redis://valkey:6379/1
-    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO"]
+    command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO" ]
     depends_on:
       - valkey
       - pgbouncer
     volumes:
       - ./api:/app
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
 volumes:
   pg_data:
   valkey_data:
   seaweed_data:
   calibre_config:
   calibre_books:
+  tolgee_postgres_data:
+
+
+networks:
+  athena-network:
+    driver: bridge

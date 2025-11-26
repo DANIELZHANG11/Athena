@@ -43,6 +43,18 @@
   --color-label: rgba(0,0,0,0.85);
   --color-secondary-label: rgba(60,60,67,0.6);
   --color-system-fill: rgba(120,120,128,0.2);
+
+  /* Apple Design Tokens */
+  --system-background: #ffffff;
+  --secondary-background: #f2f2f7;
+  --tertiary-background: #f7f7f7;
+  --label: rgba(0,0,0,0.85);
+  --secondary-label: rgba(60,60,67,0.6);
+  --tertiary-label: rgba(60,60,67,0.3);
+  --system-blue: var(--color-system-blue);
+  --overlay: rgba(255,255,255,0.45);
+  --liquid-glass-blur: 24px;
+  --separator: rgba(60,60,67,0.29);
 }
 
 .dark {
@@ -84,6 +96,18 @@
   --color-label: rgba(255,255,255,0.85);
   --color-secondary-label: rgba(235,235,245,0.6);
   --color-system-fill: rgba(120,120,128,0.36);
+
+  /* Apple Design Tokens (Dark) */
+  --system-background: #000000;
+  --secondary-background: #1c1c1e;
+  --tertiary-background: #2c2c2e;
+  --label: rgba(255,255,255,0.85);
+  --secondary-label: rgba(235,235,245,0.6);
+  --tertiary-label: rgba(235,235,245,0.3);
+  --system-blue: var(--color-system-blue);
+  --overlay: rgba(0,0,0,0.45);
+  --liquid-glass-blur: 24px;
+  --separator: rgba(84,84,88,0.65);
 }
 
 @theme inline {
@@ -126,6 +150,22 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
+
+/* Tailwind v4 utilities mapping to Apple tokens */
+@utility bg-system-background { background-color: var(--system-background); }
+@utility bg-secondary-background { background-color: var(--secondary-background); }
+@utility bg-tertiary-background { background-color: var(--tertiary-background); }
+@utility text-label { color: var(--label); }
+@utility text-secondary-label { color: var(--secondary-label); }
+@utility text-tertiary-label { color: var(--tertiary-label); }
+@utility bg-system-blue { background-color: var(--system-blue); }
+@utility border-separator { border-color: var(--separator); }
+@utility backdrop-liquid-glass {
+  backdrop-filter: blur(var(--liquid-glass-blur));
+  -webkit-backdrop-filter: blur(var(--liquid-glass-blur));
+  background-color: var(--overlay);
+}
+@utility bg-overlay { background-color: var(--overlay); }
 
 @layer base {
   * {

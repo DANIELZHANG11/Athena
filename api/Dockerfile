@@ -3,9 +3,12 @@ WORKDIR /app
 ENV HF_HOME=/app/.hf_cache
 ENV TRANSFORMERS_CACHE=/app/.hf_cache
 ENV HUGGINGFACE_HUB_CACHE=/app/.hf_cache
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+ENV PIP_TRUSTED_HOST=mirrors.aliyun.com
+ARG SKIP_HEAVY=true
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt && \
-    pip install --no-cache-dir paddlepaddle paddleocr FlagEmbedding edge-tts
+    if [ "$SKIP_HEAVY" != "true" ]; then pip install --no-cache-dir paddlepaddle paddleocr FlagEmbedding edge-tts; fi
 COPY app /app/app
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic

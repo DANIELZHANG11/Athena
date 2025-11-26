@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
+import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+
 export default defineConfig({
   plugins: [
     react(),
@@ -15,8 +17,13 @@ export default defineConfig({
         theme_color: '#ffffff'
       },
       workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'] }
-    })
+    }),
   ],
+  resolve: {
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) }
+    ]
+  },
   server: {
     host: true,
     hmr: { protocol: 'ws' },
@@ -25,6 +32,11 @@ export default defineConfig({
         target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
         changeOrigin: true,
         ws: true
+      },
+      '/tolgee-api': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/tolgee-api/, '')
       }
     }
   }

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import BookCard from '../components/BookCard'
-import Button from '../components/ui/Button'
+import { Button } from '../components/ui/button'
 import Modal from '../components/ui/Modal'
-import Input from '../components/ui/Input'
+import { Input } from '../components/ui/input'
 import { useTranslation } from 'react-i18next'
 
 export default function LibraryPage() {
@@ -16,7 +16,7 @@ export default function LibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 className="typography-large-title">{t('library.title')}</h1>
-        <Button variant="primary" onClick={() => setShow(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+        <Button variant="default" onClick={() => setShow(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
           {t('upload.cta')}
         </Button>
       </div>
@@ -43,7 +43,7 @@ export default function LibraryPage() {
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
               <Button onClick={() => setShow(false)}>{t('common.cancel')}</Button>
-              <Button variant="primary"
+              <Button variant="default"
                 onClick={async () => {
                   const at = localStorage.getItem('access_token')
                   if (fileObj) {

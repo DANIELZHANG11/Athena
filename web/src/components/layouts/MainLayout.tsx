@@ -1,12 +1,14 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { useState } from 'react'
-import i18n from '../../i18n'
+import i18n, { tolgee } from '../../i18n'
+import { useTolgeeLanguages } from '../../hooks/useTolgeeLanguages'
 import NavItem from './NavItem'
 
 export default function MainLayout() {
   const nav = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const langs = useTolgeeLanguages()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--color-system-background)' }}>
       <header
@@ -22,8 +24,8 @@ export default function MainLayout() {
         }}
       >
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => nav('/') }>
-            <img src="/LOGO.png" alt="Athena" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'contain' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => nav('/')}>
+            <img src="/logosvg.png" alt="Athena" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'contain' }} />
             <div style={{ fontWeight: 700, fontSize: 16, color: '#111' }}>Athena</div>
           </div>
           <nav style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
@@ -31,9 +33,10 @@ export default function MainLayout() {
             <NavItem to="/search" icon={<Search size={18} />} label="" />
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-            <select value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)} style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
-              <option value="zh-CN">中文</option>
-              <option value="en-US">English</option>
+            <select value={i18n.language} onChange={(e) => { const v = e.target.value; const lang = (langs.find((l) => l.code === v) || { raw: v }); i18n.changeLanguage(v); tolgee.changeLanguage((lang as any).raw) }} style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
+              {(langs.length ? langs : [{ code: 'zh-CN', name: '中文' }, { code: 'en-US', name: 'English' }]).map((l) => (
+                <option key={l.code} value={l.code}>{l.name || l.code}</option>
+              ))}
             </select>
             {!localStorage.getItem('access_token') && (
               <button onClick={() => nav('/login')} style={{ padding: '8px 12px', borderRadius: 999, background: '#007AFF', color: '#fff', border: 'none' }}>注册/登录</button>

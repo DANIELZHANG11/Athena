@@ -39,7 +39,11 @@ async def apply_schema():
                 created_at TIMESTAMPTZ DEFAULT now(),
                 completed_at TIMESTAMPTZ
             );
+        """))
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_invites_code ON invites(invite_code);
+        """))
+        await conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_invites_inviter ON invites(inviter_id);
         """))
         print("Created invites table.")

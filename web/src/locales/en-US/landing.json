@@ -1,0 +1,97 @@
+{
+  "hero": {
+    "title": "Read, listen, discover.",
+    "subtitle": "Your personal library. Beautifully organized.",
+    "cta_free": "Start for Free",
+    "cta_login": "Sign In"
+  },
+  "features": {
+    "sync": {
+      "title": "Seamless Cloud Sync",
+      "description": "Pick up right where you left off, on any device."
+    },
+    "ai": {
+      "title": "AI-Powered Insights",
+      "description": "Transform your highlights into knowledge with intelligent conversations."
+    },
+    "notes": {
+      "title": "Effortless Note-Taking",
+      "description": "Capture your thoughts instantly. Never lose a brilliant idea."
+    },
+    "listen": {
+      "title": "Listen Anywhere",
+      "description": "Turn any book into an audiobook with TTS technology."
+    }
+  },
+  "bookGrid": {
+    "titleLine1": "A library you'll want",
+    "titleLine2": "to get lost in.",
+    "description": "With millions of titles across every genre, there's something for everyone. Discover bestsellers, classics, and hidden gems curated just for you.",
+    "browseAll": "Browse All"
+  },
+  "deviceCompatibility": {
+    "titleLine1": "Read and listen on",
+    "titleLine2": "your favorite devices.",
+    "devices": {
+      "iphone": "iPhone",
+      "ipad": "iPad",
+      "mac": "Mac",
+      "watch": "Apple Watch",
+      "tv": "Apple TV",
+      "carplay": "CarPlay"
+    }
+  },
+  "featureHighlight": {
+    "title": "Curation you'll love",
+    "description": "Discover bestsellers, classics, and hidden gems curated just for you."
+  },
+  "ctaSection": {
+    "title": "Get started with Athena Reader today.",
+    "description": "A reading app is a handy tool for readers who want to keep track of the books they're reading and access curated content from their favorite authors. Athena Reader is an essential companion for book lovers everywhere.",
+    "cta": "Start for Free",
+    "learnMore": "Learn more →"
+  },
+  "browse": "Browse Library",
+  "footer": {
+    "disclaimer": "* Family Sharing requires a personal Apple ID signed in to iCloud and iTunes. Music, movies, TV shows, and books can be downloaded on up to 10 devices per account, five of which can be computers.",
+    "shopAndLearn": {
+      "title": "Shop and Learn",
+      "store": "Store",
+      "mac": "Mac",
+      "iPad": "iPad",
+      "iPhone": "iPhone"
+    },
+    "services": {
+      "title": "Services",
+      "reader": "Athena Reader",
+      "music": "Athena Music",
+      "tv": "Athena TV+",
+      "arcade": "Athena Arcade"
+    },
+    "account": {
+      "title": "Account",
+      "manageId": "Manage Your ID",
+      "account": "Account",
+      "icloud": "iCloud.com"
+    },
+    "store": {
+      "title": "Athena Store",
+      "findStore": "Find a Store",
+      "geniusBar": "Genius Bar",
+      "shoppingHelp": "Shopping Help"
+    },
+    "about": {
+      "title": "About Athena",
+      "newsroom": "Newsroom",
+      "leadership": "Leadership",
+      "careers": "Careers",
+      "contact": "Contact Us"
+    },
+    "moreWays": "More ways to shop: {{findStore}} or {{otherRetailer}} near you. Or call 1-800-MY-ATHENA.",
+    "otherRetailer": "other retailer",
+    "copyright": "Copyright © 2024 Athena Inc. All rights reserved.",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfUse": "Terms of Use",
+    "siteMap": "Site Map"
+  }
+}

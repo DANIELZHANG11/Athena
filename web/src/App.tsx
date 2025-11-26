@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import MainLayout from './components/layouts/MainLayout'
-import LoginPage from './pages/LoginPage'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import LandingLayout from './layouts/LandingLayout'
+import AuthLayout from './layouts/AuthLayout'
+import AppLayout from './layouts/AppLayout'
 import HomePage from './pages/HomePage'
 import LibraryPage from './pages/LibraryPage'
 import AIConversationsPage from './pages/AIConversationsPage'
@@ -9,28 +10,33 @@ import ProfilePage from './pages/ProfilePage'
 import DocEditor from './pages/DocEditor'
 import TTSPage from './pages/TTSPage'
 import BillingPage from './pages/BillingPage'
-
-function RequireAuth({ children }: { children: JSX.Element }) {
-  const at = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
-  if (!at) return <Navigate to="/login" replace />
-  return children
-}
+import Login from './pages/auth/Login'
+import Register from './pages/auth/Register'
+import AuthGuard from './components/auth/AuthGuard'
+import ReadNowPage from './pages/ReadNowPage'
+import { Navigate } from 'react-router-dom'
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<div />} />
-        <Route path="/" element={<MainLayout />}>
+        <Route path="/" element={<LandingLayout />}>
           <Route index element={<HomePage />} />
-          <Route path="library" element={<RequireAuth><LibraryPage /></RequireAuth>} />
-          <Route path="ai-conversations" element={<RequireAuth><AIConversationsPage /></RequireAuth>} />
-          <Route path="notes" element={<RequireAuth><NotesPage /></RequireAuth>} />
-          <Route path="profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-          <Route path="docs/:docId" element={<RequireAuth><DocEditor /></RequireAuth>} />
-          <Route path="tts" element={<RequireAuth><TTSPage /></RequireAuth>} />
-          <Route path="billing" element={<RequireAuth><BillingPage /></RequireAuth>} />
+        </Route>
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
+        <Route path="/app" element={<AppLayout />}>
+          <Route index element={<Navigate to="/app/read-now" replace />} />
+          <Route path="read-now" element={<AuthGuard><ReadNowPage /></AuthGuard>} />
+          <Route path="library" element={<AuthGuard><LibraryPage /></AuthGuard>} />
+          <Route path="ai-conversations" element={<AuthGuard><AIConversationsPage /></AuthGuard>} />
+          <Route path="notes" element={<AuthGuard><NotesPage /></AuthGuard>} />
+          <Route path="profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
+          <Route path="docs/:docId" element={<AuthGuard><DocEditor /></AuthGuard>} />
+          <Route path="tts" element={<AuthGuard><TTSPage /></AuthGuard>} />
+          <Route path="billing" element={<AuthGuard><BillingPage /></AuthGuard>} />
         </Route>
       </Routes>
     </BrowserRouter>
