@@ -55,9 +55,28 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/pages/LoginPage.tsx(23,33): error TS2322: Type '{ id: string; ariaLabel: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder: string; }' is not assignable to type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'.
-  Property 'ariaLabel' does not exist on type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'. Did you mean '"aria-label"'?
-Error: src/pages/LoginPage.tsx(44,32): error TS2322: Type '{ id: string; ariaLabel: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder: string; }' is not assignable to type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'.
-  Property 'ariaLabel' does not exist on type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'. Did you mean '"aria-label"'?
- ELIFECYCLE  Command failed with exit code 2.
-Error: Process completed with exit code 2.
+
+> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
+> eslint "src/**/*.{ts,tsx}"
+
+
+/home/runner/work/Athena/Athena/web/src/hooks/use-toast.ts
+Error:   16:7  error  'actionTypes' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/layouts/LandingLayout.tsx
+Error:   3:10  error  'tolgee' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/HomePage.tsx
+Error:   1:10  error  'useNavigate' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/LibraryPage.tsx
+Error:   4:10  error  'Card' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/auth/Login.tsx
+Error:   16:10  error  'devCode' is assigned a value but never used     @typescript-eslint/no-unused-vars
+Error:   16:19  error  'setDevCode' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+✖ 6 problems (6 errors, 0 warnings)
+
+ ELIFECYCLE  Command failed with exit code 1.
+Error: Process completed with exit code 1.

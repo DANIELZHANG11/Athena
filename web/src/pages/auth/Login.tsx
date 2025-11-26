@@ -13,7 +13,6 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
-  const [devCode, setDevCode] = useState<string | null>(null)
   const [codeSent, setCodeSent] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [error, setError] = useState('')

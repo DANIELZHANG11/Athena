@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import BookCard from '../components/BookCard'
 import { Button } from '../components/ui/button'
-import { Card } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import Modal from '../components/ui/Modal'
 import { useTranslation } from 'react-i18next'
