@@ -55,28 +55,6 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-
-> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
-> eslint "src/**/*.{ts,tsx}"
-
-
-/home/runner/work/Athena/Athena/web/src/hooks/use-toast.ts
-Error:   16:7  error  'actionTypes' is assigned a value but only used as a type  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/layouts/LandingLayout.tsx
-Error:   3:10  error  'tolgee' is defined but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/HomePage.tsx
-Error:   1:10  error  'useNavigate' is defined but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/LibraryPage.tsx
-Error:   4:10  error  'Card' is defined but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/auth/Login.tsx
-Error:   16:10  error  'devCode' is assigned a value but never used     @typescript-eslint/no-unused-vars
-Error:   16:19  error  'setDevCode' is assigned a value but never used  @typescript-eslint/no-unused-vars
-
-✖ 6 problems (6 errors, 0 warnings)
-
- ELIFECYCLE  Command failed with exit code 1.
-Error: Process completed with exit code 1.
+Error: src/layouts/LandingLayout.tsx(3,18): error TS2307: Cannot find module '../../i18n' or its corresponding type declarations.
+ ELIFECYCLE  Command failed with exit code 2.
+Error: Process completed with exit code 2.
