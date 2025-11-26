@@ -55,15 +55,11 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/auth/AuthGuard.tsx(2,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
-Error: src/components/auth/AuthGuard.tsx(5,41): error TS7006: Parameter 's' implicitly has an 'any' type.
-Error: src/components/layouts/MainLayout.tsx(36,174): error TS18047: 'tolgee' is possibly 'null'.
 Error: src/components/ui/alert-dialog.tsx(6,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/calendar.tsx(7,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/pagination.tsx(3,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/hooks/use-toast.ts(153,13): error TS2353: Object literal may only specify known properties, and 'open' does not exist in type 'ToasterToast'.
 Error: src/hooks/use-toast.ts(154,28): error TS7006: Parameter 'open' implicitly has an 'any' type.
-Error: src/lib/api.ts(2,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
 Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
@@ -77,9 +73,5 @@ Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '../com
 Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
 Error: src/pages/ProfilePage.tsx(29,49): error TS7006: Parameter 'e' implicitly has an 'any' type.
 Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '../../components/ui/button' or its corresponding type declarations.
-Error: src/pages/auth/Login.tsx(5,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
-Error: src/pages/auth/Login.tsx(12,34): error TS7006: Parameter 's' implicitly has an 'any' type.
-Error: src/pages/auth/Register.tsx(4,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
-Error: src/pages/auth/Register.tsx(9,34): error TS7006: Parameter 's' implicitly has an 'any' type.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
