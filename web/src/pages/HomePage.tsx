@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
+import { Button } from '../components/ui/button'
 import Hero from '../landing/Hero'
 import FeatureCards from '../landing/FeatureCards'
 import BookGrid from '../landing/BookGrid'

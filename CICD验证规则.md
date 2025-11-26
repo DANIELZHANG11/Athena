@@ -62,16 +62,11 @@ Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '@/compone
 Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(29,10): error TS2304: Cannot find name 'Modal'.
-Error: src/pages/LibraryPage.tsx(34,50): error TS7006: Parameter 'e' implicitly has an 'any' type.
-Error: src/pages/LibraryPage.tsx(38,53): error TS7006: Parameter 'e' implicitly has an 'any' type.
 Error: src/pages/LibraryPage.tsx(71,11): error TS2304: Cannot find name 'Modal'.
-Error: src/pages/LoginPage.tsx(3,8): error TS2613: Module '"/home/runner/work/Athena/Athena/web/src/components/ui/Button"' has no default export. Did you mean to use 'import { Button } from "/home/runner/work/Athena/Athena/web/src/components/ui/Button"' instead?
-Error: src/pages/LoginPage.tsx(4,8): error TS2613: Module '"/home/runner/work/Athena/Athena/web/src/components/ui/Input"' has no default export. Did you mean to use 'import { Input } from "/home/runner/work/Athena/Athena/web/src/components/ui/Input"' instead?
-Error: src/pages/LoginPage.tsx(23,87): error TS7006: Parameter 'e' implicitly has an 'any' type.
-Error: src/pages/LoginPage.tsx(44,84): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/LoginPage.tsx(3,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
+Error: src/pages/LoginPage.tsx(4,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
 Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
 Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
-Error: src/pages/ProfilePage.tsx(29,49): error TS7006: Parameter 'e' implicitly has an 'any' type.
 Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
