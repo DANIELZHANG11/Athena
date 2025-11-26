@@ -20,7 +20,7 @@ export default function LoginPage() {
       <div style={{ width: 360, border: '1px solid #eee', borderRadius: 12, padding: 'var(--space-lg)', background: 'var(--color-secondary-system-background)' }}>
         <h1 style={{ fontSize: 20, marginBottom: 12 }}>{t('login.title')}</h1>
         <label htmlFor="email-input">{t('login.email')}</label>
-        <Input id="email-input" ariaLabel={t('login.email')} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.email')} />
+        <Input id="email-input" aria-label={t('login.email')} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.email')} />
         <Button
           data-testid="login-send"
           style={{ marginTop: 'var(--space-sm)', width: '100%' }}
@@ -41,7 +41,7 @@ export default function LoginPage() {
           }}
         >{t('login.send_code')}</Button>
         <label htmlFor="code-input">{t('login.code')}</label>
-        <Input id="code-input" ariaLabel={t('login.code')} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('login.code')} />
+        <Input id="code-input" aria-label={t('login.code')} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('login.code')} />
         <Button
           data-testid="login-submit"
           style={{ marginTop: 'var(--space-sm)', width: '100%' }}

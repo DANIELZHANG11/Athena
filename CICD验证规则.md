@@ -55,18 +55,9 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/ui/alert-dialog.tsx(6,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
-Error: src/components/ui/calendar.tsx(7,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
-Error: src/components/ui/pagination.tsx(3,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
-Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(29,10): error TS2304: Cannot find name 'Modal'.
-Error: src/pages/LibraryPage.tsx(71,11): error TS2304: Cannot find name 'Modal'.
-Error: src/pages/LoginPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
-Error: src/pages/LoginPage.tsx(4,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
-Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
-Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
-Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '../../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LoginPage.tsx(23,33): error TS2322: Type '{ id: string; ariaLabel: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder: string; }' is not assignable to type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'.
+  Property 'ariaLabel' does not exist on type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'. Did you mean '"aria-label"'?
+Error: src/pages/LoginPage.tsx(44,32): error TS2322: Type '{ id: string; ariaLabel: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; placeholder: string; }' is not assignable to type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'.
+  Property 'ariaLabel' does not exist on type 'IntrinsicAttributes & ClassAttributes<HTMLInputElement> & InputHTMLAttributes<HTMLInputElement>'. Did you mean '"aria-label"'?
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
