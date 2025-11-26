@@ -1,6 +1,6 @@
 import { Outlet, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import i18n from '../i18n'
+
 import { useTolgeeLanguages } from '../hooks/useTolgeeLanguages'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
