@@ -50,200 +50,36 @@
 修复，调整或补全代码后，重新推送至GITHUB仓库进行验证
 
 
-Run pytest -q api/tests
-..F.....F.....                                                           [100%]
-=================================== FAILURES ===================================
-_____________________________ test_books_crud_flow _____________________________
+Run pnpm run typecheck
 
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fcf1db75450>
+> athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
+> tsc --noEmit
 
-    @pytest.mark.asyncio
-    async def test_books_crud_flow(monkeypatch):
-        # Mock S3 - mock functions in books module (imported from storage)
-        monkeypatch.setattr(
-            "api.app.books.presigned_put",
-            lambda bucket, key, **kwargs: "http://fake-upload-url.com",
-        )
-        monkeypatch.setattr(
-            "api.app.books.presigned_get",
-            lambda bucket, key, **kwargs: "http://fake-download-url.com",
-        )
-        monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
-        monkeypatch.setattr(
-            "api.app.books.upload_bytes", lambda bucket, key, data, content_type: None
-        )
-        monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
-    
-        # Mock Celery
-        mock_send_task = MagicMock()
-        monkeypatch.setattr("api.app.books.celery_app.send_task", mock_send_task)
-    
-        # Mock Redis
-        mock_redis = MagicMock()
-        monkeypatch.setattr("api.app.books.r", mock_redis)
-    
-        # Mock Permissions using dependency_overrides
-        from api.app.dependencies import (require_upload_permission,
-                                          require_write_permission)
-    
-        app.dependency_overrides[require_upload_permission] = lambda: {
-            "can_upload": True,
-            "is_pro": True,
-        }
-        app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
-    
-        try:
-            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                # 1. Auth
-                r = await client.post(
-                    "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
-                )
-                code = r.json()["data"]["dev_code"]
-                r = await client.post(
-                    "/api/v1/auth/email/verify-code",
-                    json={"email": "user@test.com", "code": code},
-                )
-                token = r.json()["data"]["tokens"]["access_token"]
-                h = {"Authorization": f"***"}
-    
-                # 2. Upload Init
-                r = await client.post(
-                    "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
-                )
-                if r.status_code != 200:
-                    print(f"upload_init failed: {r.status_code}")
-                    print(f"Response: {r.text}")
-                assert r.status_code == 200
-                key = r.json()["data"]["key"]
-                assert key
-    
-                # 3. Upload Complete
-                r = await client.post(
-                    "/api/v1/books/upload_complete",
-                    headers=h,
-                    json={
-                        "key": key,
-                        "title": "Test Book",
-                        "author": "Tester",
-                        "original_format": "pdf",
-                        "size": 1024,
-                    },
-                )
->               assert r.status_code == 200
-E               assert 500 == 200
-E                +  where 500 = <Response [500 Internal Server Error]>.status_code
-
-api/tests/test_books.py:84: AssertionError
------------------------------ Captured stdout call -----------------------------
-920785
-_______________________ test_notes_highlights_tags_flow ________________________
-
-monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fcf1db02790>
-
-    @pytest.mark.asyncio
-    async def test_notes_highlights_tags_flow(monkeypatch):
-        # Mock Search Sync
-        monkeypatch.setattr("api.app.notes.index_note", lambda *args: None)
-        monkeypatch.setattr("api.app.notes.delete_note_from_index", lambda *args: None)
-        monkeypatch.setattr("api.app.notes.index_highlight", lambda *args: None)
-        monkeypatch.setattr("api.app.notes.delete_highlight_from_index", lambda *args: None)
-    
-        # Mock Celery
-        mock_send_task = MagicMock()
-        monkeypatch.setattr("api.app.notes.celery_app.send_task", mock_send_task)
-    
-        # Mock Redis
-        mock_redis = MagicMock()
-        monkeypatch.setattr("api.app.notes.r", mock_redis)
-    
-        # Mock Permissions using dependency_overrides
-        from api.app.dependencies import (require_upload_permission,
-                                          require_write_permission)
-    
-        app.dependency_overrides[require_upload_permission] = lambda: {
-            "can_upload": True,
-            "is_pro": True,
-        }
-        app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
-    
-        try:
-            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                # 1. Auth
-                r = await client.post(
-                    "/api/v1/auth/email/send-code", json={"email": "user@test.com"}
-                )
-                code = r.json()["data"]["dev_code"]
-                r = await client.post(
-                    "/api/v1/auth/email/verify-code",
-                    json={"email": "user@test.com", "code": code},
-                )
-                token = r.json()["data"]["tokens"]["access_token"]
-                h = {"Authorization": f"***"}
-    
-                # 2. Create Book (Prerequisite)
-                # Mock S3 for book creation - mock functions in books module
-                monkeypatch.setattr(
-                    "api.app.books.presigned_put",
-                    lambda bucket, key, **kwargs: "http://fake-upload-url.com",
-                )
-                monkeypatch.setattr(
-                    "api.app.books.presigned_get",
-                    lambda bucket, key, **kwargs: "http://fake-download-url.com",
-                )
-                monkeypatch.setattr(
-                    "api.app.books.stat_etag", lambda bucket, key: "fake-etag"
-                )
-                monkeypatch.setattr(
-                    "api.app.books.upload_bytes",
-                    lambda bucket, key, data, content_type: None,
-                )
-                monkeypatch.setattr(
-                    "api.app.books._quick_confidence", lambda b, k: (False, 0.0)
-                )
-    
-                r = await client.post(
-                    "/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"}
-                )
-                assert r.status_code == 200
-                key = r.json()["data"]["key"]
-                r = await client.post(
-                    "/api/v1/books/upload_complete",
-                    headers=h,
-                    json={"key": key, "title": "Test Book", "original_format": "pdf"},
-                )
->               book_id = r.json()["data"]["id"]
-                          ^^^^^^^^^^^^^^^^
-E               KeyError: 'data'
-
-api/tests/test_notes.py:83: KeyError
------------------------------ Captured stdout call -----------------------------
-890923
-=============================== warnings summary ===============================
-<frozen importlib._bootstrap>:283
-  <frozen importlib._bootstrap>:283: DeprecationWarning: the load_module() method is deprecated and slated for removal in Python 3.12; use exec_module() instead
-
-tests/test_admin_billing.py::test_admin_billing_flow
-  /opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/pytest_asyncio/plugin.py:761: DeprecationWarning: The event_loop fixture provided by pytest-asyncio has been redefined in
-  /home/runner/work/Athena/Athena/api/tests/conftest.py:6
-  Replacing the event_loop fixture with a custom implementation is deprecated
-  and will lead to errors in the future.
-  If you want to request an asyncio event loop with a scope other than function
-  scope, use the "scope" argument to the asyncio mark when marking the tests.
-  If you want to return different types of event loops, use the event_loop_policy
-  fixture.
-  
-    warnings.warn(
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-=========================== short test summary info ============================
-FAILED api/tests/test_books.py::test_books_crud_flow - assert 500 == 200
- +  where 500 = <Response [500 Internal Server Error]>.status_code
-FAILED api/tests/test_notes.py::test_notes_highlights_tags_flow - KeyError: 'data'
-2 failed, 12 passed, 2 warnings in 21.18s
-Error: Process completed with exit code 1.
+Error: src/components/auth/AuthGuard.tsx(2,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
+Error: src/components/auth/AuthGuard.tsx(5,41): error TS7006: Parameter 's' implicitly has an 'any' type.
+Error: src/components/layouts/MainLayout.tsx(36,174): error TS18047: 'tolgee' is possibly 'null'.
+Error: src/components/ui/alert-dialog.tsx(6,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
+Error: src/components/ui/calendar.tsx(7,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
+Error: src/components/ui/pagination.tsx(3,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
+Error: src/hooks/use-toast.ts(153,13): error TS2353: Object literal may only specify known properties, and 'open' does not exist in type 'ToasterToast'.
+Error: src/hooks/use-toast.ts(154,28): error TS7006: Parameter 'open' implicitly has an 'any' type.
+Error: src/lib/api.ts(2,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
+Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
+Error: src/pages/LibraryPage.tsx(34,50): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/LibraryPage.tsx(38,53): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/LoginPage.tsx(3,8): error TS2613: Module '"/home/runner/work/Athena/Athena/web/src/components/ui/Button"' has no default export. Did you mean to use 'import { Button } from "/home/runner/work/Athena/Athena/web/src/components/ui/Button"' instead?
+Error: src/pages/LoginPage.tsx(4,8): error TS2613: Module '"/home/runner/work/Athena/Athena/web/src/components/ui/Input"' has no default export. Did you mean to use 'import { Input } from "/home/runner/work/Athena/Athena/web/src/components/ui/Input"' instead?
+Error: src/pages/LoginPage.tsx(23,87): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/LoginPage.tsx(44,84): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
+Error: src/pages/ProfilePage.tsx(29,49): error TS7006: Parameter 'e' implicitly has an 'any' type.
+Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '../../components/ui/button' or its corresponding type declarations.
+Error: src/pages/auth/Login.tsx(5,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
+Error: src/pages/auth/Login.tsx(12,34): error TS7006: Parameter 's' implicitly has an 'any' type.
+Error: src/pages/auth/Register.tsx(4,30): error TS2307: Cannot find module '@/stores/auth' or its corresponding type declarations.
+Error: src/pages/auth/Register.tsx(9,34): error TS7006: Parameter 's' implicitly has an 'any' type.
+ ELIFECYCLE  Command failed with exit code 2.
+Error: Process completed with exit code 2.
