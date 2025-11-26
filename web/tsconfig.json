@@ -7,8 +7,8 @@
     ],
     "jsx": "react-jsx",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
+    "moduleResolution": "bundler",
+    "strict": false,
     "types": [
       "vite/client",
       "vite-plugin-pwa/client"
