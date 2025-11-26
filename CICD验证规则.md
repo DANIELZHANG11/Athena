@@ -58,15 +58,15 @@ Run pnpm run typecheck
 Error: src/components/ui/alert-dialog.tsx(6,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/calendar.tsx(7,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
 Error: src/components/ui/pagination.tsx(3,32): error TS2307: Cannot find module './button' or its corresponding type declarations.
-Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
+Error: src/pages/HomePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LibraryPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LibraryPage.tsx(5,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
 Error: src/pages/LibraryPage.tsx(29,10): error TS2304: Cannot find name 'Modal'.
 Error: src/pages/LibraryPage.tsx(71,11): error TS2304: Cannot find name 'Modal'.
-Error: src/pages/LoginPage.tsx(3,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
-Error: src/pages/LoginPage.tsx(4,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
-Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
-Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '@/components/ui/input' or its corresponding type declarations.
-Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '@/components/ui/button' or its corresponding type declarations.
+Error: src/pages/LoginPage.tsx(3,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/LoginPage.tsx(4,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
+Error: src/pages/ProfilePage.tsx(2,24): error TS2307: Cannot find module '../components/ui/button' or its corresponding type declarations.
+Error: src/pages/ProfilePage.tsx(3,23): error TS2307: Cannot find module '../components/ui/input' or its corresponding type declarations.
+Error: src/pages/auth/Login.tsx(4,24): error TS2307: Cannot find module '../../components/ui/button' or its corresponding type declarations.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
