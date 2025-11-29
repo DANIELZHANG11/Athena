@@ -27,14 +27,7 @@ export default function Login() {
         body: JSON.stringify({ email })
       })
       if (res.ok) {
-        const data = await res.json()
         setCodeSent(true)
-
-        // 开发模式：自动填充验证码
-        // if (data?.data?.dev_code) {
-        //   setCode(data.data.dev_code)
-        // }
-
         setCountdown(60)
         const timer = setInterval(() => {
           setCountdown((prev) => {

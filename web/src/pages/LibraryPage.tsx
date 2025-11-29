@@ -5,7 +5,6 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import Modal from '../components/ui/Modal'
 import { useTranslation } from 'react-i18next'
-import { useAuthStore } from '@/stores/auth'
 import api from '@/lib/api'
 
 export default function LibraryPage() {

@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
-import { Input } from '@/components/ui/input'
-import { useAuthStore } from '@/stores/auth'
 import { Settings2 } from 'lucide-react'
 
 type Props = {
@@ -21,8 +19,9 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
   const todayMinutes = Math.floor(todaySeconds / 60)
   const percent = useMemo(() => Math.max(0, Math.min(100, Math.round((todayMinutes / Math.max(1, goalMinutes)) * 100))), [todayMinutes, goalMinutes])
 
-  // Apple Books style: "12 min"
-  const timeDisplay = `${todayMinutes} ${t('common.min')}`
+  // Apple Books style: "12 min" - reserved for future UI display
+  const _timeDisplay = `${todayMinutes} ${t('common.min')}`
+  void _timeDisplay
 
   const w = 280
   const h = 280

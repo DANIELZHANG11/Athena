@@ -43,6 +43,12 @@ async def test_notes_highlights_tags_flow(monkeypatch):
             monkeypatch.setattr("api.app.books.upload_bytes", lambda bucket, key, data, content_type: None)
             monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
 
+            # Mock S3 in book_service module
+            monkeypatch.setattr("api.app.services.book_service.presigned_put", lambda bucket, key, **kwargs: "http://fake-upload-url.com")
+            monkeypatch.setattr("api.app.services.book_service.presigned_get", lambda bucket, key, **kwargs: "http://fake-download-url.com")
+            monkeypatch.setattr("api.app.services.book_service.stat_etag", lambda bucket, key: "fake-etag")
+            monkeypatch.setattr("api.app.services.book_service.make_object_key", lambda uid, fname: f"{uid}/{fname}")
+
             r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
             assert r.status_code == 200
             key = r.json()["data"]["key"]

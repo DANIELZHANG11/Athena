@@ -1,10 +1,7 @@
-import { useTranslation } from 'react-i18next'
-
 type Day = { date: string; minutes: number; status: 'FUTURE' | 'MISSED' | 'REACHED' | 'PARTIAL' }
 type Props = { days: Day[]; goalMinutes: number }
 
 export default function WeeklyActivity({ days, goalMinutes }: Props) {
-  const { t } = useTranslation('common')
   const weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] // Should be localized ideally
 
   return (
@@ -13,7 +10,8 @@ export default function WeeklyActivity({ days, goalMinutes }: Props) {
         {days.map((d, idx) => {
           const isFuture = d.status === 'FUTURE'
           const isReached = d.status === 'REACHED'
-          const isMissed = d.status === 'MISSED'
+          const _isMissed = d.status === 'MISSED'
+          void _isMissed // Reserved for future MISSED status styling
           const percent = Math.min(100, Math.round((d.minutes / Math.max(1, goalMinutes)) * 100))
 
           return (
