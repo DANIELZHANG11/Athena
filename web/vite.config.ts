@@ -37,6 +37,11 @@ export default defineConfig({
         target: 'http://localhost:8085',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/tolgee-api/, '')
+      },
+      '/s3': {
+        target: 'http://localhost:8333',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/s3/, '')
       }
     }
   }

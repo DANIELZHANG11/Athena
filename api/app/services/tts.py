@@ -2,25 +2,6 @@ import asyncio
 import io
 import math
 import os
-from typing import Any
-
-
-class MockOCR:
-    def recognize(self, bucket: str, key: str) -> dict:
-        return {"pages": [], "text": ""}
-
-
-class MockEmbedder:
-    def __init__(self, dim: int = 768):
-        self.dim = dim
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        out = []
-        for _ in texts:
-            vec = [0.0] * self.dim
-            out.append(vec)
-        return out
-
 
 class MockTTS:
     def synthesize(self, text: str) -> tuple[bytes, list[dict]]:
@@ -46,69 +27,6 @@ class MockTTS:
             )
             t += 0.2
         return buf.getvalue(), captions
-
-
-class PaddleOCREngine:
-    def __init__(self, lang: str | None = None):
-        from paddleocr import PaddleOCR
-
-        self.ocr = PaddleOCR(
-            use_angle_cls=True, lang=lang or os.getenv("OCR_LANG", "ch")
-        )
-
-    def _fetch_image(self, bucket: str, key: str) -> Any:
-        import numpy as np
-        import requests
-        from PIL import Image
-
-        from .storage import presigned_get
-
-        url = (
-            key
-            if isinstance(key, str) and key.startswith("http")
-            else presigned_get(bucket, key)
-        )
-        data = requests.get(url, timeout=30).content
-        img = Image.open(io.BytesIO(data)).convert("RGB")
-        return np.array(img)
-
-    def recognize(self, bucket: str, key: str) -> dict:
-        try:
-            img = self._fetch_image(bucket, key)
-            res = self.ocr.ocr(img, cls=True)
-            pages = []
-            text = ""
-            lines = res[0] if isinstance(res, list) else []
-            for item in lines or []:
-                s = item[1][0]
-                text += s + "\n"
-                pages.append({"text": s})
-            return {"pages": pages, "text": text.strip()}
-        except Exception:
-            return {"pages": [], "text": ""}
-
-
-class LocalEmbedder:
-    def __init__(self):
-        from FlagEmbedding import BGEM3Embedding
-
-        cache = (
-            os.getenv("HF_HOME") or os.getenv("TRANSFORMERS_CACHE") or "/app/.hf_cache"
-        )
-        os.environ["HF_HOME"] = cache
-        os.environ["TRANSFORMERS_CACHE"] = cache
-        os.environ["HUGGINGFACE_HUB_CACHE"] = cache
-        name = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-m3")
-        self.model = BGEM3Embedding(model_name_or_path=name, device="cpu")
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        try:
-            out = self.model.embed(texts)
-            vecs = out.get("dense_vecs") if isinstance(out, dict) else out
-            return [list(map(float, v)) for v in vecs]
-        except Exception:
-            return [[0.0] * 1024 for _ in texts]
-
 
 class EdgeTTSEngine:
     def __init__(self, voice: str | None = None, rate: str | None = None):
@@ -164,21 +82,6 @@ class EdgeTTSEngine:
             idx += 1
         vtt = "\n".join(lines)
         return audio, vtt
-
-
-def get_ocr():
-    try:
-        return PaddleOCREngine()
-    except Exception:
-        return MockOCR()
-
-
-def get_embedder():
-    try:
-        return LocalEmbedder()
-    except Exception:
-        return MockEmbedder()
-
 
 def get_tts():
     try:

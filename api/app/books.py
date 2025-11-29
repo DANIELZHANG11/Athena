@@ -29,6 +29,7 @@ from .storage import (
     stat_etag,
     upload_bytes,
 )
+from .services.book_service import get_upload_url as svc_get_upload_url, create_book as svc_create_book
 from .ws import broadcast as ws_broadcast
 
 BOOKS_BUCKET = os.getenv("MINIO_BUCKET", "athena")
@@ -92,9 +93,9 @@ async def upload_init(
     filename = body.get("filename")
     if not filename:
         raise HTTPException(status_code=400, detail="missing_filename")
-    key = make_object_key(user_id, filename)
-    url = presigned_put(BOOKS_BUCKET, key)
-    return {"status": "success", "data": {"key": key, "upload_url": url}}
+    content_type = body.get("content_type")
+    data = await svc_get_upload_url(user_id, filename, content_type)
+    return {"status": "success", "data": data}
 
 
 @router.post("/upload_complete")
@@ -118,7 +119,6 @@ async def upload_complete(
         if cached:
             return {"status": "success", "data": eval(cached)}
     book_id = str(uuid.uuid4())
-    # 计算ETag并进行去重
     etag = stat_etag(BOOKS_BUCKET, key)
     async with engine.begin() as conn:
         await conn.execute(

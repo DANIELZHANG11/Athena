@@ -1,0 +1,50 @@
+i18next: initialized {debug: true, initAsync: true, ns: Array(3), defaultNS: 'landing', fallbackLng: Array(1), …}
+auth.ts:187 [Auth] Rehydrated from storage: {hasAccessToken: true, hasRefreshToken: true, isAuthenticated: true, expiresAt: '2025-11-28T15:05:38.731Z'}
+AuthGuard.tsx:17 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/library'}
+AuthGuard.tsx:43 [AuthGuard] Token valid
+react-router-dom.js?v=3326802b:4413 ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
+warnOnce @ react-router-dom.js?v=3326802b:4413
+logDeprecation @ react-router-dom.js?v=3326802b:4416
+logV6DeprecationWarnings @ react-router-dom.js?v=3326802b:4419
+（匿名） @ react-router-dom.js?v=3326802b:5291
+commitHookEffectListMount @ chunk-OEMKBGIU.js?v=3326802b:16915
+commitPassiveMountOnFiber @ chunk-OEMKBGIU.js?v=3326802b:18156
+commitPassiveMountEffects_complete @ chunk-OEMKBGIU.js?v=3326802b:18129
+commitPassiveMountEffects_begin @ chunk-OEMKBGIU.js?v=3326802b:18119
+commitPassiveMountEffects @ chunk-OEMKBGIU.js?v=3326802b:18109
+flushPassiveEffectsImpl @ chunk-OEMKBGIU.js?v=3326802b:19490
+flushPassiveEffects @ chunk-OEMKBGIU.js?v=3326802b:19447
+（匿名） @ chunk-OEMKBGIU.js?v=3326802b:19328
+workLoop @ chunk-OEMKBGIU.js?v=3326802b:197
+flushWork @ chunk-OEMKBGIU.js?v=3326802b:176
+performWorkUntilDeadline @ chunk-OEMKBGIU.js?v=3326802b:384
+react-router-dom.js?v=3326802b:4413 ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
+warnOnce @ react-router-dom.js?v=3326802b:4413
+logDeprecation @ react-router-dom.js?v=3326802b:4416
+logV6DeprecationWarnings @ react-router-dom.js?v=3326802b:4422
+（匿名） @ react-router-dom.js?v=3326802b:5291
+commitHookEffectListMount @ chunk-OEMKBGIU.js?v=3326802b:16915
+commitPassiveMountOnFiber @ chunk-OEMKBGIU.js?v=3326802b:18156
+commitPassiveMountEffects_complete @ chunk-OEMKBGIU.js?v=3326802b:18129
+commitPassiveMountEffects_begin @ chunk-OEMKBGIU.js?v=3326802b:18119
+commitPassiveMountEffects @ chunk-OEMKBGIU.js?v=3326802b:18109
+flushPassiveEffectsImpl @ chunk-OEMKBGIU.js?v=3326802b:19490
+flushPassiveEffects @ chunk-OEMKBGIU.js?v=3326802b:19447
+（匿名） @ chunk-OEMKBGIU.js?v=3326802b:19328
+workLoop @ chunk-OEMKBGIU.js?v=3326802b:197
+flushWork @ chunk-OEMKBGIU.js?v=3326802b:176
+performWorkUntilDeadline @ chunk-OEMKBGIU.js?v=3326802b:384
+i18n.ts:68 ✅ Tolgee initialized successfully
+i18n.ts:89 📋 Mapped 165 keys to namespaces
+i18n.ts:93 📥 Loading translations for en-US...
+i18n.ts:130 � Processed 122 translations for en-US
+i18n.ts:163 ✅ Loaded 47 keys for en-US/common
+i18n.ts:163 ✅ Loaded 61 keys for en-US/landing
+i18n.ts:163 ✅ Loaded 14 keys for en-US/auth
+i18n.ts:93 📥 Loading translations for zh-CN...
+i18n.ts:130 � Processed 122 translations for zh-CN
+i18n.ts:163 ✅ Loaded 47 keys for zh-CN/common
+i18n.ts:163 ✅ Loaded 61 keys for zh-CN/landing
+i18n.ts:163 ✅ Loaded 14 keys for zh-CN/auth
+i18n.ts:186 📚 Found 2 languages in Tolgee
+i18n.ts:201 🎉 All translations loaded!

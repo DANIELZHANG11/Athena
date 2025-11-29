@@ -9,7 +9,7 @@ export default function Login() {
   const { t } = useTranslation('auth')
   const nav = useNavigate()
   const loc = useLocation()
-  const setToken = useAuthStore((s: any) => s.setToken)
+  const setToken = useAuthStore((s) => s.setTokens)
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
@@ -31,9 +31,9 @@ export default function Login() {
         setCodeSent(true)
 
         // 开发模式：自动填充验证码
-        if (data?.data?.dev_code) {
-          setCode(data.data.dev_code)
-        }
+        // if (data?.data?.dev_code) {
+        //   setCode(data.data.dev_code)
+        // }
 
         setCountdown(60)
         const timer = setInterval(() => {
@@ -65,11 +65,21 @@ export default function Login() {
         body: JSON.stringify({ email, code })
       })
       const data = await res.json().catch(() => ({}))
-      const token = data?.data?.tokens?.access_token || data?.data?.access_token
-      if (res.ok && token) {
-        setToken(token)
-        const from = (loc.state as any)?.from?.pathname || '/app/library'
-        nav(from, { replace: true })
+
+      if (res.ok && data.status === 'success') {
+        const { tokens, user } = data.data
+
+        if (tokens?.access_token && tokens?.refresh_token) {
+          // 使用新的 setTokens 方法
+          const expiresIn = tokens.expires_in || 3600 // 默认 1 小时
+          setToken(tokens.access_token, tokens.refresh_token, expiresIn, user)
+
+          // 跳转到之前的页面或默认页面（个人主页）
+          const from = (loc.state as any)?.from?.pathname || '/app/home'
+          nav(from, { replace: true })
+        } else {
+          setError(t('login_failed') as string)
+        }
       } else {
         setError(t('login_failed') as string)
       }

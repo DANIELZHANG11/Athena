@@ -35,12 +35,12 @@ def make_object_key(user_id: str, filename: str) -> str:
     return f"users/{user_id}/{uuid.uuid4()}/{filename}"
 
 
-def presigned_put(bucket: str, key: str, expires_hours: int = 1) -> str:
+def presigned_put(bucket: str, key: str, expires_hours: int = 1, content_type: str | None = None) -> str:
     client = get_s3()
     ensure_bucket(client, bucket)
     url = client.generate_presigned_url(
         "put_object",
-        Params={"Bucket": bucket, "Key": key},
+        Params={"Bucket": bucket, "Key": key, **({"ContentType": content_type} if content_type else {})},
         ExpiresIn=int(timedelta(hours=expires_hours).total_seconds()),
     )
     return _rewrite_public(url)

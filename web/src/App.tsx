@@ -15,8 +15,14 @@ import Register from './pages/auth/Register'
 import AuthGuard from './components/auth/AuthGuard'
 import ReadNowPage from './pages/ReadNowPage'
 import { Navigate } from 'react-router-dom'
+import AppHome from './pages/app/Home'
+import ReaderPage from './pages/ReaderPage'
+import { useTokenRefresh } from './hooks/useTokenRefresh'
 
 export default function App() {
+  // 启用后台自动 token 刷新
+  useTokenRefresh()
+
   return (
     <BrowserRouter>
       <Routes>
@@ -28,13 +34,15 @@ export default function App() {
           <Route path="/register" element={<Register />} />
         </Route>
         <Route path="/app" element={<AppLayout />}>
-          <Route index element={<Navigate to="/app/read-now" replace />} />
+          <Route index element={<Navigate to="/app/home" replace />} />
+          <Route path="home" element={<AuthGuard><AppHome /></AuthGuard>} />
           <Route path="read-now" element={<AuthGuard><ReadNowPage /></AuthGuard>} />
           <Route path="library" element={<AuthGuard><LibraryPage /></AuthGuard>} />
           <Route path="ai-conversations" element={<AuthGuard><AIConversationsPage /></AuthGuard>} />
           <Route path="notes" element={<AuthGuard><NotesPage /></AuthGuard>} />
           <Route path="profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
           <Route path="docs/:docId" element={<AuthGuard><DocEditor /></AuthGuard>} />
+          <Route path="read/:bookId" element={<AuthGuard><ReaderPage /></AuthGuard>} />
           <Route path="tts" element={<AuthGuard><TTSPage /></AuthGuard>} />
           <Route path="billing" element={<AuthGuard><BillingPage /></AuthGuard>} />
         </Route>

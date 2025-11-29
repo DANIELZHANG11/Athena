@@ -70,7 +70,7 @@ def send_email_code(
     idempotency_key: str | None = Header(None),
     x_client_request_id: str | None = Header(None),
 ):
-    addr = email.get("email")
+    addr = email.get("email", "").lower().strip()
     if not addr:
         raise HTTPException(status_code=400, detail="invalid_email")
     try:
@@ -94,8 +94,8 @@ def send_email_code(
     except Exception:
         _mem[f"email_rate:{addr}"] = "1"
     data = {"request_id": str(uuid.uuid4()), "message": "sent"}
-    if os.getenv("DEV_MODE", "true").lower() == "true":
-        data["dev_code"] = code
+    # if os.getenv("DEV_MODE", "true").lower() == "true":
+    #     data["dev_code"] = code
     return {"status": "success", "data": data}
 
 
@@ -117,7 +117,7 @@ def get_dev_code(email: str):
 @router.post("/email/verify_code")
 @router.post("/email/verify-code")
 async def verify_email_code(payload: dict = Body(...)):
-    addr = payload.get("email")
+    addr = payload.get("email", "").lower().strip()
     code = payload.get("code")
     if not addr or not code:
         raise HTTPException(status_code=400, detail="invalid_payload")

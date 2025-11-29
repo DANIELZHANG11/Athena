@@ -33,6 +33,7 @@ from .srs import router as srs_router
 from .tracing import init_tracer, tracer_middleware
 from .translate import router as translate_router
 from .tts import router as tts_router
+from .home import router as home_router
 
 sentry_dsn = os.getenv("SENTRY_DSN", "")
 if sentry_dsn:
@@ -71,6 +72,7 @@ app.include_router(ai_router)
 app.include_router(pricing_admin_router)
 app.include_router(export_router)
 app.include_router(admin_panel_router)
+app.include_router(home_router)
 
 
 @app.websocket("/ws/docs/{doc_id}")

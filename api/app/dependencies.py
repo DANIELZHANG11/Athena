@@ -7,7 +7,23 @@ async def check_quota_status(auth=Depends(require_user)):
     user_id, _ = auth
     
     async with engine.begin() as conn:
-        # 1. Get User Stats
+        # Set RLS context
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 1. Get or create User Stats with defensive handling
+        # First, ensure the row exists
+        await conn.execute(
+            text("""
+                INSERT INTO user_stats (user_id, storage_used, book_count, extra_storage_quota, extra_book_quota)
+                VALUES (cast(:uid as uuid), 0, 0, 0, 0)
+                ON CONFLICT (user_id) DO NOTHING
+            """),
+            {"uid": user_id}
+        )
+        
+        # Then fetch the stats
         res = await conn.execute(
             text("SELECT storage_used, book_count, extra_storage_quota, extra_book_quota FROM user_stats WHERE user_id = cast(:uid as uuid)"),
             {"uid": user_id}

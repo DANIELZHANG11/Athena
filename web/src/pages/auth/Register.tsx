@@ -43,7 +43,7 @@ export default function Register() {
           setLoading(true)
           setMsg('')
           try {
-            const res = await fetch('/api/v1/auth/email/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
+            const res = await fetch('/api/v1/auth/email/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
             const data = await res.json().catch(() => ({}))
             const token = data?.data?.access_token || data?.access_token
             if (res.ok && token) {

@@ -179,7 +179,10 @@ services:
         max-size: "50m"
         max-file: "3"
   opensearch:
-    image: zukubq0aouv2k2.xuanyuan.run/opensearchproject/opensearch:latest
+    # 使用自定义构建以包含 IK/Pinyin/STConvert 插件
+    build:
+      context: ./docker/opensearch
+    image: athena-opensearch:custom
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
