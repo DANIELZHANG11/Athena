@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
+import { useAuthStore } from '@/stores/auth'
 import { Settings2 } from 'lucide-react'
 
 type Props = {
