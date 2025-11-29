@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 export default function Register() {
   const { t } = useTranslation('auth')
   const nav = useNavigate()
-  const setToken = useAuthStore((s) => s.setToken)
+  const setTokens = useAuthStore((s) => s.setTokens)
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
@@ -45,9 +45,9 @@ export default function Register() {
           try {
             const res = await fetch('/api/v1/auth/email/verify-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code }) })
             const data = await res.json().catch(() => ({}))
-            const token = data?.data?.access_token || data?.access_token
-            if (res.ok && token) {
-              setToken(token)
+            const tokenData = data?.data?.tokens || data?.data || data
+            if (res.ok && tokenData?.access_token) {
+              setTokens(tokenData.access_token, tokenData.refresh_token || '', tokenData.expires_in || 3600)
               nav('/app/library', { replace: true })
             } else {
               setMsg(t('tip_check_backend') as string)

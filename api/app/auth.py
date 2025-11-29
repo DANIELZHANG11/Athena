@@ -94,8 +94,8 @@ def send_email_code(
     except Exception:
         _mem[f"email_rate:{addr}"] = "1"
     data = {"request_id": str(uuid.uuid4()), "message": "sent"}
-    # if os.getenv("DEV_MODE", "true").lower() == "true":
-    #     data["dev_code"] = code
+    if DEV_MODE:
+        data["dev_code"] = code
     return {"status": "success", "data": data}
 
 

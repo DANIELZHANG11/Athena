@@ -8,7 +8,7 @@ export function useBookUpload() {
     return hashArr.map(b => b.toString(16).padStart(2, '0')).join('')
   }
   const start = async (file: File, title?: string) => {
-    const at = useAuthStore.getState().jwt || (typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : '')
+    const at = useAuthStore.getState().accessToken || (typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : '')
     const fp = await computeSha256(file)
 
     try {
