@@ -1,50 +1,45 @@
-i18next: initialized {debug: true, initAsync: true, ns: Array(3), defaultNS: 'landing', fallbackLng: Array(1), …}
-auth.ts:187 [Auth] Rehydrated from storage: {hasAccessToken: true, hasRefreshToken: true, isAuthenticated: true, expiresAt: '2025-11-28T15:05:38.731Z'}
-AuthGuard.tsx:17 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/library'}
+BookCardMenu.tsx:120 
+ 
+ DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
+BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
+BookCardMenu.tsx:135 
+ [BookCardMenu] Delete failed: 500 
+{status: 'error', error: {…}}
+BookCardMenu.tsx:119 [BookCardMenu] Deleting book: ae106285-bff5-4b1c-84e7-7b9d0b69e720
+BookCardMenu.tsx:120 
+ 
+ DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
+BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
+BookCardMenu.tsx:135 
+ [BookCardMenu] Delete failed: 500 
+{status: 'error', error: {…}}
+LibraryPage.tsx:85 [LibraryPage] Fetching books list...
+AuthGuard.tsx:17 [AuthGuard] Checking auth... 
+{isAuthenticated: true, path: '/app/library'}
 AuthGuard.tsx:43 [AuthGuard] Token valid
-react-router-dom.js?v=3326802b:4413 ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.
-warnOnce @ react-router-dom.js?v=3326802b:4413
-logDeprecation @ react-router-dom.js?v=3326802b:4416
-logV6DeprecationWarnings @ react-router-dom.js?v=3326802b:4419
-（匿名） @ react-router-dom.js?v=3326802b:5291
-commitHookEffectListMount @ chunk-OEMKBGIU.js?v=3326802b:16915
-commitPassiveMountOnFiber @ chunk-OEMKBGIU.js?v=3326802b:18156
-commitPassiveMountEffects_complete @ chunk-OEMKBGIU.js?v=3326802b:18129
-commitPassiveMountEffects_begin @ chunk-OEMKBGIU.js?v=3326802b:18119
-commitPassiveMountEffects @ chunk-OEMKBGIU.js?v=3326802b:18109
-flushPassiveEffectsImpl @ chunk-OEMKBGIU.js?v=3326802b:19490
-flushPassiveEffects @ chunk-OEMKBGIU.js?v=3326802b:19447
-（匿名） @ chunk-OEMKBGIU.js?v=3326802b:19328
-workLoop @ chunk-OEMKBGIU.js?v=3326802b:197
-flushWork @ chunk-OEMKBGIU.js?v=3326802b:176
-performWorkUntilDeadline @ chunk-OEMKBGIU.js?v=3326802b:384
-react-router-dom.js?v=3326802b:4413 ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.
-warnOnce @ react-router-dom.js?v=3326802b:4413
-logDeprecation @ react-router-dom.js?v=3326802b:4416
-logV6DeprecationWarnings @ react-router-dom.js?v=3326802b:4422
-（匿名） @ react-router-dom.js?v=3326802b:5291
-commitHookEffectListMount @ chunk-OEMKBGIU.js?v=3326802b:16915
-commitPassiveMountOnFiber @ chunk-OEMKBGIU.js?v=3326802b:18156
-commitPassiveMountEffects_complete @ chunk-OEMKBGIU.js?v=3326802b:18129
-commitPassiveMountEffects_begin @ chunk-OEMKBGIU.js?v=3326802b:18119
-commitPassiveMountEffects @ chunk-OEMKBGIU.js?v=3326802b:18109
-flushPassiveEffectsImpl @ chunk-OEMKBGIU.js?v=3326802b:19490
-flushPassiveEffects @ chunk-OEMKBGIU.js?v=3326802b:19447
-（匿名） @ chunk-OEMKBGIU.js?v=3326802b:19328
-workLoop @ chunk-OEMKBGIU.js?v=3326802b:197
-flushWork @ chunk-OEMKBGIU.js?v=3326802b:176
-performWorkUntilDeadline @ chunk-OEMKBGIU.js?v=3326802b:384
-i18n.ts:68 ✅ Tolgee initialized successfully
-i18n.ts:89 📋 Mapped 165 keys to namespaces
-i18n.ts:93 📥 Loading translations for en-US...
-i18n.ts:130 � Processed 122 translations for en-US
-i18n.ts:163 ✅ Loaded 47 keys for en-US/common
-i18n.ts:163 ✅ Loaded 61 keys for en-US/landing
-i18n.ts:163 ✅ Loaded 14 keys for en-US/auth
-i18n.ts:93 📥 Loading translations for zh-CN...
-i18n.ts:130 � Processed 122 translations for zh-CN
-i18n.ts:163 ✅ Loaded 47 keys for zh-CN/common
-i18n.ts:163 ✅ Loaded 61 keys for zh-CN/landing
-i18n.ts:163 ✅ Loaded 14 keys for zh-CN/auth
-i18n.ts:186 📚 Found 2 languages in Tolgee
-i18n.ts:201 🎉 All translations loaded!
+api.ts:17 [API] Request: GET /books 
+{hasToken: true, isAuthenticated: true}
+api.ts:46 [API] Using existing token
+api.ts:63 [API] Response: 200 /books
+LibraryPage.tsx:87 [LibraryPage] Books response: 
+{status: 'success', data: {…}}
+LibraryPage.tsx:103 [LibraryPage] Loaded 9 books
+bookStorage.ts:126 [BookStorage] Found cached book ae106285-bff5-4b1c-84e7-7b9d0b69e720, size: 12653954 bytes
+bookStorage.ts:128 [BookStorage] Book bf95fe62-8bb9-4bc4-b08e-6b4c1e7f656c not found in cache
+bookStorage.ts:128 [BookStorage] Book 7b7c4068-9da3-44fe-b4a7-fcd40112ba2f not found in cache
+bookStorage.ts:128 [BookStorage] Book 361b7e3b-fda7-4990-8bc6-1fe001156e09 not found in cache
+bookStorage.ts:126 [BookStorage] Found cached book e05a8bba-c16e-4bb1-8c5c-dfbe27dad225, size: 512200 bytes
+bookStorage.ts:126 [BookStorage] Found cached book d0e0c365-016f-4516-8b01-eb2a8230b726, size: 8352389 bytes
+bookStorage.ts:128 [BookStorage] Book 9cb5470c-02d5-4bfd-8808-7306d0abb668 not found in cache
+bookStorage.ts:128 [BookStorage] Book 006931c7-f548-42e6-8c1a-2c4d30a16209 not found in cache
+bookStorage.ts:126 [BookStorage] Found cached book 374def7e-4aa4-4f13-873e-08c0cc217b36, size: 18781152 bytes
+content_script.js:7165 Content limit: 612032839.68
+BookCardMenu.tsx:119 [BookCardMenu] Deleting book: ae106285-bff5-4b1c-84e7-7b9d0b69e720
+BookCardMenu.tsx:120 
+ 
+ DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
+BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
+BookCardMenu.tsx:135 
+ [BookCardMenu] Delete failed: 500 
+{status: 'error', error: {…}}
+﻿

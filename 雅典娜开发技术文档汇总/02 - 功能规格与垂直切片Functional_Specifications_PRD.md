@@ -56,23 +56,91 @@
 
 #### A. 数据库模型（Database Schema）
 - `books`：
-  - 字段：`id (UUID, PK)`、`user_id (UUID, FK)`、`title (TEXT)`、`author (TEXT)`、`language (TEXT)`、`original_format (TEXT)`、`minio_key (TEXT)`、`size (BIGINT)`、`is_digitalized (BOOL)`、`initial_digitalization_confidence (FLOAT)`、`source_etag (TEXT)`、`meta (JSONB)`、`digitalize_report_key (TEXT)`、`updated_at (TIMESTAMPTZ)`。
+  - 字段：`id (UUID, PK)`、`user_id (UUID, FK)`、`title (TEXT)`、`author (TEXT)`、`language (TEXT)`、`original_format (TEXT)`、`minio_key (TEXT)`、`size (BIGINT)`、`is_digitalized (BOOL)`、`initial_digitalization_confidence (FLOAT)`、`source_etag (TEXT)`、`meta (JSONB)`、`digitalize_report_key (TEXT)`、`cover_image_key (TEXT)`、`converted_epub_key (TEXT)`、`updated_at (TIMESTAMPTZ)`。
   - 权限字段：`user_id`（RLS）。
+  - 新增字段说明：
+    - `cover_image_key`：封面图片在 S3 中的存储路径（WebP 格式，400×600）
+    - `converted_epub_key`：Calibre 转换后的 EPUB 路径（标记已转换）
 - `shelves`：
   - 字段：`id (UUID, PK)`、`user_id (UUID, FK users.id)`、`name (TEXT)`、`parent_shelf_id (UUID, NULLABLE, FK shelves.id)`、`updated_at (TIMESTAMPTZ)`、`version (INT)`。
   - 关系：`users (1) — (N) shelves`；支持层级结构（父子架）。
-- `book_shelves`（关联表）：
-  - 字段：`book_id (UUID, FK books.id)`、`shelf_id (UUID, FK shelves.id)`、`created_at (TIMESTAMPTZ)`。
+- `shelf_items`（关联表）：
+  - 字段：`book_id (UUID, FK books.id)`、`shelf_id (UUID, FK shelves.id)`、`position (INT)`、`created_at (TIMESTAMPTZ)`。
   - 约束：主键（`book_id`, `shelf_id`）；`ON CONFLICT DO NOTHING` 用于去重。
-> Status: Backend Implemented（Books 上传与索引）；Shelves = To Implement（按此结构落库与 CRUD）。
+> Status: Backend Implemented（Books 上传、转换、封面提取、元数据提取）；Shelves = Implemented。
 
 #### B. 后端逻辑与 API 契约（Backend & Contract）
-- 端点：`POST /books/upload_init`、`POST /books/upload_complete`。
+- 端点：`POST /books/upload_init`、`POST /books/upload_complete`、`GET /books`、`GET /books/{id}`、`DELETE /books/{id}`。
 - 规则：
   - 上传前校验配额；完成后落库与索引同步；支持 `Idempotency-Key`。
   - @if (`user_stats.is_readonly`)：
     - `POST /books/upload_init` → 403 `QUOTA_EXCEEDED`
     - Shelves 全量 CRUD 禁止（`POST/PUT/PATCH/DELETE` 返回 403）
+
+#### B.1 书籍上传与处理流水线（Upload & Processing Pipeline）
+
+**完整流程图**：
+```
+前端选择文件
+    ↓
+计算 SHA256 指纹 (file_fingerprint)
+    ↓
+POST /books/upload_init
+    ├─ 检查配额 → 403 QUOTA_EXCEEDED
+    ├─ 检查秒传 (相同 source_etag) → 返回已有书籍
+    └─ 返回 { key, upload_url }
+    ↓
+PUT upload_url (S3 直传)
+    ↓
+POST /books/upload_complete
+    ├─ 创建 books 记录 (title=文件名, original_format)
+    └─ 触发后台任务链
+    ↓
+┌─────────────────────────────────────────┐
+│         后台任务链 (Celery)              │
+├─────────────────────────────────────────┤
+│ 1. tasks.convert_to_epub                │
+│    ├─ 仅对 MOBI/AZW3/FB2 等格式触发      │
+│    ├─ 通过共享卷与 Calibre 容器交互      │
+│    ├─ 转换成功后删除原始文件 (节省存储)   │
+│    └─ 更新 minio_key → 新 EPUB           │
+├─────────────────────────────────────────┤
+│ 2. tasks.extract_book_cover             │
+│    ├─ 从 EPUB/PDF 提取封面               │
+│    ├─ 转换为 WebP (400×600, 80%)        │
+│    └─ 更新 cover_image_key              │
+├─────────────────────────────────────────┤
+│ 3. tasks.extract_book_metadata          │
+│    ├─ 从 EPUB 提取 dc:title/dc:creator  │
+│    ├─ 从 PDF 提取 metadata              │
+│    └─ 智能更新 title/author             │
+│        ↳ 仅当当前标题为文件名格式时覆盖   │
+└─────────────────────────────────────────┘
+    ↓
+书籍可阅读 (WebSocket 通知前端刷新)
+```
+
+**元数据提取规则**：
+- 标题更新判断条件（满足任一则覆盖）：
+  1. 当前标题为空
+  2. 当前标题包含下划线 (`_`)
+  3. 当前标题以扩展名结尾 (`.epub`, `.pdf`, `.mobi`, `.azw3`)
+  4. 当前标题为 `书名-作者名` 格式，而提取的标题更短且不含连字符
+- 作者仅在当前为空时更新
+
+**存储策略**：
+- 最终 S3 中只保留 EPUB 和 PDF 格式
+- 非 EPUB/PDF 在 Calibre 转换成功后自动删除原始文件
+- `minio_key` 始终指向可阅读文件
+
+**支持格式**：
+| 格式 | 处理方式 |
+|:---|:---|
+| EPUB | 直接存储，提取封面和元数据 |
+| PDF | 直接存储，提取封面和元数据 |
+| MOBI | Calibre 转换为 EPUB，删除原始文件 |
+| AZW3 | Calibre 转换为 EPUB，删除原始文件 |
+| FB2 | Calibre 转换为 EPUB，删除原始文件 |
 
 #### C. 前端组件契约（Frontend Contract）
 - 组件：`UploadManager`
@@ -83,16 +151,19 @@
       onError?: (code: 'quota_exceeded' | 'init_failed' | 'put_failed' | 'complete_failed' | 'unknown') => void
     }
     ```
-  - 交互：选择文件→初始化→PUT 上传→完成→回调；403 超限映射到文案键。
-- 组件：`ShelfList` / `ShelfEditor`（[待实现]）。
+  - 交互：选择文件→计算指纹→初始化→PUT 上传→完成→回调；403 超限映射到文案键。
+  - 状态：`idle | hashing | initializing | uploading | completing | done | error`
+- 组件：`ShelfList` / `ShelfEditor`（已实现）。
 
 ### ✔ Definition of Done (DoD)
-- [ ] API 契约覆盖上传 init/complete 与 Shelves CRUD
-- [ ] 上传幂等与分片重试用例通过
-- [ ] Shelves/Book_Shelves 迁移脚本与索引到位
-- [ ] RLS 策略与只读锁拦截测试通过
-- [ ] 前端上传与 Shelves 组件契约对齐
-- [ ] 成功/错误码与文案映射一致
+- [x] API 契约覆盖上传 init/complete 与 Shelves CRUD
+- [x] 上传幂等与分片重试用例通过
+- [x] Calibre 转换流水线实现与测试
+- [x] 封面提取与 WebP 优化实现
+- [x] 元数据智能提取与标题更新逻辑
+- [x] RLS 策略与只读锁拦截测试通过
+- [x] 前端上传组件与状态管理对齐
+- [ ] Shelves 树形结构前端完善（待实现）
 
 ---
 

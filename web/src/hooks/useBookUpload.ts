@@ -1,90 +1,362 @@
-import { useAuthStore } from '@/stores/auth'
+import { useState, useCallback, useRef } from 'react'
+import { v4 as uuidv4 } from 'uuid'
+import api from '@/lib/api'
+import { saveBookFile } from '@/lib/bookStorage'
 
-export function useBookUpload() {
-  const computeSha256 = async (file: File) => {
-    const buf = await file.arrayBuffer()
-    const hashBuf = await crypto.subtle.digest('SHA-256', buf)
-    const hashArr = Array.from(new Uint8Array(hashBuf))
-    return hashArr.map(b => b.toString(16).padStart(2, '0')).join('')
-  }
-  const start = async (file: File, title?: string) => {
-    const at = useAuthStore.getState().accessToken || (typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : '')
-    const fp = await computeSha256(file)
+// 上传阶段枚举
+export type UploadStage = 'idle' | 'hashing' | 'initializing' | 'uploading' | 'completing' | 'done' | 'error'
+
+// 错误码类型
+export type UploadErrorCode = 
+  | 'quota_exceeded'
+  | 'init_failed'
+  | 'put_failed'
+  | 'complete_failed'
+  | 'file_too_large'
+  | 'invalid_format'
+  | 'network_error'
+  | 'cancelled'
+  | 'unknown'
+
+// 支持的文件格式
+export const SUPPORTED_FORMATS = ['epub', 'pdf', 'mobi', 'azw', 'azw3', 'txt', 'fb2', 'rtf']
+export const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500MB
+
+// 上传状态
+export interface UploadState {
+  stage: UploadStage
+  progress: number // 0-100
+  errorCode: UploadErrorCode | null
+  fileName: string | null
+  bookId: string | null
+}
+
+// 上传结果
+export interface UploadResult {
+  id: string
+  downloadUrl: string
+  title: string
+}
+
+// 进度回调参数
+export interface ProgressInfo {
+  stage: UploadStage
+  progress: number
+  fileName: string
+}
+
+// Hook 配置选项
+export interface UseBookUploadOptions {
+  onProgress?: (info: ProgressInfo) => void
+  onSuccess?: (result: UploadResult) => void
+  onError?: (errorCode: UploadErrorCode, message?: string) => void
+}
+
+// 计算文件 SHA256 哈希
+async function computeSha256(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf)
+  const hashArr = Array.from(new Uint8Array(hashBuf))
+  return hashArr.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 获取文件扩展名
+function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() || ''
+}
+
+// 验证文件格式
+function validateFileFormat(filename: string): boolean {
+  const ext = getFileExtension(filename)
+  return SUPPORTED_FORMATS.includes(ext)
+}
+
+export function useBookUpload(options: UseBookUploadOptions = {}) {
+  const { onProgress, onSuccess, onError } = options
+  
+  const [state, setState] = useState<UploadState>({
+    stage: 'idle',
+    progress: 0,
+    errorCode: null,
+    fileName: null,
+    bookId: null,
+  })
+
+  // 取消控制器
+  const abortControllerRef = useRef<AbortController | null>(null)
+  // 幂等键
+  const idempotencyKeyRef = useRef<string>('')
+
+  // 更新状态并触发回调
+  const updateState = useCallback((
+    stage: UploadStage, 
+    progress: number, 
+    extra?: Partial<UploadState>
+  ) => {
+    setState(prev => {
+      const newState = { ...prev, stage, progress, ...extra }
+      // 触发进度回调
+      if (onProgress && newState.fileName) {
+        onProgress({
+          stage,
+          progress,
+          fileName: newState.fileName,
+        })
+      }
+      return newState
+    })
+  }, [onProgress])
+
+  // 处理错误
+  const handleError = useCallback((errorCode: UploadErrorCode, message?: string) => {
+    setState(prev => ({
+      ...prev,
+      stage: 'error',
+      errorCode,
+    }))
+    onError?.(errorCode, message)
+  }, [onError])
+
+  // 重置状态
+  const reset = useCallback(() => {
+    // 取消正在进行的上传
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setState({
+      stage: 'idle',
+      progress: 0,
+      errorCode: null,
+      fileName: null,
+      bookId: null,
+    })
+    idempotencyKeyRef.current = ''
+  }, [])
+
+  // 取消上传
+  const cancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    handleError('cancelled')
+  }, [handleError])
+
+  // 开始上传
+  const start = useCallback(async (file: File, customTitle?: string): Promise<UploadResult | null> => {
+    // 重置并生成新的幂等键
+    reset()
+    idempotencyKeyRef.current = uuidv4()
+    abortControllerRef.current = new AbortController()
+    const signal = abortControllerRef.current.signal
+
+    const fileName = file.name
+    const title = customTitle || fileName.replace(/\.[^/.]+$/, '')
 
     try {
-      const initRes = await fetch('/api/v1/books/upload_init', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${at}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          filename: file.name,
-          file_fingerprint: fp,
-          content_type: file.type || 'application/octet-stream'
-        })
-      })
+      // 验证文件格式
+      if (!validateFileFormat(fileName)) {
+        handleError('invalid_format', `Unsupported format. Supported: ${SUPPORTED_FORMATS.join(', ')}`)
+        return null
+      }
 
-      if (!initRes.ok) {
-        if (initRes.status === 403) {
-          const errorData = await initRes.json().catch(() => ({}))
-          if (errorData.detail === 'upload_forbidden_quota_exceeded') {
-            throw new Error('upload.error.quota_exceeded')
+      // 验证文件大小
+      if (file.size > MAX_FILE_SIZE) {
+        handleError('file_too_large', `File too large. Max size: ${MAX_FILE_SIZE / 1024 / 1024}MB`)
+        return null
+      }
+
+      updateState('hashing', 5, { fileName })
+
+      // Step 1: 计算文件哈希
+      let fingerprint: string
+      try {
+        fingerprint = await computeSha256(file)
+        if (signal.aborted) throw new Error('cancelled')
+      } catch (e) {
+        if ((e as Error).message === 'cancelled') {
+          handleError('cancelled')
+          return null
+        }
+        // 哈希计算失败不阻塞上传，使用空值
+        fingerprint = ''
+      }
+
+      updateState('initializing', 15)
+
+      // Step 2: 初始化上传，获取预签名 URL
+      let key: string
+      let uploadUrl: string
+      try {
+        const initRes = await api.post('/books/upload_init', {
+          filename: fileName,
+          file_fingerprint: fingerprint,
+          content_type: file.type || 'application/octet-stream',
+        }, {
+          headers: {
+            'Idempotency-Key': idempotencyKeyRef.current,
+          },
+          signal,
+        })
+
+        key = initRes.data.data.key
+        uploadUrl = initRes.data.data.upload_url
+      } catch (error: any) {
+        if (signal.aborted) {
+          handleError('cancelled')
+          return null
+        }
+        if (error.response?.status === 403) {
+          const detail = error.response?.data?.detail
+          if (detail === 'upload_forbidden_quota_exceeded') {
+            handleError('quota_exceeded')
+            return null
           }
         }
-        throw new Error('upload.error.init_failed')
+        handleError('init_failed', error.message)
+        return null
       }
 
-      const init = await initRes.json()
-      const key = init.data.key
-      let url = init.data.upload_url as string
+      updateState('uploading', 20)
 
+      // Step 3: 直接上传文件到 S3
       try {
-        const u = new URL(url)
-        if (u.hostname.includes('seaweed')) {
-          url = `/s3${u.pathname}${u.search}`
+        // 处理 SeaweedFS 内部域名重写
+        let finalUrl = uploadUrl
+        try {
+          const u = new URL(uploadUrl)
+          if (u.hostname.includes('seaweed') || u.hostname.includes('localhost')) {
+            // 使用代理路径
+            finalUrl = `/s3${u.pathname}${u.search}`
+          }
+        } catch {
+          // URL 解析失败，使用原始 URL
         }
-      } catch { }
 
-      const putRes = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file
-      })
+        // 使用 XMLHttpRequest 以支持进度监控
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          
+          xhr.upload.addEventListener('progress', (event) => {
+            if (event.lengthComputable) {
+              // 上传进度占 20-80%
+              const uploadProgress = Math.round((event.loaded / event.total) * 60)
+              updateState('uploading', 20 + uploadProgress)
+            }
+          })
 
-      if (!putRes.ok) {
-        throw new Error('upload.error.put_failed')
-      }
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve()
+            } else {
+              reject(new Error(`Upload failed with status ${xhr.status}`))
+            }
+          })
 
-      const fmt = file.name.split('.').pop()?.toLowerCase() || ''
-      const compRes = await fetch('/api/v1/books/upload_complete', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${at}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          key,
-          title: title || file.name.replace(/\.[^/.]+$/, ''),
-          original_format: fmt,
-          size: file.size
+          xhr.addEventListener('error', () => {
+            reject(new Error('Network error during upload'))
+          })
+
+          xhr.addEventListener('abort', () => {
+            reject(new Error('cancelled'))
+          })
+
+          // 监听取消信号
+          signal.addEventListener('abort', () => {
+            xhr.abort()
+          })
+
+          xhr.open('PUT', finalUrl)
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+          xhr.send(file)
         })
-      })
 
-      if (!compRes.ok) {
-        throw new Error('upload.error.complete_failed')
+        if (signal.aborted) {
+          handleError('cancelled')
+          return null
+        }
+      } catch (error: any) {
+        if (error.message === 'cancelled' || signal.aborted) {
+          handleError('cancelled')
+          return null
+        }
+        handleError('put_failed', error.message)
+        return null
       }
 
-      const comp = await compRes.json()
-      return comp.data
+      updateState('completing', 85)
 
+      // Step 4: 通知后端上传完成
+      try {
+        const fmt = getFileExtension(fileName)
+        const compRes = await api.post('/books/upload_complete', {
+          key,
+          title,
+          original_format: fmt,
+          size: file.size,
+        }, {
+          headers: {
+            'Idempotency-Key': idempotencyKeyRef.current,
+          },
+          signal,
+        })
+
+        const result: UploadResult = {
+          id: compRes.data.data.id,
+          downloadUrl: compRes.data.data.download_url,
+          title,
+        }
+
+        // Step 5: 同时保存文件到 IndexedDB（上传后立即可读）
+        // 只有 EPUB 和 PDF 格式直接保存，其他格式需要服务器转换
+        const directFormats = ['epub', 'pdf']
+        if (directFormats.includes(fmt)) {
+          try {
+            console.log(`[Upload] Saving ${fmt} to IndexedDB for instant reading...`)
+            await saveBookFile(result.id, file, fmt as 'epub' | 'pdf')
+            console.log(`[Upload] Book saved to IndexedDB: ${result.id}`)
+          } catch (cacheError) {
+            // 缓存失败不阻塞上传流程
+            console.warn('[Upload] Failed to cache book locally:', cacheError)
+          }
+        }
+
+        updateState('done', 100, { bookId: result.id })
+        onSuccess?.(result)
+
+        return result
+      } catch (error: any) {
+        if (signal.aborted) {
+          handleError('cancelled')
+          return null
+        }
+        handleError('complete_failed', error.message)
+        return null
+      }
     } catch (error: any) {
-      // Rethrow with i18n key if already formatted, otherwise use unknown
-      if (error.message && error.message.startsWith('upload.error.')) {
-        throw error
+      // 捕获任何未处理的错误
+      if (error.message === 'cancelled' || signal?.aborted) {
+        handleError('cancelled')
+      } else {
+        handleError('unknown', error.message)
       }
-      throw new Error('upload.error.unknown')
+      return null
     }
+  }, [updateState, handleError, reset, onSuccess])
+
+  return {
+    // 状态
+    ...state,
+    isUploading: state.stage !== 'idle' && state.stage !== 'done' && state.stage !== 'error',
+    
+    // 方法
+    start,
+    cancel,
+    reset,
+    
+    // 常量
+    supportedFormats: SUPPORTED_FORMATS,
+    maxFileSize: MAX_FILE_SIZE,
   }
-  return { start }
 }

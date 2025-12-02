@@ -1,1 +1,8 @@
 @import "tailwindcss";
+
+@layer utilities {
+  .mask-linear-fade {
+    mask-image: linear-gradient(to right, transparent 0%, black 2%, black 98%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 2%, black 98%, transparent 100%);
+  }
+}

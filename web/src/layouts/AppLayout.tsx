@@ -6,6 +6,21 @@ export default function AppLayout() {
   const { t } = useTranslation('common')
   const loc = useLocation()
   const active = (p: string) => loc.pathname.startsWith(p)
+  
+  // 导航项组件 - 支持加粗图标和选中状态的椭圆背景
+  const NavItem = ({ to, icon: Icon, label, isActive }: { to: string, icon: typeof Home, label: string, isActive: boolean }) => (
+    <NavLink to={to} className="flex flex-col items-center justify-center gap-0.5">
+      <div className={`relative flex items-center justify-center transition-all duration-200 ${isActive ? 'px-4 py-1.5 rounded-full bg-gray-200/80 dark:bg-gray-700/80' : ''}`}>
+        <Icon 
+          className="w-5 h-5" 
+          color={isActive ? 'var(--label)' : 'var(--secondary-label)'} 
+          strokeWidth={isActive ? 2.5 : 1.5}
+        />
+      </div>
+      <span className={`text-xs ${isActive ? 'font-medium text-label' : 'text-secondary-label'}`}>{label}</span>
+    </NavLink>
+  )
+  
   return (
     <div className="bg-system-background min-h-screen font-ui">
       <header className="sticky top-0 z-40 backdrop-liquid-glass border-b border-separator">
@@ -25,22 +40,10 @@ export default function AppLayout() {
       </main>
       <nav className="fixed bottom-0 left-0 right-0 border-t" style={{ paddingBottom: 'env(safe-area-inset-bottom)', background: 'var(--system-background)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderTopColor: 'rgba(0,0,0,0.1)' }}>
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <NavLink to="/app/home" className="flex flex-col items-center justify-center gap-0.5">
-            <Home className="w-5 h-5" color={active('/app/home') ? 'var(--system-blue)' : 'var(--secondary-label)'} />
-            <span className="text-xs">{t('nav.home')}</span>
-          </NavLink>
-          <NavLink to="/app/library" className="flex flex-col items-center justify-center gap-0.5">
-            <Library className="w-5 h-5" color={active('/app/library') ? 'var(--system-blue)' : 'var(--secondary-label)'} />
-            <span className="text-xs">{t('nav.library')}</span>
-          </NavLink>
-          <NavLink to="/app/ai-conversations" className="flex flex-col items-center justify-center gap-0.5">
-            <Bot className="w-5 h-5" color={active('/app/ai') || active('/app/ai-conversations') ? 'var(--system-blue)' : 'var(--secondary-label)'} />
-            <span className="text-xs">{t('nav.ai')}</span>
-          </NavLink>
-          <NavLink to="/app/search" className="flex flex-col items-center justify-center gap-0.5">
-            <Search className="w-5 h-5" color={active('/app/search') ? 'var(--system-blue)' : 'var(--secondary-label)'} />
-            <span className="text-xs">{t('nav.search')}</span>
-          </NavLink>
+          <NavItem to="/app/home" icon={Home} label={t('nav.home')} isActive={active('/app/home')} />
+          <NavItem to="/app/library" icon={Library} label={t('nav.library')} isActive={active('/app/library')} />
+          <NavItem to="/app/ai-conversations" icon={Bot} label={t('nav.ai')} isActive={active('/app/ai') || active('/app/ai-conversations')} />
+          <NavItem to="/app/search" icon={Search} label={t('nav.search')} isActive={active('/app/search')} />
         </div>
       </nav>
     </div>

@@ -62,16 +62,15 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
             ),
             {"d": delta_ms, "id": sid},
         )
+        
+        # 更新每日阅读时间 - 使用 UPSERT 模式确保数据正确写入
         if prev_ts.date() == now_ts.date():
+            # 同一天：先尝试插入，再更新
             await conn.execute(
                 text(
-                    "UPDATE reading_daily SET total_ms = total_ms + :d WHERE user_id = current_setting('app.user_id')::uuid AND day = current_date"
-                ),
-                {"d": delta_ms},
-            )
-            await conn.execute(
-                text(
-                    "INSERT INTO reading_daily(user_id, day, total_ms) SELECT current_setting('app.user_id')::uuid, current_date, :d WHERE NOT EXISTS (SELECT 1 FROM reading_daily WHERE user_id = current_setting('app.user_id')::uuid AND day = current_date)"
+                    """INSERT INTO reading_daily(user_id, day, total_ms)
+                       VALUES (current_setting('app.user_id')::uuid, current_date, :d)
+                       ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
                 ),
                 {"d": delta_ms},
             )
@@ -84,26 +83,18 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
             if ms_prev > 0:
                 await conn.execute(
                     text(
-                        "UPDATE reading_daily SET total_ms = total_ms + :d WHERE user_id = current_setting('app.user_id')::uuid AND day = (current_date - INTERVAL '1 day')::date"
-                    ),
-                    {"d": ms_prev},
-                )
-                await conn.execute(
-                    text(
-                        "INSERT INTO reading_daily(user_id, day, total_ms) SELECT current_setting('app.user_id')::uuid, (current_date - INTERVAL '1 day')::date, :d WHERE NOT EXISTS (SELECT 1 FROM reading_daily WHERE user_id = current_setting('app.user_id')::uuid AND day = (current_date - INTERVAL '1 day')::date)"
+                        """INSERT INTO reading_daily(user_id, day, total_ms)
+                           VALUES (current_setting('app.user_id')::uuid, (current_date - INTERVAL '1 day')::date, :d)
+                           ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
                     ),
                     {"d": ms_prev},
                 )
             if ms_now > 0:
                 await conn.execute(
                     text(
-                        "UPDATE reading_daily SET total_ms = total_ms + :d WHERE user_id = current_setting('app.user_id')::uuid AND day = current_date"
-                    ),
-                    {"d": ms_now},
-                )
-                await conn.execute(
-                    text(
-                        "INSERT INTO reading_daily(user_id, day, total_ms) SELECT current_setting('app.user_id')::uuid, current_date, :d WHERE NOT EXISTS (SELECT 1 FROM reading_daily WHERE user_id = current_setting('app.user_id')::uuid AND day = current_date)"
+                        """INSERT INTO reading_daily(user_id, day, total_ms)
+                           VALUES (current_setting('app.user_id')::uuid, current_date, :d)
+                           ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
                     ),
                     {"d": ms_now},
                 )
@@ -119,6 +110,35 @@ async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
                 "INSERT INTO reading_progress(user_id, book_id, progress, updated_at, last_location) SELECT current_setting('app.user_id')::uuid, s.book_id, :p, now(), cast(:loc as jsonb) FROM reading_sessions s WHERE s.id = cast(:id as uuid) ON CONFLICT (user_id, book_id) DO UPDATE SET progress = EXCLUDED.progress, updated_at = now(), last_location = COALESCE(EXCLUDED.last_location, reading_progress.last_location)"
             ),
             {"id": sid, "p": progress, "loc": loc},
+        )
+        
+        # 更新连续阅读天数 (Streak)
+        # 只要当天有阅读记录就计入 streak，无需达到目标
+        await conn.execute(
+            text(
+                """
+                INSERT INTO user_streaks(user_id, current_streak, longest_streak, last_read_date)
+                VALUES (current_setting('app.user_id')::uuid, 1, 1, current_date)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    current_streak = CASE
+                        -- 如果昨天已阅读，streak +1
+                        WHEN user_streaks.last_read_date = current_date - INTERVAL '1 day' THEN user_streaks.current_streak + 1
+                        -- 如果今天已经更新过，保持不变
+                        WHEN user_streaks.last_read_date = current_date THEN user_streaks.current_streak
+                        -- 否则重置为 1
+                        ELSE 1
+                    END,
+                    longest_streak = GREATEST(
+                        user_streaks.longest_streak,
+                        CASE
+                            WHEN user_streaks.last_read_date = current_date - INTERVAL '1 day' THEN user_streaks.current_streak + 1
+                            WHEN user_streaks.last_read_date = current_date THEN user_streaks.current_streak
+                            ELSE 1
+                        END
+                    ),
+                    last_read_date = current_date
+                """
+            ),
         )
     return {"status": "success"}
 
@@ -160,7 +180,7 @@ async def get_progress(auth=Depends(require_user)):
         )
         res = await conn.execute(
             text(
-                "SELECT book_id::text, progress, updated_at, last_location FROM reading_progress WHERE user_id = current_setting('app.user_id')::uuid ORDER BY updated_at DESC"
+                "SELECT book_id::text, progress, updated_at, last_location, finished_at FROM reading_progress WHERE user_id = current_setting('app.user_id')::uuid ORDER BY updated_at DESC"
             )
         )
         rows = res.fetchall()
@@ -172,10 +192,55 @@ async def get_progress(auth=Depends(require_user)):
                     "progress": float(r[1]),
                     "updated_at": str(r[2]),
                     "last_location": r[3],
+                    "finished_at": str(r[4]) if r[4] else None,
                 }
                 for r in rows
             ],
         }
+
+
+@router.post("/mark-finished")
+async def mark_finished(body: dict = Body(...), auth=Depends(require_user)):
+    """
+    标记书籍为已读完或取消已读完。
+    body: { book_id: str, finished: bool }
+    """
+    user_id, _ = auth
+    book_id = body.get("book_id")
+    finished = body.get("finished", True)
+    
+    if not book_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="book_id_required")
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        if finished:
+            # 标记为已读完：设置 finished_at 为当前时间
+            await conn.execute(
+                text(
+                    """INSERT INTO reading_progress(user_id, book_id, progress, finished_at, updated_at)
+                       VALUES (current_setting('app.user_id')::uuid, cast(:bid as uuid), 1.0, now(), now())
+                       ON CONFLICT (user_id, book_id) DO UPDATE SET finished_at = now(), updated_at = now()"""
+                ),
+                {"bid": book_id},
+            )
+        else:
+            # 取消已读完：清空 finished_at
+            await conn.execute(
+                text(
+                    """UPDATE reading_progress 
+                       SET finished_at = NULL, updated_at = now() 
+                       WHERE user_id = current_setting('app.user_id')::uuid 
+                       AND book_id = cast(:bid as uuid)"""
+                ),
+                {"bid": book_id},
+            )
+    
+    return {"status": "success", "data": {"finished": finished}}
 
 
 @router.post("/stop")
@@ -199,6 +264,11 @@ async def stop(body: dict = Body(...), auth=Depends(require_user)):
 @alias.post("/start")
 async def alias_start(body: dict = Body(...), auth=Depends(require_user)):
     return await start(body, auth)
+
+
+@alias.get("/progress")
+async def alias_progress(auth=Depends(require_user)):
+    return await get_progress(auth)
 
 
 @alias.post("/{session_id}/heartbeat")

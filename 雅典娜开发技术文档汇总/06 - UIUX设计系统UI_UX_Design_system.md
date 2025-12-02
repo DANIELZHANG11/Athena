@@ -85,12 +85,50 @@
 ### 3.1 已有基础组件 (Base Components)
 *直接复用 `web/src/components/ui/` 下的组件*
 
-*   **Button**:
-    *   `variant="default"`: `bg-system-blue text-white hover:opacity-90 rounded-full`
-    *   `variant="ghost"`: `text-system-blue hover:bg-secondary-background rounded-lg`
+*   **Button (按钮系统)**:
+    所有按钮必须遵循以下规范，确保在明亮/暗黑模式下均可见且易于交互。
+
+    | 变体 | 样式 | 应用场景 |
+    | :--- | :--- | :--- |
+    | `primary` | `bg-system-blue text-white shadow-md hover:opacity-90 rounded-full font-medium` | 主要操作 (上传、保存、确认) |
+    | `secondary` | `bg-secondary-background text-label border border-separator hover:bg-tertiary-background rounded-full` | 次要操作 (取消、返回) |
+    | `ghost` | `text-system-blue hover:bg-system-blue/10 rounded-lg` | 文字链接式按钮 |
+    | `destructive` | `bg-system-red text-white hover:opacity-90 rounded-full` | 危险操作 (删除) |
+    | `icon` | `p-2 rounded-full hover:bg-secondary-background transition-colors` | 纯图标按钮 |
+
+    **[重要] 可见性规范**:
+    *   主要按钮必须有 `shadow-md` 阴影确保在浅色背景下可见。
+    *   图标按钮必须有 `hover` 状态反馈。
+    *   所有按钮点击热区 ≥ 44x44px (移动端)。
+
 *   **Input**:
     *   `bg-tertiary-background focus:ring-2 ring-system-blue border-none`
     *   **Error State**: `ring-2 ring-system-red bg-system-red/5` (错误时边框变红，背景微红)
+
+*   **Modal / Dialog (弹出对话框)**:
+    **[重要] 毛玻璃效果规范** - 所有弹出层必须使用白色毛玻璃效果，禁止黑色透明背景。
+
+    | 属性 | 值 | 说明 |
+    | :--- | :--- | :--- |
+    | 遮罩层 | `bg-black/20 backdrop-blur-sm` | 轻微半透明 + 模糊 |
+    | 内容容器 (Light) | `bg-white/95 backdrop-blur-xl shadow-2xl border border-gray-200/50` | 白色毛玻璃 + 强阴影 |
+    | 内容容器 (Dark) | `bg-gray-900/95 backdrop-blur-xl shadow-2xl border border-white/10` | 深色毛玻璃 |
+    | 圆角 | `rounded-2xl` | 16px 圆角 |
+    | 动效 | `animate-in fade-in-0 zoom-in-95 duration-200` | **从中心由小变大 + 淡入** |
+
+    **[强制] 弹窗动效规范**:
+    *   所有弹窗必须有 **缩放进入动效** (从 95% 放大到 100%)。
+    *   缩放原点：`transform-origin: center` (Modal) 或 `transform-origin: top right` (Dropdown)。
+    *   时长：`200ms`，缓动函数：`cubic-bezier(0.22, 1, 0.36, 1)`。
+
+*   **Dropdown Menu (下拉菜单)**:
+    | 属性 | 值 | 说明 |
+    | :--- | :--- | :--- |
+    | 容器 | `bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl shadow-2xl border rounded-xl` | 与 Modal 统一风格 |
+    | 动效 | `animate-menu-expand` | **从触发点位置由小变大展开** |
+    | 方向 | `transform-origin: top right` | 从右上角展开 |
+
+    **视觉效果**: 所有弹出层应有明显的悬浮感，使用统一的白色毛玻璃风格。
 
 ### 3.2 业务核心组件 (Business Components)
 *需按此规范开发*
@@ -106,45 +144,80 @@
 *   **书籍卡片体系 (Book Card System)**
     基于 Apple Books 风格的响应式卡片组，支持多种状态与自适应配色。
 
-    **1. Hero Card (继续阅读/最近阅读)**
-    *   **场景**: 首页顶部“继续阅读”区域。**仅展示未读完的书籍**。
-    *   **尺寸 (Mobile)**: 高度 `160px`，宽度 `100%`。
+    **1. Horizontal Card (横向阅读卡片) [重要更新 - Apple Books 风格]**
+    *   **场景**: 首页"继续阅读"区域、"之前阅读"列表。
+    *   **尺寸**: 高度 `100px - 120px`，宽度自适应 (最小 `280px`)。
+    *   **视觉构造 (重要)**:
+        *   **布局比例**: **封面占 1/4 宽度，内容区占 3/4 宽度** (严禁改变此比例)。
+        *   **封面区 (左侧 25%)**:
+            *   2:3 比例封面图，圆角 `8px`，**阴影 `shadow-lg`**。
+            *   完全靠左显示，无内边距。
+        *   **背景区 (右侧 75%)**:
+            *   **Ambient Blur 效果**: 从封面图片提取主色调，或将封面某区域放大后 `blur-3xl` 处理。
+            *   渐变覆盖: 从左侧透明到右侧半透明白/黑 (`from-transparent to-white/20`)。
+        *   **文字区 (覆盖在背景上)**:
+            *   **智能反色文字**: 根据背景亮度自动切换 (浅背景用深色字，深背景用浅色字)。
+            *   Title: `font-semibold text-base`，最多 2 行。
+            *   Author: `text-sm opacity-80`，最多 1 行。
+            *   Progress: `text-xs opacity-60`，显示 "25%" 或 "已读完"。
+        *   **进度条**: 底部细线进度条 (`h-0.5`)，颜色为 `system-blue`。
+    *   **技术实现**:
+        *   使用 `fast-average-color` 提取封面主色调。
+        *   计算亮度公式: `L = (0.299*R + 0.587*G + 0.114*B) / 255`。
+        *   L > 0.5 时文字用深色，L <= 0.5 时文字用浅色。
+    *   **动效**: `hover:scale-[1.02]`，`transition-transform duration-200`。
+
+    **2. Hero Card (首页大卡片)**
+    *   继承 Horizontal Card 规范，但尺寸更大 (高度 `160px`)。
+    *   增加更多按钮 (`MoreHorizontal`) 在右下角。
+
+    **3. List Item Card (列表/历史) [重要更新 - Horizontal Style]**
+    *   **场景**: 书架列表模式、"之前阅读"列表。
+    *   **布局**: 采用 Horizontal Card 风格 (Ambient Blur 背景 + 1/4 封面)。
+    *   **尺寸**: 高度 `100px`，宽度自适应。
+    *   **文字规范**:
+        *   **Title**: `font-semibold text-base`，单行显示，**禁止省略号** (使用 `overflow-hidden whitespace-nowrap`)。
+        *   **Author**: `text-sm opacity-80`，单行显示，**禁止省略号**。
     *   **视觉构造**:
-        *   **背景**: **动态模糊 (Ambient Blur)**。提取封面主色调进行 `blur-3xl` + `opacity-30` 处理。
-        *   **封面**: 左侧 2:3 比例，圆角 `6px`，**阴影 `shadow-lg` (强调悬浮感)**。
-        *   **云状态 (Cloud State)**:
-            *   若未下载，封面中心显示 `Cloud` 图标。
-            *   **智能反色**: 图标颜色基于封面平均亮度自动计算 (Light Cover -> `text-black/60`, Dark Cover -> `text-white/80`)。
-        *   **元数据**: 右侧垂直排列，Title (`font-bold`), Author (`text-secondary-label`), Info ("图书 · 25%").
-        *   **操作**: 右下角 `MoreHorizontal`。
+        *   与 Horizontal Card 一致，但作为列表项使用。
+        *   **封面**: 2:3 比例，圆角 `8px`，`shadow-lg`。
+        *   **背景**: 动态提取封面主色调 + Ambient Blur。
 
-    **2. List Item Card (列表/历史)**
-    *   **场景**: 书架列表模式。
-    *   **布局**: Flex Row，底部带分割线。
-    *   **封面**: 固定宽 `80px`，高 `120px`，圆角 `4px`，**阴影 `shadow-sm`**。
-    *   **状态标识**:
-        *   **未下载**: 封面右上角小 `Cloud` 图标 (智能反色)。
-        *   **已读完**: 右侧元数据区显示绿色/灰色 "已读完" 文本，进度条隐藏。
-        *   **阅读中**: 显示进度条与百分比。
-
-    **3. Grid Standard Card (书架网格)**
+    **3. Grid Standard Card (书架网格) [重要更新]**
     *   **场景**: 书架网格模式 (竖向卡片)。
     *   **尺寸**: 宽度自适应 (约 `100px - 120px`)，高度自适应。
     *   **视觉构造**:
-        *   **封面**: 2:3 比例，圆角 `8px`，**阴影 `shadow-md`**。
+        *   **封面**: 2:3 比例，圆角 `8px`，**阴影 `shadow-md` (强制)**。
         *   **云状态**: 同 Hero Card，封面中心显示智能反色 `Cloud` 图标。
-        *   **底部信息**:
-            *   左下角: 
-                *   阅读中: 显示进度百分比 (e.g. "25%")。
-                *   已读完: 显示 "已读完" (文本或 Check 图标)。
-            *   右下角: `MoreHorizontal` 图标 (点击唤起菜单)。
+        *   **底部信息 (覆盖在封面上)**:
+            *   **取消书名显示**: 不在卡片下方显示书名和作者。
+            *   左下角: 显示进度百分比 (e.g. "25%")，白色文字带半透明黑色背景。
+            *   右下角: `MoreHorizontal` 图标 (白色，点击唤起单本书籍操作菜单)。
+        *   **底部渐变遮罩**: `bg-gradient-to-t from-black/60 to-transparent`，确保文字可读。
+    *   **阴影规范**: 所有书籍卡片必须有 `shadow-md` 阴影，增强层次感。
 
     **4. Grid Micro Card (年度/成就)**
-    *   **场景**: “年度已读”小格子。
+    *   **场景**: "年度已读"小格子。
     *   **尺寸**: 紧凑型 Grid，纯封面。
     *   **样式**:
         *   **阴影**: `shadow-sm`。
         *   **状态**: 右下角固定显示蓝色实心 `Check` 图标 (表示已完成)。
+
+    **5. Processing Card (处理中状态) [NEW]**
+    *   **场景**: 书籍正在转换格式 (Calibre) 或正在 OCR 识别时显示。
+    *   **尺寸**: 与 Grid Standard Card 完全相同 (保持布局一致性)。
+    *   **视觉构造**:
+        *   **背景**: 灰色渐变 (`from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600`)。
+        *   **脉冲动效**: `animate-pulse` - 像心跳一样的呼吸灯效果。
+        *   **状态文本**: 卡片中央显示 "正在处理..." 或 "正在转换..." 文本。
+        *   **图标**: 顶部显示 `Loader2` 旋转图标。
+    *   **动效参数**:
+        *   `animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite`
+        *   亮度在 100% 和 75% 之间循环。
+    *   **适用状态**:
+        *   `processing`: 通用处理中
+        *   `converting`: Calibre 格式转换中
+        *   `ocr`: OCR 文字识别中
 
 ## 4. 移动端与 PWA 适配 (Mobile & PWA)
 

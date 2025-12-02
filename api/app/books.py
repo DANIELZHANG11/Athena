@@ -22,6 +22,8 @@ from .dependencies import require_upload_permission, require_write_permission
 from .search_sync import delete_book as delete_book_from_index
 from .search_sync import index_book
 from .storage import (
+    ensure_bucket,
+    get_s3,
     make_object_key,
     presigned_get,
     presigned_put,
@@ -184,9 +186,19 @@ async def upload_complete(
     data = {"id": book_id, "download_url": download_url}
     if idempotency_key:
         r.setex(idem_key, 24 * 3600, str(data))
+    
+    # 根据格式决定任务流程
+    fmt_lower = (original_format or '').lower()
     try:
         celery_app.send_task("tasks.analyze_book_type", args=[book_id, user_id])
-        celery_app.send_task("tasks.deep_analyze_book", args=[book_id, user_id])
+        
+        if fmt_lower in ('epub', 'pdf'):
+            # EPUB/PDF 直接提取封面和元数据
+            celery_app.send_task("tasks.extract_book_cover", args=[book_id, user_id])
+            celery_app.send_task("tasks.extract_book_metadata", args=[book_id, user_id])
+        else:
+            # 其他格式（AZW3, MOBI 等）先转换为 EPUB，转换完成后会自动触发封面和元数据提取
+            celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
     except Exception:
         pass
     return {"status": "success", "data": data}
@@ -264,6 +276,156 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
             )
         except Exception:
             pass
+
+
+@router.get("/{book_id}/cover")
+async def get_book_cover(
+    book_id: str,
+    token: str = Query(None),
+    authorization: str = Header(None),
+):
+    """
+    获取书籍封面图片（通过 API 代理）
+    解决移动端无法直接访问 localhost 存储的问题
+    支持两种认证方式：
+    1. Authorization header: Bearer <token>
+    2. Query param: ?token=<token>
+    """
+    from fastapi.responses import Response as FastAPIResponse
+    from jose import jwt
+    
+    AUTH_SECRET = os.getenv("AUTH_SECRET", "dev_secret")
+    
+    # 解析 token
+    auth_token = None
+    if authorization and authorization.startswith("Bearer "):
+        auth_token = authorization.split(" ", 1)[1]
+    elif token:
+        auth_token = token
+    
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    
+    try:
+        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"])
+        user_id = payload["sub"]
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"invalid_token: {str(e)}")
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text("SELECT cover_image_key FROM books WHERE id = cast(:id as uuid)"),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row or not row[0]:
+            raise HTTPException(status_code=404, detail="cover_not_found")
+        
+        cover_key = row[0]
+        
+        # 从存储读取封面
+        try:
+            client = get_s3()
+            ensure_bucket(client, BOOKS_BUCKET)
+            resp = client.get_object(Bucket=BOOKS_BUCKET, Key=cover_key)
+            cover_data = resp["Body"].read()
+            content_type = resp.get("ContentType", "image/webp")
+            
+            return FastAPIResponse(
+                content=cover_data,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",  # 缓存 24 小时
+                    "Content-Disposition": "inline",
+                    "Access-Control-Allow-Origin": "*",  # 允许 canvas 跨域读取
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"cover_fetch_error: {str(e)}")
+
+
+@router.get("/{book_id}/content")
+async def get_book_content(
+    book_id: str,
+    token: str = Query(None),
+    authorization: str = Header(None),
+):
+    """
+    获取书籍内容（通过 API 代理）
+    支持 HTTP Range 请求以实现流式加载
+    解决 CORS 问题，使 epub.js 和 react-pdf 可以正确加载书籍
+    """
+    from fastapi.responses import Response as FastAPIResponse, StreamingResponse
+    from fastapi import Request
+    from jose import jwt
+    
+    AUTH_SECRET = os.getenv("AUTH_SECRET", "dev_secret")
+    
+    # 解析 token
+    auth_token = None
+    if authorization and authorization.startswith("Bearer "):
+        auth_token = authorization.split(" ", 1)[1]
+    elif token:
+        auth_token = token
+    
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    
+    try:
+        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"])
+        user_id = payload["sub"]
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"invalid_token: {str(e)}")
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text("SELECT minio_key, original_format, converted_epub_key FROM books WHERE id = cast(:id as uuid)"),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row or not row[0]:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        minio_key, original_format, converted_epub_key = row[0], row[1], row[2]
+        
+        # 优先使用转换后的 EPUB（非 EPUB/PDF 格式会被转换为 EPUB）
+        if converted_epub_key:
+            minio_key = converted_epub_key
+            original_format = "epub"
+        
+        # 确定 content type（只支持 EPUB 和 PDF）
+        content_type_map = {
+            "epub": "application/epub+zip",
+            "pdf": "application/pdf",
+        }
+        content_type = content_type_map.get(original_format, "application/epub+zip")
+        
+        # 从存储读取书籍
+        try:
+            client = get_s3()
+            ensure_bucket(client, BOOKS_BUCKET)
+            resp = client.get_object(Bucket=BOOKS_BUCKET, Key=minio_key)
+            book_data = resp["Body"].read()
+            content_length = len(book_data)
+            
+            return FastAPIResponse(
+                content=book_data,
+                media_type=content_type,
+                headers={
+                    "Content-Length": str(content_length),
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "private, max-age=3600",
+                    "Content-Disposition": f"inline; filename=\"book.{original_format}\"",
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"book_fetch_error: {str(e)}")
 
 
 @router.get("/{book_id}/processing/status")
@@ -439,12 +601,14 @@ async def list_books(
                 pass
         q = text(
             """
-            SELECT id::text, title, author, language, original_format, minio_key, size, created_at, updated_at, version, COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0)
-            FROM books
+            SELECT b.id::text, b.title, b.author, b.language, b.original_format, b.minio_key, b.size, b.created_at, b.updated_at, b.version, COALESCE(b.is_digitalized,false), COALESCE(b.initial_digitalization_confidence,0), b.cover_image_key,
+                   COALESCE(rp.progress, 0) as progress, rp.finished_at, b.converted_epub_key
+            FROM books b
+            LEFT JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = current_setting('app.user_id')::uuid
             """
-            + cond
+            + cond.replace("WHERE", "WHERE b.")
             + "\n"
-            + order
+            + order.replace("updated_at", "b.updated_at").replace("id", "b.id")
             + "\n"
             + "LIMIT :limit"
         )
@@ -483,10 +647,16 @@ async def list_books(
                 return None
 
         for r in take:
-            download = r[5]
+            # 优先使用转换后的 EPUB，否则使用原始 minio_key
+            key_for_download = r[15] if r[15] else r[5]  # r[15] = converted_epub_key, r[5] = minio_key
+            download = key_for_download
             if not (isinstance(download, str) and download.startswith("http")):
-                download = presigned_get(BOOKS_BUCKET, r[5])
-            hint = _hint(r[5], r[3] or "", r[6])
+                download = presigned_get(BOOKS_BUCKET, key_for_download)
+            hint = _hint(key_for_download, r[3] or "", r[6])
+            # 生成封面 URL
+            cover_url = None
+            if r[12]:  # cover_image_key
+                cover_url = presigned_get(BOOKS_BUCKET, r[12])
             items.append(
                 {
                     "id": r[0],
@@ -499,9 +669,12 @@ async def list_books(
                     "updated_at": str(r[8]),
                     "etag": f'W/"{int(r[9])}"',
                     "download_url": download,
+                    "cover_url": cover_url,
                     "text_hint": hint,
                     "is_digitalized": bool(r[10]),
                     "initial_digitalization_confidence": float(r[11]),
+                    "progress": float(r[13]) if r[13] else 0,  # 添加阅读进度
+                    "finished_at": str(r[14]) if r[14] else None,  # 已读完时间
                 }
             )
         next_cursor = None
@@ -530,7 +703,7 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
             text(
                 """
             SELECT id::text, title, author, language, original_format, minio_key, size, created_at, updated_at, version,
-                   COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0), converted_epub_key, digitalize_report_key
+                   COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0), converted_epub_key, digitalize_report_key, cover_image_key
             FROM books WHERE id = cast(:id as uuid)
             """
             ),
@@ -541,12 +714,14 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
             raise HTTPException(status_code=404, detail="not_found")
         if response is not None:
             response.headers["ETag"] = f'W/"{int(row[9])}"'
-        download = row[5]
+        # 优先使用转换后的 EPUB，否则使用原始 minio_key
+        key_for_download = row[12] if row[12] else row[5]  # row[12] = converted_epub_key, row[5] = minio_key
+        download = key_for_download
         if not (isinstance(download, str) and download.startswith("http")):
-            download = presigned_get(BOOKS_BUCKET, row[5])
+            download = presigned_get(BOOKS_BUCKET, key_for_download)
         hint = None
         try:
-            head = read_head(BOOKS_BUCKET, row[5], 65536)
+            head = read_head(BOOKS_BUCKET, key_for_download, 65536)
             if head:
                 for enc in ("utf-8", "gb18030", "latin1"):
                     try:
@@ -565,6 +740,10 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                         hint = f"约{latin_words}词"
         except Exception:
             hint = None
+        # 生成封面 URL
+        cover_url = None
+        if row[14]:  # cover_image_key
+            cover_url = presigned_get(BOOKS_BUCKET, row[14])
         return {
             "status": "success",
             "data": {
@@ -578,6 +757,7 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                 "updated_at": str(row[8]),
                 "etag": f'W/"{int(row[9])}"',
                 "download_url": download,
+                "cover_url": cover_url,
                 "text_hint": hint,
                 "is_digitalized": bool(row[10]),
                 "initial_digitalization_confidence": float(row[11]),
@@ -696,22 +876,112 @@ async def deep_analyze(book_id: str, auth=Depends(require_user)):
 
 @router.delete("/{book_id}")
 async def delete_book(book_id: str, quota=Depends(require_write_permission), auth=Depends(require_user)):
+    """
+    完全删除书籍及其所有关联数据：
+    - 书架关联 (shelf_items)
+    - 笔记 (notes) 和笔记标签关联 (note_tags)
+    - 高亮 (highlights) 和高亮标签关联 (highlight_tags)
+    - AI 对话 (ai_conversations) 和消息 (ai_messages)
+    - 阅读进度 (reading_progress)
+    - 阅读会话 (reading_sessions)
+    - 转换任务 (conversion_jobs)
+    - OCR 任务 (ocr_jobs)
+    - 书籍本身 (books)
+    """
     user_id, _ = auth
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
-        await conn.execute(
-            text("DELETE FROM shelf_items WHERE book_id = cast(:id as uuid)"),
-            {"id": book_id},
-        )
-        res = await conn.execute(
-            text("DELETE FROM books WHERE id = cast(:id as uuid)"), {"id": book_id}
-        )
-        if res.rowcount == 0:
-            raise HTTPException(status_code=404, detail="not_found")
-    delete_book_from_index(book_id)
-    return {"status": "success"}
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            
+            # 1. 删除书架关联
+            await conn.execute(
+                text("DELETE FROM shelf_items WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            
+            # 2. 删除笔记标签关联，然后删除笔记
+            await conn.execute(
+                text("DELETE FROM note_tags WHERE note_id IN (SELECT id FROM notes WHERE book_id = cast(:id as uuid))"),
+                {"id": book_id},
+            )
+            await conn.execute(
+                text("DELETE FROM notes WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            
+            # 3. 删除高亮标签关联，然后删除高亮
+            await conn.execute(
+                text("DELETE FROM highlight_tags WHERE highlight_id IN (SELECT id FROM highlights WHERE book_id = cast(:id as uuid))"),
+                {"id": book_id},
+            )
+            await conn.execute(
+                text("DELETE FROM highlights WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            
+            # 4. 删除 AI 对话上下文和消息
+            # ai_conversation_contexts.book_ids 是 JSONB 数组，需要用 @> 操作符检查
+            # 先找出包含此 book_id 的对话
+            await conn.execute(
+                text("""
+                    DELETE FROM ai_conversation_contexts 
+                    WHERE book_ids @> to_jsonb(ARRAY[cast(:id as text)])::jsonb
+                """),
+                {"id": book_id},
+            )
+            # 删除没有 context 的孤立对话的消息和对话本身
+            await conn.execute(
+                text("""
+                    DELETE FROM ai_messages 
+                    WHERE conversation_id NOT IN (SELECT conversation_id FROM ai_conversation_contexts)
+                """),
+            )
+            await conn.execute(
+                text("""
+                    DELETE FROM ai_conversations 
+                    WHERE id NOT IN (SELECT conversation_id FROM ai_conversation_contexts)
+                """),
+            )
+            
+            # 5. 删除阅读进度和会话
+            await conn.execute(
+                text("DELETE FROM reading_progress WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            await conn.execute(
+                text("DELETE FROM reading_sessions WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            
+            # 6. 删除转换任务和 OCR 任务
+            await conn.execute(
+                text("DELETE FROM conversion_jobs WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            await conn.execute(
+                text("DELETE FROM ocr_jobs WHERE book_id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            
+            # 7. 最后删除书籍本身
+            res = await conn.execute(
+                text("DELETE FROM books WHERE id = cast(:id as uuid)"), {"id": book_id}
+            )
+            if res.rowcount == 0:
+                raise HTTPException(status_code=404, detail="not_found")
+        
+        # 从搜索索引中删除
+        delete_book_from_index(book_id)
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"[Delete Book] Error: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"delete_failed: {str(e)}")
 
 
 @router.patch("/{book_id}")

@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
 import { useAuthStore } from '@/stores/auth'
-import { Settings2 } from 'lucide-react'
+import { Settings2, ChevronUp, ChevronDown } from 'lucide-react'
 
 type Props = {
   todaySeconds: number;
@@ -11,11 +11,156 @@ type Props = {
   onGoalUpdate?: () => void;
 }
 
+// 轮盘式数字选择器组件 - 稳定版本，支持触摸滑动
+function WheelPicker({ 
+  value, 
+  onChange, 
+  min = 1, 
+  max = 1440, 
+  step = 5,
+}: { 
+  value: number; 
+  onChange: (v: number) => void; 
+  min?: number; 
+  max?: number;
+  step?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const touchStartY = useRef<number>(0)
+  const touchStartValue = useRef<number>(value)
+  const valueRef = useRef<number>(value)
+
+  // 同步 value 到 ref
+  useEffect(() => {
+    valueRef.current = value
+  }, [value])
+  
+  // 快捷按钮调整
+  const increment = useCallback(() => {
+    onChange(Math.min(max, value + step))
+  }, [value, max, step, onChange])
+  
+  const decrement = useCallback(() => {
+    onChange(Math.max(min, value - step))
+  }, [value, min, step, onChange])
+
+  // 处理鼠标滚轮 - 使用 ref 避免频繁重绑事件
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const currentVal = valueRef.current
+    const delta = e.deltaY > 0 ? -step : step
+    const newValue = Math.max(min, Math.min(max, currentVal + delta))
+    
+    if (newValue !== currentVal) {
+      onChange(newValue)
+    }
+  }, [min, max, step, onChange])
+
+  // 触摸开始
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY
+    touchStartValue.current = valueRef.current
+  }, [])
+
+  // 触摸移动
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    e.preventDefault()
+    const deltaY = touchStartY.current - e.touches[0].clientY
+    const deltaSteps = Math.round(deltaY / 30) // 每30px一个step
+    const newValue = Math.max(min, Math.min(max, touchStartValue.current + deltaSteps * step))
+    
+    if (newValue !== valueRef.current) {
+      onChange(newValue)
+    }
+  }, [min, max, step, onChange])
+
+  // 绑定事件监听器
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    // 使用 passive: false 允许 preventDefault
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    container.addEventListener('touchstart', handleTouchStart, { passive: true })
+    container.addEventListener('touchmove', handleTouchMove, { passive: false })
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel)
+      container.removeEventListener('touchstart', handleTouchStart)
+      container.removeEventListener('touchmove', handleTouchMove)
+    }
+  }, [handleWheel, handleTouchStart, handleTouchMove])
+
+  // 计算上下显示的数值
+  const prevValue = value > min ? value - step : null
+  const nextValue = value < max ? value + step : null
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {/* 上箭头 */}
+      <button 
+        type="button"
+        onClick={increment}
+        className="p-2 md:p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:scale-95"
+      >
+        <ChevronUp className="w-5 h-5 md:w-6 md:h-6 text-system-blue" />
+      </button>
+      
+      {/* 数字滚动区域 */}
+      <div
+        ref={containerRef}
+        className="relative select-none touch-none cursor-ns-resize"
+      >
+        {/* 中间高亮框 */}
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-10 md:h-14 border-y-2 border-system-blue/30 pointer-events-none" />
+        
+        {/* 数字显示区域 */}
+        <div className="py-4 md:py-6 px-6 md:px-10">
+          <div className="flex flex-col items-center justify-center gap-2 md:gap-3">
+            {/* 上一个数值 */}
+            <div className="text-lg md:text-2xl font-medium text-gray-300 dark:text-gray-600 h-6 md:h-8 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
+              {prevValue ?? ''}
+            </div>
+            
+            {/* 当前数值 */}
+            <div className="text-3xl md:text-5xl font-bold text-system-blue h-10 md:h-14 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
+              {value}
+            </div>
+            
+            {/* 下一个数值 */}
+            <div className="text-lg md:text-2xl font-medium text-gray-300 dark:text-gray-600 h-6 md:h-8 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
+              {nextValue ?? ''}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* 下箭头 */}
+      <button 
+        type="button"
+        onClick={decrement}
+        className="p-2 md:p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:scale-95"
+      >
+        <ChevronDown className="w-5 h-5 md:w-6 md:h-6 text-system-blue" />
+      </button>
+    </div>
+  )
+}
+
 export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdate }: Props) {
   const { t } = useTranslation('common')
   const [showAdjust, setShowAdjust] = useState(false)
   const [newGoal, setNewGoal] = useState(goalMinutes)
   const [updating, setUpdating] = useState(false)
+  
+  // 当弹窗打开时，同步当前目标值
+  useEffect(() => {
+    if (showAdjust) {
+      setNewGoal(goalMinutes)
+    }
+  }, [showAdjust, goalMinutes])
 
   const todayMinutes = Math.floor(todaySeconds / 60)
   const percent = useMemo(() => Math.max(0, Math.min(100, Math.round((todayMinutes / Math.max(1, goalMinutes)) * 100))), [todayMinutes, goalMinutes])
@@ -82,7 +227,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center relative">
+    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center relative transition-transform duration-200 hover:scale-[1.02]">
       <div className="absolute top-4 right-4">
         <Button variant="ghost" size="icon" onClick={() => { setNewGoal(goalMinutes); setShowAdjust(true) }}>
           <Settings2 className="w-5 h-5 text-secondary-label" />
@@ -110,25 +255,47 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
       </div>
 
       {showAdjust && (
-        <Modal>
-          <div className="p-4 w-full max-w-sm">
-            <h3 className="text-lg font-bold mb-4">{t('home.adjust_daily_goal')}</h3>
-            <div className="flex flex-col gap-6 items-center">
-              <div className="text-4xl font-bold text-system-blue">
-                {newGoal} <span className="text-xl text-secondary-label">min</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="120"
+        <Modal className="flex flex-col items-center">
+          <div className="w-full max-w-[280px] md:max-w-sm">
+            <h3 className="text-base md:text-lg font-bold mb-4 md:mb-6 text-center">{t('home.adjust_daily_goal')}</h3>
+            
+            <div className="flex flex-col items-center gap-3 md:gap-4">
+              {/* 轮盘选择器 */}
+              <WheelPicker
                 value={newGoal}
-                onChange={(e) => setNewGoal(parseInt(e.target.value))}
-                className="w-full accent-system-blue h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                onChange={setNewGoal}
+                min={1}
+                max={1440}
+                step={5}
               />
-              <div className="flex gap-3 w-full mt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setShowAdjust(false)}>{t('common.cancel')}</Button>
-                <Button className="flex-1" onClick={handleUpdate} disabled={updating}>
-                  {updating ? 'Saving...' : t('common.save')}
+              
+              <div className="text-base md:text-lg text-secondary-label">
+                {t('common.min')}
+              </div>
+              
+              {/* 快捷预设按钮 */}
+              <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center mt-1 md:mt-2">
+                {[15, 30, 60, 90, 120].map((mins) => (
+                  <button
+                    key={mins}
+                    onClick={() => setNewGoal(mins)}
+                    className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm font-medium transition-colors ${
+                      newGoal === mins
+                        ? 'bg-system-blue text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {mins}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="flex gap-2 md:gap-3 w-full mt-3 md:mt-4">
+                <Button variant="outline" className="flex-1 text-sm" onClick={() => setShowAdjust(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button className="flex-1 text-sm" onClick={handleUpdate} disabled={updating}>
+                  {updating ? '...' : t('common.save')}
                 </Button>
               </div>
             </div>

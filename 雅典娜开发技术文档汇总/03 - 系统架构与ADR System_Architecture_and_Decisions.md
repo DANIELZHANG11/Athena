@@ -26,7 +26,13 @@
 - Styling：Tailwind CSS `4.1.17`（`@tailwindcss/postcss 4.1.17`）
 - State & Data：Zustand `^4.5.4`、@tanstack/react-query `^5.56.2`
 - Icons：lucide-react `^0.460.0`
-- 其他：Radix UI 组件族、Framer Motion、EPUB.js、Cypress/Vitest（CI 覆盖）
+- 其他：Radix UI 组件族、Framer Motion、React Reader（基于 EPUB.js）、React PDF + react-virtuoso、Cypress/Vitest（CI 覆盖）
+
+### 2.5 阅读器组件栈 (Reader Components)
+- **EPUB**：React Reader 2.x + EPUB.js 0.3.93。所有受控资源统一通过 Blob URL 注入，避免额外的未授权请求；进度通过 rendition `relocated` 事件实时写入 `reading_progress`。
+- **PDF**：react-pdf 10.x + react-virtuoso。虚拟滚动仅渲染可视页，默认启用文本层，为 OCR 高亮与全文检索打基础。
+- **坐标系与标注**：阅读器内维护 PDF 页面的原始尺寸与渲染尺寸，提供坐标映射函数 (Client → PDF) 供后续批注、绘制与命中测试使用。
+- **心跳同步**：统一由 `useReaderHeartbeat` Hook 管理，EPUB 使用 CFI，PDF 使用页码；进度变更立即写入 IndexedDB 并定时上报。
 
 ### 2.3 基础设施与存储 (Infrastructure)
 | 组件 | 选型 | 容器名 | 关键用途 |
@@ -142,7 +148,96 @@
 - 级别与分类：统一 `ERROR/WARN/INFO/DEBUG`；错误日志上报 Sentry（`api/app/main.py:1-7,38`），事件日志落库（如 `audit_logs`）。
 - 聚合与查询：开发环境使用 Loki/Grafana；生产至少保留本地 JSON 文件并接入集中式日志平台。
 
-## 8. 备份与恢复策略（Backup & Restore）
+## 8. 书籍上传与处理流程 (Book Upload & Processing Pipeline)
+
+### 8.1 完整处理流水线
+
+```
+用户上传书籍文件
+        ↓
+  前端计算 SHA256 指纹
+        ↓
+  POST /books/upload_init → 获取预签名 URL
+        ↓
+  PUT 直传至 S3
+        ↓
+  POST /books/upload_complete → 创建书籍记录
+        ↓
+  后台任务触发 (Celery)
+        ├─ tasks.convert_to_epub (如果非 EPUB/PDF)
+        ├─ tasks.extract_book_cover
+        └─ tasks.extract_book_metadata
+        ↓
+  书籍可阅读
+```
+
+### 8.2 格式转换 (Calibre)
+
+**适用格式**: MOBI, AZW3, FB2 等非 EPUB/PDF 格式
+
+**工作流程**:
+1. Worker 从 S3 下载源文件到共享卷 (`/calibre_books`)
+2. 创建转换请求文件 (`convert-{job_id}.request`)
+3. Calibre 容器中的监控脚本检测请求并执行 `ebook-convert`
+4. Worker 轮询等待 `.done` 或 `.error` 文件
+5. 转换成功后:
+   - 上传 EPUB 到 S3
+   - **删除原始非 EPUB/PDF 文件** (节省存储)
+   - 更新 `minio_key` 指向新 EPUB
+   - 设置 `converted_epub_key` 标记
+
+**共享卷配置** (`docker-compose.yml`):
+```yaml
+volumes:
+  calibre_books:
+    driver: local
+
+services:
+  calibre:
+    volumes:
+      - calibre_books:/books
+  worker:
+    volumes:
+      - calibre_books:/calibre_books
+```
+
+### 8.3 元数据提取 (Metadata Extraction)
+
+**提取字段**: `title`, `author`, `page_count`
+
+**支持格式**:
+- **EPUB**: 从 OPF 文件提取 `<dc:title>` 和 `<dc:creator>`
+- **PDF**: 使用 PyMuPDF 提取 PDF 元数据
+
+**标题更新逻辑**:
+只有当满足以下条件之一时，才会用元数据中的标题覆盖当前标题：
+1. 当前标题为空
+2. 当前标题包含下划线 (`_`)
+3. 当前标题以扩展名结尾 (`.epub`, `.pdf`, `.mobi`, `.azw3`)
+4. 当前标题符合 `书名-作者名` 格式，而提取的标题更短且不含连字符
+
+### 8.4 封面提取 (Cover Extraction)
+
+**来源优先级**:
+1. EPUB: OPF 中定义的 `cover-image` 或 `meta[name=cover]`
+2. PDF: 首页渲染为图片
+
+**优化处理**:
+- 转换为 WebP 格式
+- 固定尺寸 400×600 (2:3 比例)
+- 质量 80%
+- 存储到 `covers/{book_id}.webp`
+
+### 8.5 存储策略
+
+**最终状态**: S3 中只保留 EPUB 和 PDF 格式的电子书
+- 非 EPUB/PDF 格式在 Calibre 转换成功后自动删除
+- `minio_key` 始终指向可阅读的 EPUB/PDF 文件
+- `converted_epub_key` 标记该书籍经过格式转换
+
+---
+
+## 9. 备份与恢复策略（Backup & Restore）
 - PostgreSQL：
   - 频率：每日全量 `pg_dump`（通过宿主机定时触发 `backup` 容器，`docker-compose.yml:127-139`）。
   - WAL：生产启用归档以支持点时间恢复（PITR）；保留 7 天。

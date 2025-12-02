@@ -1,6 +1,5 @@
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import UploadManager from '../../../components/upload/UploadManager'
 
 export default function HomeHeader() {
   const { t } = useTranslation('common')
@@ -15,7 +14,6 @@ export default function HomeHeader() {
       >
         {t('reading_now.title')}
       </motion.h1>
-      <div className="mt-2"><UploadManager /></div>
       <motion.div style={{ opacity: smallOpacity }} className="sticky top-0 z-30">
         <div className="flex items-center justify-center h-8">
           <span className="text-secondary-label text-xs uppercase tracking-wide">{t('reading_now.title')}</span>

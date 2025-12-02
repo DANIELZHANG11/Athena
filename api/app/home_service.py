@@ -139,9 +139,10 @@ async def get_dashboard(user_id: str) -> Dashboard:
         y_cnt_res = await conn.execute(text("SELECT COUNT(1) FROM reading_progress WHERE user_id = current_setting('app.user_id')::uuid AND finished_at IS NOT NULL AND finished_at >= :y"), {"y": year_start_dt})
         y_count_row = y_cnt_res.fetchone()
         y_count = int(y_count_row[0]) if y_count_row else 0
-        covers_res = await conn.execute(text("SELECT b.cover_image_key FROM reading_progress rp JOIN books b ON b.id = rp.book_id WHERE rp.user_id = current_setting('app.user_id')::uuid AND rp.finished_at IS NOT NULL AND rp.finished_at >= :y ORDER BY rp.finished_at DESC LIMIT 5"), {"y": year_start_dt})
-        covers = [r[0] for r in covers_res.fetchall() if r and r[0]]
-        yearly = YearlyFinished(count=y_count, recent_covers=covers)
+        # 返回 book_id 而不是 cover_image_key，前端将使用 API 代理获取封面
+        covers_res = await conn.execute(text("SELECT b.id::text FROM reading_progress rp JOIN books b ON b.id = rp.book_id WHERE rp.user_id = current_setting('app.user_id')::uuid AND rp.finished_at IS NOT NULL AND rp.finished_at >= :y ORDER BY rp.finished_at DESC LIMIT 5"), {"y": year_start_dt})
+        book_ids = [r[0] for r in covers_res.fetchall() if r and r[0]]
+        yearly = YearlyFinished(count=y_count, recent_covers=book_ids)
 
         return Dashboard(goals=goals, streak=streak, today=today_obj, weekly=weekly, yearly_finished=yearly)
 
