@@ -76,7 +76,7 @@ export default function LibraryPage() {
   
   // 获取所有书籍 ID 并检查本地缓存状态
   const bookIds = useMemo(() => items.map(item => item.id), [items])
-  const { getBookCacheStatus, refresh: refreshCacheStatus } = useLocalBookCache(bookIds)
+  const { getBookCacheStatus } = useLocalBookCache(bookIds)
 
   useEffect(() => {
     const fetchList = async () => {

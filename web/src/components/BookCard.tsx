@@ -60,7 +60,7 @@ function getAdaptiveColor(coverColor?: string): string {
 }
 
 // 默认封面占位图
-function CoverPlaceholder({ title, className }: { title: string; className?: string }) {
+function CoverPlaceholder({ className }: { className?: string }) {
   return (
     <div className={cn(
       'flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800',
@@ -182,7 +182,7 @@ export default function BookCard({
             {coverUrl ? (
               <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
             ) : (
-              <CoverPlaceholder title={title} className="h-full w-full" />
+              <CoverPlaceholder className="h-full w-full" />
             )}
             {showCloudIcon && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -266,7 +266,7 @@ export default function BookCard({
           {coverUrl ? (
             <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
           ) : (
-            <CoverPlaceholder title={title} className="h-full w-full rounded-lg" />
+            <CoverPlaceholder className="h-full w-full rounded-lg" />
           )}
           
           {/* 云状态图标 */}
@@ -356,7 +356,7 @@ export default function BookCard({
                 className="absolute inset-0 h-full w-full object-cover"
               />
             ) : (
-              <CoverPlaceholder title={title} className="h-full w-full" />
+              <CoverPlaceholder className="h-full w-full" />
             )}
             {showCloudIcon && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">

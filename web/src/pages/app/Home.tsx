@@ -21,7 +21,9 @@ export default function Home() {
       const r = await fetch('/api/v1/home/dashboard', { headers: { Authorization: `Bearer ${at}` } })
       const j = await r.json()
       setDash(j.data || null)
-    } catch { }
+    } catch {
+      // Dashboard fetch failed, use default state
+    }
   }, [])
 
   const loadItems = useCallback(async () => {
@@ -60,7 +62,9 @@ export default function Home() {
       }))
       // 过滤掉无效的项目 (null)
       setItems(detailedItems.filter((item): item is NonNullable<typeof item> => item !== null))
-    } catch { }
+    } catch {
+      // Progress fetch failed, use empty list
+    }
   }, [])
 
   useEffect(() => {

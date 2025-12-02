@@ -33,7 +33,9 @@ type PdfPageMetrics = {
     renderedHeight: number
 }
 
-const readerStyles: IReactReaderStyle = {
+// React Reader 样式配置（保留供将来使用）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _readerStyles: IReactReaderStyle = {
     container: {},
     readerArea: {},
     containerExpanded: {},

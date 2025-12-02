@@ -28,7 +28,7 @@ interface UseReaderHeartbeatReturn {
 }
 
 export function useReaderHeartbeat(options: UseReaderHeartbeatOptions): UseReaderHeartbeatReturn {
-  const { sessionId, bookId, enabled = true, onError } = options
+  const { sessionId, enabled = true, onError } = options
   
   // 使用 ref 存储所有状态，避免依赖变化
   const sessionIdRef = useRef(sessionId)

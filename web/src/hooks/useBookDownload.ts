@@ -157,11 +157,15 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
       
       const chunks: Uint8Array[] = []
       let receivedLength = 0
+      let readerDone = false
       
-      while (true) {
+      while (!readerDone) {
         const { done, value } = await reader.read()
         
-        if (done) break
+        if (done) {
+          readerDone = true
+          continue
+        }
         
         chunks.push(value)
         receivedLength += value.length

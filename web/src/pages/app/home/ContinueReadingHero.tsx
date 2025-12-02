@@ -104,7 +104,9 @@ function getLuminance(color: string): number {
       const b = parseInt(hex.slice(4, 6), 16) / 255
       return 0.299 * r + 0.587 * g + 0.114 * b
     }
-  } catch {}
+  } catch {
+    // Invalid hex color, return default luminance
+  }
   return 0.5
 }
 
@@ -184,7 +186,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                                     src={coverUrl}
                                     alt={title}
                                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                    onError={(e) => {
+                                    onError={() => {
                                         console.warn('[Hero] Image load error:', coverUrl)
                                         setImgError(true)
                                     }}

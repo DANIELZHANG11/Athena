@@ -85,6 +85,8 @@ export function getLuminance(color: string): number {
       const b = parseInt(hex.slice(4, 6), 16) / 255
       return 0.299 * r + 0.587 * g + 0.114 * b
     }
-  } catch {}
+  } catch {
+    // Invalid hex color, return default
+  }
   return 0.5
 }
