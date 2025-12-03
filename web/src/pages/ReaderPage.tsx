@@ -670,7 +670,7 @@ export default function ReaderPage() {
                                                     ocrRegions={pageRegions}
                                                     ocrImageWidth={ocrInfo?.imageWidth || 1240}
                                                     ocrImageHeight={ocrInfo?.imageHeight || 1754}
-                                                    debugOcr={ocrDebugMode}
+                                                    debugOcr={false}
                                                     onRenderSuccess={(page) => handlePageRenderSuccess(page, renderWidth)}
                                                 />
                                             </div>
