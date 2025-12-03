@@ -6,20 +6,30 @@
  * 2. 如果未缓存 → 下载完整书籍到 IndexedDB
  * 3. 从 IndexedDB 读取 Blob → 本地渲染
  * 4. 服务器只负责心跳同步和进度记录
+ * 
+ * OCR 文字叠加:
+ * 对于图片式 PDF：
+ * 1. 一次性下载完整 OCR 数据（gzip 压缩）
+ * 2. 存储到 IndexedDB 与书籍一起缓存
+ * 3. 本地渲染透明文字层，零服务器请求
+ * 4. 支持离线文字选择、复制和高亮
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
-import { Document, Page, pdfjs } from 'react-pdf'
+import { Document, pdfjs } from 'react-pdf'
 import { ReactReader, type IReactReaderStyle } from 'react-reader'
 import type { Rendition } from 'epubjs'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Download, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Download, AlertCircle, Eye, EyeOff, Type } from 'lucide-react'
 import { useReaderHeartbeat } from '@/hooks/useReaderHeartbeat'
+import { useSmartHeartbeat, type PullRequired, type NoteResult } from '@/hooks/useSmartHeartbeat'
 import { useReadingProgress, parsePdfLocation, parseEpubLocation, formatProgress } from '@/hooks/useReadingProgress'
 import { useBookDownload, formatFileSize } from '@/hooks/useBookDownload'
+import { PdfPageWithOcr } from '@/components/reader/PdfPageWithOcr'
+import { useOcrData, preloadOcrToMemory, clearOcrMemoryCache } from '@/hooks/useOcrData'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -93,9 +103,25 @@ export default function ReaderPage() {
     const locationHydratedRef = useRef(false)
     const syncNowRef = useRef<() => Promise<void>>(() => Promise.resolve())
     
+    // OCR 文字叠加层状态
+    const [ocrLayerEnabled, setOcrLayerEnabled] = useState(false)
+    const [ocrDebugMode, setOcrDebugMode] = useState(false)
+    const [isImageBasedPdf, setIsImageBasedPdf] = useState(false)
+    
     // 判断格式
     const isPdf = book?.original_format === 'pdf'
     const bookFormat = isPdf ? 'pdf' : 'epub'
+    
+    // OCR 数据管理 Hook（一次性下载 + 本地缓存）
+    const {
+        status: ocrStatus,
+        info: ocrInfo,
+        download: downloadOcrData,
+        getPageRegionsSync,
+    } = useOcrData({
+        bookId: bookId || '',
+        autoDownload: false,  // 手动触发下载
+    })
     
     // 使用 IndexedDB 下载 Hook
     const {
@@ -125,12 +151,41 @@ export default function ReaderPage() {
         enabled: !!bookId,
     })
     
-    // 心跳同步
+    // 心跳同步（阅读会话时长）
     const { updateProgress, syncNow } = useReaderHeartbeat({
         sessionId,
         bookId: bookId || '',
         enabled: !!sessionId,
         onError: (err) => console.warn('[Reader] Heartbeat error:', err),
+    })
+    
+    // 智能心跳同步（ADR-006: 版本对比、离线数据同步）
+    const {
+        state: syncState,
+        updateProgress: updateSyncProgress,
+        syncNow: smartSyncNow,
+    } = useSmartHeartbeat({
+        bookId: bookId || '',
+        enabled: !!bookId && !!book,
+        clientVersions: {
+            ocr: ocrStatus.cached ? `cached_${bookId}` : undefined,
+        },
+        onPullRequired: (pull: PullRequired) => {
+            // 当服务端有新的 OCR 数据时，自动下载
+            if (pull.ocr && !ocrStatus.cached && !ocrStatus.downloading) {
+                console.log('[Reader] Smart sync: OCR data available, downloading...')
+                downloadOcrData()
+            }
+        },
+        onNoteSyncResult: (results: NoteResult[]) => {
+            // 处理笔记同步结果
+            const conflicts = results.filter(r => r.status === 'conflict_copy')
+            if (conflicts.length > 0) {
+                console.log('[Reader] Smart sync: Note conflicts detected:', conflicts.length)
+                // TODO: 显示冲突解决对话框
+            }
+        },
+        onError: (err) => console.warn('[Reader] Smart sync error:', err),
     })
     
     useEffect(() => {
@@ -176,6 +231,23 @@ export default function ReaderPage() {
                         console.log('[Reader] Session started:', sid)
                     }
                 }
+                
+                // 3. 检查是否是图片式 PDF（OCR 状态由 useOcrData hook 管理）
+                if (bookData.original_format === 'pdf') {
+                    try {
+                        const ocrRes = await fetch(`/api/v1/books/${bookId}/ocr`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                        if (ocrRes.ok) {
+                            const ocrData = await ocrRes.json()
+                            const isImageBased = ocrData.data?.is_image_based || false
+                            setIsImageBasedPdf(isImageBased)
+                            console.log('[Reader] PDF type:', { isImageBased })
+                        }
+                    } catch (e) {
+                        console.log('[Reader] OCR check failed, using default text layer')
+                    }
+                }
 
             } catch (e: any) {
                 console.error('[Reader] Init error:', e)
@@ -189,8 +261,33 @@ export default function ReaderPage() {
         
         return () => {
             syncNowRef.current()
+            // 清理 OCR 内存缓存
+            if (bookId) clearOcrMemoryCache(bookId)
         }
     }, [bookId])
+    
+    // OCR 数据加载：当检测到图片式 PDF 且有可用 OCR 数据时自动下载
+    useEffect(() => {
+        if (!bookId || !isImageBasedPdf) return
+        
+        // 如果已经有本地缓存，启用 OCR 层
+        if (ocrStatus.cached) {
+            setOcrLayerEnabled(true)
+            console.log('[Reader] OCR data loaded from cache, enabling OCR layer')
+            return
+        }
+        
+        // 如果服务器有 OCR 数据但本地没有，自动下载
+        if (ocrStatus.available && !ocrStatus.cached && !ocrStatus.downloading) {
+            console.log('[Reader] Downloading OCR data...')
+            downloadOcrData().then((success) => {
+                if (success) {
+                    setOcrLayerEnabled(true)
+                    console.log('[Reader] OCR data downloaded and enabled')
+                }
+            })
+        }
+    }, [bookId, isImageBasedPdf, ocrStatus.available, ocrStatus.cached, ocrStatus.downloading, downloadOcrData])
     
     // 保存 updateProgress 的最新引用
     const updateProgressRef = useRef(updateProgress)
@@ -407,6 +504,8 @@ export default function ReaderPage() {
         if (visiblePage !== pageNumber) {
             setPageNumber(visiblePage)
             syncPdfProgress(visiblePage, numPages)
+            
+            // OCR 数据已一次性加载到本地，无需预加载
         }
     }, [numPages, pageNumber, syncPdfProgress])
 
@@ -500,7 +599,33 @@ export default function ReaderPage() {
                     <h1 className="text-sm font-medium truncate max-w-[200px]">{book?.title}</h1>
                     <span className="text-xs text-secondary-label">{formatProgress(currentProgress)}</span>
                 </div>
-                <div className="w-[70px]" />
+                {/* OCR 文字层开关（仅图片式 PDF 显示） */}
+                {isPdf && isImageBasedPdf ? (
+                    <div className="flex items-center gap-2">
+                        {ocrStatus.downloading && (
+                            <span className="text-xs text-secondary-label flex items-center">
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                {ocrStatus.progress}%
+                            </span>
+                        )}
+                        {ocrStatus.cached && ocrInfo && (
+                            <span className="text-xs text-secondary-label hidden sm:block">
+                                {ocrInfo.totalRegions.toLocaleString()} 区域
+                            </span>
+                        )}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setOcrLayerEnabled(!ocrLayerEnabled)}
+                            disabled={!ocrStatus.cached}
+                            title={ocrLayerEnabled ? '关闭文字选择层' : '开启文字选择层'}
+                        >
+                            {ocrLayerEnabled ? <Type className="h-4 w-4 text-system-blue" /> : <Type className="h-4 w-4" />}
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="w-[70px]" />
+                )}
             </div>
 
             {/* Content - 使用 flex-1 和 min-h-0 确保正确计算高度 */}
@@ -531,16 +656,24 @@ export default function ReaderPage() {
                                     itemContent={(index) => {
                                         const pageIndex = index + 1
                                         const renderWidth = getPdfRenderWidth()
+                                        // 从本地缓存同步获取当前页的 OCR 区域
+                                        const pageRegions = ocrLayerEnabled && isImageBasedPdf 
+                                            ? getPageRegionsSync(pageIndex)
+                                            : []
                                         return (
                                             <div
                                                 key={`page-${pageIndex}`}
                                                 className="mb-8 flex justify-center"
                                             >
-                                                <Page
+                                                <PdfPageWithOcr
+                                                    bookId={bookId!}
                                                     pageNumber={pageIndex}
-                                                    renderTextLayer
-                                                    renderAnnotationLayer={false}
                                                     width={renderWidth}
+                                                    enableOcrLayer={ocrLayerEnabled && isImageBasedPdf}
+                                                    ocrRegions={pageRegions}
+                                                    ocrImageWidth={ocrInfo?.imageWidth || 1240}
+                                                    ocrImageHeight={ocrInfo?.imageHeight || 1754}
+                                                    debugOcr={ocrDebugMode}
                                                     onRenderSuccess={(page) => handlePageRenderSuccess(page, renderWidth)}
                                                 />
                                             </div>

@@ -115,10 +115,215 @@ POST /books/upload_complete
 │    ├─ 从 PDF 提取 metadata              │
 │    └─ 智能更新 title/author             │
 │        ↳ 仅当当前标题为文件名格式时覆盖   │
+├─────────────────────────────────────────┤
+│ 4. tasks.initial_book_analysis          │
+│    ├─ 检测书籍类型（文字型/图片型）       │
+│    ├─ 更新 is_digitalized 字段          │
+│    └─ 根据类型决定后续处理流程           │
+│        ├─ 文字型 → 直接触发向量索引      │
+│        └─ 图片型 → 通知前端，等待用户决策 │
 └─────────────────────────────────────────┘
     ↓
 书籍可阅读 (WebSocket 通知前端刷新)
 ```
+
+#### B.2 OCR 与向量索引触发机制（⚠️ 重要架构决策）
+
+**核心原则**：
+1. **向量索引是免费服务**，对所有书籍自动执行
+2. **OCR 是收费/限额服务**，由用户主动触发
+3. 图片型 PDF 未经 OCR 前，无法生成向量索引
+
+**书籍类型判断**：
+| 类型 | 判断条件 | 后续处理 |
+|-----|---------|---------|
+| 文字型 EPUB | `original_format = 'epub'` | 直接向量索引 |
+| 文字型 PDF | 初检有文字层 (`is_digitalized = true`) | 直接向量索引 |
+| 图片型 PDF | 初检无文字层 (`is_digitalized = false`) | 等待用户触发 OCR |
+| 转换后 EPUB | MOBI/AZW3/FB2 转换而来 | 直接向量索引 |
+
+**图片型 PDF 处理流程**：
+```
+初检发现图片型 PDF (is_digitalized = false)
+    ↓
+服务端发送 WebSocket/心跳 事件到前端
+    ↓
+前端弹出提示对话框：
+┌──────────────────────────────────────────────────────────────┐
+│  📖 书籍初检完成                                              │
+│                                                              │
+│  您上传的《经济学原理》经过雅典娜初步检查，此书为图片形式的      │
+│  PDF 电子书。为了获得更好的阅读、笔记以及 AI 提问体验，        │
+│  我们建议您对此书进行图片转文本（OCR）服务。                   │
+│                                                              │
+│  [稍后再处理]                            [🚀 马上转换]        │
+└──────────────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────┬───────────────────────────────────────┐
+│ 用户点击"马上转换"   │ 用户点击"稍后再处理"                    │
+├─────────────────────┼───────────────────────────────────────┤
+│ POST /books/{id}/ocr│ 关闭对话框                             │
+│       ↓             │       ↓                               │
+│ 检查用户 OCR 配额    │ 书籍卡片 ⋮ 菜单显示 "OCR 服务" 选项    │
+│       ↓             │       ↓                               │
+│ 任务进入队列         │ 用户随时可从菜单触发 OCR               │
+│       ↓             │                                       │
+│ 前端提示：           │                                       │
+│ "OCR 已进入排队，    │                                       │
+│  预计 XX 分钟完成，  │                                       │
+│  现在可继续阅读，    │                                       │
+│  但暂无法做笔记和    │                                       │
+│  使用 AI 服务"      │                                       │
+│       ↓             │                                       │
+│ OCR 完成后自动触发   │                                       │
+│ 向量索引             │                                       │
+└─────────────────────┴───────────────────────────────────────┘
+```
+
+**API 端点**：
+```
+POST /api/v1/books/{book_id}/ocr
+├─ 权限：用户已登录
+├─ 前置检查：
+│   ├─ 书籍存在且属于当前用户
+│   ├─ 书籍是图片型 (is_digitalized = false)
+│   └─ 用户 OCR 配额充足 (free_ocr_usage < limit 或 membership_tier 允许)
+├─ 响应 200：
+│   {
+│     "status": "queued",
+│     "queue_position": 3,
+│     "estimated_minutes": 15
+│   }
+├─ 响应 403：QUOTA_EXCEEDED (OCR 配额不足)
+└─ 响应 400：ALREADY_DIGITALIZED (已经是文字型)
+```
+
+**books 表新增字段（OCR 相关）**：
+```sql
+ALTER TABLE books ADD COLUMN ocr_status VARCHAR(20) DEFAULT NULL;
+-- 可选值: NULL (未检测/文字型), 'pending' (待处理), 'processing' (处理中), 'completed' (已完成), 'failed' (失败)
+
+ALTER TABLE books ADD COLUMN ocr_requested_at TIMESTAMPTZ;
+ALTER TABLE books ADD COLUMN vector_indexed_at TIMESTAMPTZ;
+```
+
+**任务链触发规则**：
+| 触发条件 | 执行任务 |
+|---------|---------|
+| 文字型书籍上传完成 | `tasks.index_book_vectors` |
+| OCR 任务完成 | `tasks.index_book_vectors` (链式调用) |
+| 用户手动重建索引 | `tasks.reindex_book_vectors` (管理员功能) |
+
+#### B.3 元数据确认机制（Metadata Confirmation）
+
+**核心原则**：
+1. **所有书籍上传后都需要用户确认元数据**
+2. 元数据（书名、作者）会影响 AI 对话的准确性
+3. 用户可以选择不填写（私人资料场景），但需明确告知影响
+
+**触发时机**：
+- 后台任务 `extract_book_metadata` 完成后
+- 无论是否成功提取到元数据，都通知前端弹出确认对话框
+
+**前端交互流程**：
+```
+元数据提取任务完成
+    ↓
+服务端发送 WebSocket/心跳 事件: metadata_extracted
+    ↓
+前端弹出元数据确认对话框（根据提取结果显示不同内容）
+
+┌─────────────────────────────────────────────────────────────────┐
+│  📚 请确认书籍信息                                               │
+│                                                                 │
+│  [情况 A: 成功提取到元数据]                                       │
+│  雅典娜已从您上传的文件中提取到以下信息，请确认是否正确：           │
+│                                                                 │
+│  书籍名称: [经济学原理________________] ← 可编辑                  │
+│  作者:     [曼昆____________________] ← 可编辑                   │
+│                                                                 │
+│  [情况 B: 未提取到元数据]                                         │
+│  雅典娜未能从您上传的文件中提取到书籍信息。                        │
+│  为了获得更好的 AI 对话体验，建议您填写以下信息：                   │
+│                                                                 │
+│  书籍名称: [________________________] ← 空，建议填写              │
+│  作者:     [________________________] ← 空，可选                  │
+│                                                                 │
+│  ℹ️ 提示：书籍名称和作者信息将帮助 AI 提供更精准的回答。           │
+│      如果这是私人资料而非书籍，可跳过此步骤。                       │
+│                                                                 │
+│  [跳过]                                          [✓ 确认]        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**API 端点**：
+```
+PATCH /api/v1/books/{book_id}/metadata
+├─ 权限：用户已登录，书籍属于当前用户
+├─ 请求体：
+│   {
+│     "title": "经济学原理",       // 可选
+│     "author": "曼昆",            // 可选
+│     "confirmed": true            // 标记用户已确认
+│   }
+├─ 响应 200：
+│   {
+│     "id": "uuid",
+│     "title": "经济学原理",
+│     "author": "曼昆",
+│     "metadata_confirmed": true,
+│     "metadata_version": "sha256:abc123"
+│   }
+└─ 支持 If-Match 乐观锁
+```
+
+**books 表新增字段**：
+```sql
+ALTER TABLE books ADD COLUMN metadata_confirmed BOOLEAN DEFAULT FALSE;
+ALTER TABLE books ADD COLUMN metadata_confirmed_at TIMESTAMPTZ;
+```
+
+**书籍卡片菜单逻辑**：
+```typescript
+// BookCard 组件的 ⋮ 下拉菜单
+const menuItems = [
+  { label: '查看详情', action: 'view' },
+  { label: '添加到书架', action: 'shelf' },
+  // ✨ 新增：编辑元数据选项（始终显示）
+  {
+    label: '✏️ 编辑书籍信息',
+    action: 'edit_metadata',
+    description: '修改书籍名称和作者'
+  },
+  // 仅当 is_digitalized = false 且 ocr_status != 'processing' 时显示
+  book.is_digitalized === false && book.ocr_status !== 'processing' && {
+    label: '🔤 OCR 服务',
+    action: 'ocr',
+    description: '将图片转换为可选择文本'
+  },
+  // 仅当 ocr_status = 'processing' 时显示
+  book.ocr_status === 'processing' && {
+    label: '⏳ OCR 处理中...',
+    disabled: true
+  },
+  { label: '删除', action: 'delete', danger: true },
+].filter(Boolean);
+```
+
+**与 AI 对话的关系**：
+> ⚠️ **重要**：书籍的 `title` 和 `author` 字段会作为上下文发送给上游 AI 模型。
+> 
+> 在 AI 对话的系统提示词中，我们会包含：
+> ```
+> 用户正在阅读的书籍：《{book.title}》，作者：{book.author}
+> ```
+> 
+> 这有助于 AI 模型：
+> 1. 理解用户问题的背景上下文
+> 2. 提供与书籍内容相关的精准回答
+> 3. 避免混淆同名但不同版本的书籍
+>
+> 如果用户上传的是私人资料（非书籍），可以跳过元数据确认，此时 AI 对话将仅基于文档内容本身。
 
 **元数据提取规则**：
 - 标题更新判断条件（满足任一则覆盖）：

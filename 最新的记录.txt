@@ -1,45 +1,168 @@
-BookCardMenu.tsx:120 
- 
- DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
-BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
-BookCardMenu.tsx:135 
- [BookCardMenu] Delete failed: 500 
-{status: 'error', error: {…}}
-BookCardMenu.tsx:119 [BookCardMenu] Deleting book: ae106285-bff5-4b1c-84e7-7b9d0b69e720
-BookCardMenu.tsx:120 
- 
- DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
-BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
-BookCardMenu.tsx:135 
- [BookCardMenu] Delete failed: 500 
-{status: 'error', error: {…}}
-LibraryPage.tsx:85 [LibraryPage] Fetching books list...
-AuthGuard.tsx:17 [AuthGuard] Checking auth... 
-{isAuthenticated: true, path: '/app/library'}
-AuthGuard.tsx:43 [AuthGuard] Token valid
-api.ts:17 [API] Request: GET /books 
-{hasToken: true, isAuthenticated: true}
+useOcrData.ts:138   GET http://localhost:5173/api/v1/books/8d08adbd-131d-4b17-a4c6-81853f3e0b08/ocr 500 (Internal Server Error)
+(匿名) @ useOcrData.ts:138
+init @ useOcrData.ts:308
+await in init
+(匿名) @ useOcrData.ts:315
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+commitRootImpl @ react-dom.development.js:26974
+commitRoot @ react-dom.development.js:26721
+performSyncWorkOnRoot @ react-dom.development.js:26156
+flushSyncCallbacks @ react-dom.development.js:12042
+(匿名) @ react-dom.development.js:25690
+ReaderPage.tsx:178 [Reader] Book info loaded: {id: '8d08adbd-131d-4b17-a4c6-81853f3e0b08', title: '中国经济 (第2版) _ 适应与增长-巴里·诺顿', format: 'pdf', size: 33665748}
+api.ts:63 [API] Response: 200 /reading-sessions/progress
+useReadingProgress.ts:54 [ReadingProgress] Found progress for book: 8d08adbd-131d-4b17-a4c6-81853f3e0b08 {progress: 0.011075949367088608, lastLocation: {…}, lastLocationType: 'object'}
+ReaderPage.tsx:273 [Reader] Restoring progress: {progress: 0.011075949367088608, lastLocation: {…}}
+ReaderPage.tsx:292 [Reader] Setting PDF page: 7
+bookStorage.ts:157 [BookStorage] Found cached book 8d08adbd-131d-4b17-a4c6-81853f3e0b08, size: 33665748 bytes
+useBookDownload.ts:108 [BookDownload] Book 8d08adbd-131d-4b17-a4c6-81853f3e0b08 found in cache, size: 33665748
+ReaderPage.tsx:139 [Reader] Book ready from IndexedDB: blob:http://localhost:5173/a1ce619c-3ad2-4624-b063-91d8e1b3dfab
+ReaderPage.tsx:201 [Reader] Session started: 25f79fbb-16b8-49f4-8ac2-492f79c93db4
+useReaderHeartbeat.ts:116 [Heartbeat] Starting for session: 25f79fbb-16b8-49f4-8ac2-492f79c93db4
+ReaderPage.tsx:208   GET http://localhost:5173/api/v1/books/8d08adbd-131d-4b17-a4c6-81853f3e0b08/ocr 500 (Internal Server Error)
+init @ ReaderPage.tsx:208
+await in init
+(匿名) @ ReaderPage.tsx:230
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+commitRootImpl @ react-dom.development.js:26974
+commitRoot @ react-dom.development.js:26721
+performSyncWorkOnRoot @ react-dom.development.js:26156
+flushSyncCallbacks @ react-dom.development.js:12042
+(匿名) @ react-dom.development.js:25690
+ReaderPage.tsx:408 [Reader] PDF loaded, pages: 632
+useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '25f79fbb-16b8-49f4-8ac2-492f79c93db4', delta_ms: 2182, progress: 0.011075949367088608, last_location: '{"page":7}'}delta_ms: 2182last_location: "{\"page\":7}"progress: 0.011075949367088608sessionId: "25f79fbb-16b8-49f4-8ac2-492f79c93db4"[[Prototype]]: Object
+api.ts:17 [API] Request: POST /reading-sessions/25f79fbb-16b8-49f4-8ac2-492f79c93db4/heartbeat {hasToken: true, isAuthenticated: true}hasToken: trueisAuthenticated: true[[Prototype]]: Objectconstructor: ƒ Object()hasOwnProperty: ƒ hasOwnProperty()isPrototypeOf: ƒ isPrototypeOf()propertyIsEnumerable: ƒ propertyIsEnumerable()toLocaleString: ƒ toLocaleString()toString: ƒ toString()valueOf: ƒ valueOf()__defineGetter__: ƒ __defineGetter__()__defineSetter__: ƒ __defineSetter__()__lookupGetter__: ƒ __lookupGetter__()__lookupSetter__: ƒ __lookupSetter__()__proto__: (...)get __proto__: ƒ __proto__()set __proto__: ƒ __proto__()
 api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /books
-LibraryPage.tsx:87 [LibraryPage] Books response: 
-{status: 'success', data: {…}}
-LibraryPage.tsx:103 [LibraryPage] Loaded 9 books
-bookStorage.ts:126 [BookStorage] Found cached book ae106285-bff5-4b1c-84e7-7b9d0b69e720, size: 12653954 bytes
-bookStorage.ts:128 [BookStorage] Book bf95fe62-8bb9-4bc4-b08e-6b4c1e7f656c not found in cache
-bookStorage.ts:128 [BookStorage] Book 7b7c4068-9da3-44fe-b4a7-fcd40112ba2f not found in cache
-bookStorage.ts:128 [BookStorage] Book 361b7e3b-fda7-4990-8bc6-1fe001156e09 not found in cache
-bookStorage.ts:126 [BookStorage] Found cached book e05a8bba-c16e-4bb1-8c5c-dfbe27dad225, size: 512200 bytes
-bookStorage.ts:126 [BookStorage] Found cached book d0e0c365-016f-4516-8b01-eb2a8230b726, size: 8352389 bytes
-bookStorage.ts:128 [BookStorage] Book 9cb5470c-02d5-4bfd-8808-7306d0abb668 not found in cache
-bookStorage.ts:128 [BookStorage] Book 006931c7-f548-42e6-8c1a-2c4d30a16209 not found in cache
-bookStorage.ts:126 [BookStorage] Found cached book 374def7e-4aa4-4f13-873e-08c0cc217b36, size: 18781152 bytes
-content_script.js:7165 Content limit: 612032839.68
-BookCardMenu.tsx:119 [BookCardMenu] Deleting book: ae106285-bff5-4b1c-84e7-7b9d0b69e720
-BookCardMenu.tsx:120 
- 
- DELETE http://localhost:5173/api/v1/books/ae106285-bff5-4b1c-84e7-7b9d0b69e720 500 (Internal Server Error)
-BookCardMenu.tsx:124 [BookCardMenu] Delete response status: 500
-BookCardMenu.tsx:135 
- [BookCardMenu] Delete failed: 500 
-{status: 'error', error: {…}}
-﻿
+api.ts:63 [API] Response: 204 /reading-sessions/25f79fbb-16b8-49f4-8ac2-492f79c93db4/heartbeat
+useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 2182 ms, progress: 0.011075949367088608
+3content_script.js:7165 Content limit: 612032839.68
+useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '25f79fbb-16b8-49f4-8ac2-492f79c93db4', delta_ms: 27823, progress: 0.011075949367088608, last_location: '{"page":7}'}delta_ms: 27823last_location: "{\"page\":7}"progress: 0.011075949367088608sessionId: "25f79fbb-16b8-49f4-8ac2-492f79c93db4"[[Prototype]]: Object
+api.ts:17 [API] Request: POST /reading-sessions/25f79fbb-16b8-49f4-8ac2-492f79c93db4/heartbeat {hasToken: true, isAuthenticated: true}
+api.ts:46 [API] Using existing token
+api.ts:63 [API] Response: 204 /reading-sessions/25f79fbb-16b8-49f4-8ac2-492f79c93db4/heartbeat
+useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 27823 ms, progress: 0.011075949367088608
+3content_script.js:7165 Content limit: 612032839.68
+
+
+请求 URL
+http://localhost:5173/api/v1/books/8d08adbd-131d-4b17-a4c6-81853f3e0b08/ocr
+请求方法
+GET
+状态代码
+500 Internal Server Error
+远程地址
+[::1]:5173
+引用站点策略
+strict-origin-when-cross-origin
+connection
+close
+content-length
+79
+content-type
+application/json
+date
+Tue, 02 Dec 2025 12:49:59 GMT
+server
+uvicorn
+vary
+Origin
+accept
+*/*
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,zh-TW;q=0.5,fr-FR;q=0.4,fr;q=0.3,ja;q=0.2
+authorization
+Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiIyZDlmY2NhZC01NDY5LTQ1OTgtOGZmZi1jZDJjNTA4NWI4NzEiLCJpYXQiOjE3NjQ2NzY2NDksImV4cCI6MTc2NDY4MDI0OX0.cOYrwYy2OG2jcjKv0WNLyosZqXXFxksdj13iGjS5SlE
+connection
+keep-alive
+cookie
+remember_token=eyJyYW5kb20iOiI1MzA5NTcxN2E4ZWQzOTk3N2IwMiIsInVzZXIiOiIxIn0.DGhbROivOUzr0mePQMjaV3eKWRE; csrftoken=s0ZFWaJosBZagEpChD8LJ60uWYy4Vlyr; _pk_id.1.1fff=b63f74256322fb3d.1759076444.
+dnt
+1
+host
+localhost:5173
+referer
+http://localhost:5173/app/read/8d08adbd-131d-4b17-a4c6-81853f3e0b08
+sec-ch-ua
+"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+empty
+sec-fetch-mode
+cors
+sec-fetch-site
+same-origin
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0
+
+
+请求 URL
+http://localhost:5173/api/v1/books/8d08adbd-131d-4b17-a4c6-81853f3e0b08/ocr
+请求方法
+GET
+状态代码
+500 Internal Server Error
+远程地址
+[::1]:5173
+引用站点策略
+strict-origin-when-cross-origin
+connection
+close
+content-length
+79
+content-type
+application/json
+date
+Tue, 02 Dec 2025 12:49:59 GMT
+server
+uvicorn
+vary
+Origin
+accept
+*/*
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,zh-TW;q=0.5,fr-FR;q=0.4,fr;q=0.3,ja;q=0.2
+authorization
+Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiIyZDlmY2NhZC01NDY5LTQ1OTgtOGZmZi1jZDJjNTA4NWI4NzEiLCJpYXQiOjE3NjQ2NzY2NDksImV4cCI6MTc2NDY4MDI0OX0.cOYrwYy2OG2jcjKv0WNLyosZqXXFxksdj13iGjS5SlE
+connection
+keep-alive
+cookie
+remember_token=eyJyYW5kb20iOiI1MzA5NTcxN2E4ZWQzOTk3N2IwMiIsInVzZXIiOiIxIn0.DGhbROivOUzr0mePQMjaV3eKWRE; csrftoken=s0ZFWaJosBZagEpChD8LJ60uWYy4Vlyr; _pk_id.1.1fff=b63f74256322fb3d.1759076444.
+dnt
+1
+host
+localhost:5173
+referer
+http://localhost:5173/app/read/8d08adbd-131d-4b17-a4c6-81853f3e0b08
+sec-ch-ua
+"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"Windows"
+sec-fetch-dest
+empty
+sec-fetch-mode
+cors
+sec-fetch-site
+same-origin
+user-agent
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0

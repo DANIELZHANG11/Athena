@@ -536,3 +536,198 @@ async def delete_highlight(highlight_id: str, quota=Depends(require_write_permis
         )
     delete_highlight_from_index(highlight_id)
     return {"status": "success"}
+
+
+# =============================================
+# 笔记冲突处理 API (ADR-006)
+# =============================================
+
+@notes_router.get("/conflicts")
+async def list_note_conflicts(auth=Depends(require_user)):
+    """
+    获取当前用户所有存在冲突的笔记。
+    
+    冲突笔记是指 conflict_of IS NOT NULL 的记录，表示该笔记是某个原始笔记的冲突副本。
+    返回原始笔记和冲突副本的配对信息，供用户在 UI 上选择保留哪个版本。
+    """
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 查询所有冲突副本及其原始笔记
+        res = await conn.execute(
+            text("""
+                SELECT 
+                    orig.id::text as original_id,
+                    orig.content as original_content,
+                    orig.updated_at as original_updated_at,
+                    orig.device_id as original_device_id,
+                    conflict.id::text as conflict_copy_id,
+                    conflict.content as conflict_content,
+                    conflict.updated_at as conflict_updated_at,
+                    conflict.device_id as conflict_device_id,
+                    orig.book_id::text as book_id,
+                    b.title as book_title
+                FROM notes conflict
+                JOIN notes orig ON conflict.conflict_of = orig.id
+                JOIN books b ON orig.book_id = b.id
+                WHERE conflict.user_id = current_setting('app.user_id')::uuid
+                  AND conflict.conflict_of IS NOT NULL
+                  AND conflict.deleted_at IS NULL
+                  AND orig.deleted_at IS NULL
+                ORDER BY conflict.updated_at DESC
+            """)
+        )
+        rows = res.fetchall()
+        
+        conflicts = []
+        for r in rows:
+            conflicts.append({
+                "originalId": r[0],
+                "originalContent": r[1],
+                "originalUpdatedAt": str(r[2]) if r[2] else None,
+                "originalDeviceId": r[3],
+                "conflictCopyId": r[4],
+                "conflictContent": r[5],
+                "conflictUpdatedAt": str(r[6]) if r[6] else None,
+                "conflictDeviceId": r[7],
+                "bookId": r[8],
+                "bookTitle": r[9]
+            })
+        
+        return {"conflicts": conflicts}
+
+
+@notes_router.post("/{note_id}/resolve-conflict")
+async def resolve_note_conflict(
+    note_id: str,
+    body: dict = Body(...),
+    auth=Depends(require_user),
+):
+    """
+    解决笔记冲突。用户选择保留哪个版本或手动合并。
+    
+    Request Body:
+    {
+        "resolution": "keep_original" | "keep_conflict" | "merge",
+        "mergedContent"?: string  // 仅当 resolution=merge 时需要
+    }
+    
+    处理逻辑:
+    - keep_original: 删除冲突副本，保留原始笔记
+    - keep_conflict: 用冲突副本内容更新原始笔记，然后删除冲突副本
+    - merge: 用 mergedContent 更新原始笔记，然后删除冲突副本
+    """
+    user_id, _ = auth
+    resolution = body.get("resolution")
+    merged_content = body.get("mergedContent")
+    
+    if resolution not in ("keep_original", "keep_conflict", "merge"):
+        raise HTTPException(status_code=400, detail="invalid_resolution")
+    
+    if resolution == "merge" and not merged_content:
+        raise HTTPException(status_code=400, detail="merged_content_required")
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 检查 note_id 是否是冲突副本
+        res = await conn.execute(
+            text("""
+                SELECT id, conflict_of, content
+                FROM notes
+                WHERE id = cast(:id as uuid)
+                  AND user_id = current_setting('app.user_id')::uuid
+                  AND deleted_at IS NULL
+            """),
+            {"id": note_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="note_not_found")
+        
+        note_id_db, conflict_of, conflict_content = row
+        
+        if not conflict_of:
+            raise HTTPException(status_code=400, detail="not_a_conflict_copy")
+        
+        original_id = str(conflict_of)
+        
+        if resolution == "keep_original":
+            # 删除冲突副本，保留原始笔记
+            await conn.execute(
+                text("""
+                    UPDATE notes SET deleted_at = now(), updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": note_id},
+            )
+            final_content = None  # 保留原始内容，不需要获取
+            
+        elif resolution == "keep_conflict":
+            # 用冲突副本内容更新原始笔记
+            await conn.execute(
+                text("""
+                    UPDATE notes SET 
+                        content = :content,
+                        tsv = to_tsvector('simple', coalesce(:content, '')),
+                        version = version + 1,
+                        updated_at = now()
+                    WHERE id = cast(:orig_id as uuid)
+                """),
+                {"content": conflict_content, "orig_id": original_id},
+            )
+            # 删除冲突副本
+            await conn.execute(
+                text("""
+                    UPDATE notes SET deleted_at = now(), updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": note_id},
+            )
+            final_content = conflict_content
+            
+        else:  # merge
+            # 用合并内容更新原始笔记
+            await conn.execute(
+                text("""
+                    UPDATE notes SET 
+                        content = :content,
+                        tsv = to_tsvector('simple', coalesce(:content, '')),
+                        version = version + 1,
+                        updated_at = now()
+                    WHERE id = cast(:orig_id as uuid)
+                """),
+                {"content": merged_content, "orig_id": original_id},
+            )
+            # 删除冲突副本
+            await conn.execute(
+                text("""
+                    UPDATE notes SET deleted_at = now(), updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": note_id},
+            )
+            final_content = merged_content
+        
+        # 获取最终的笔记内容
+        if final_content is None:
+            final_res = await conn.execute(
+                text("SELECT content FROM notes WHERE id = cast(:id as uuid)"),
+                {"id": original_id},
+            )
+            final_row = final_res.fetchone()
+            final_content = final_row[0] if final_row else ""
+    
+    # 删除冲突副本的搜索索引
+    delete_note_from_index(note_id)
+    
+    return {
+        "noteId": original_id,
+        "content": final_content,
+        "resolved": True
+    }

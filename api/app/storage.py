@@ -79,6 +79,21 @@ def read_head(bucket: str, key: str, length: int = 65536) -> bytes | None:
         return None
 
 
+def read_full(bucket: str, key: str) -> bytes | None:
+    """读取完整文件内容"""
+    try:
+        client = get_s3()
+        ensure_bucket(client, bucket)
+        resp = client.get_object(Bucket=bucket, Key=key)
+        body = resp.get("Body")
+        if not body:
+            return None
+        data = body.read()
+        return data
+    except Exception:
+        return None
+
+
 def stat_etag(bucket: str, key: str) -> str | None:
     try:
         client = get_s3()

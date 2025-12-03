@@ -9,5 +9,5 @@ celery_app = Celery("athena", broker=broker, backend=backend)
 
 # 显式导入任务模块以确保任务被注册
 celery_app.conf.update(
-    imports=["app.tasks"],
+    imports=["app.tasks", "app.search_sync"],
 )

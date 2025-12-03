@@ -140,3 +140,602 @@
 ### 4.6 Billing (`billing.yaml`) [待完善]
 *   `GET /api/v1/billing/plans`: 获取订阅方案
 *   `POST /api/v1/billing/checkout`: 创建支付会话
+
+### 4.7 Books Metadata (`books.yaml`)
+*   `PATCH /api/v1/books/{id}/metadata`: 更新书籍元数据（书名、作者）
+*   `GET /api/v1/books/{id}`: 书籍详情（包含 `metadata_confirmed` 状态）
+
+---
+
+## 5. 智能心跳同步协议 (Smart Heartbeat Sync Protocol)
+
+> **状态**: PROPOSED（待实施）
+> **关联 ADR**: `03 - 系统架构与ADR` ADR-006
+
+### 5.1 协议概述
+
+智能心跳同步协议用于解决多端数据同步问题，核心设计理念：
+
+1. **版本指纹对比**：客户端携带本地数据版本，服务端比对后告知需要拉取的数据
+2. **双向同步**：客户端上传阅读进度等用户数据，服务端返回 OCR 等系统数据更新
+3. **按需拉取**：避免每次心跳都传输大量数据，仅在版本变化时触发下载
+
+### 5.2 接口定义
+
+#### `POST /api/v1/sync/heartbeat`
+
+**Request Headers**:
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```typescript
+{
+  // 当前书籍上下文（可选，不传则同步所有书籍）
+  "bookId"?: string,
+  
+  // 设备标识（用于多设备冲突解决）
+  "deviceId": string,
+  
+  // 客户端已有的服务端权威数据版本
+  "clientVersions": {
+    "ocr"?: string,           // 例如 "sha256:abc12345"
+    "metadata"?: string,
+    "vectorIndex"?: string
+  },
+  
+  // 客户端权威数据（待上传）
+  "clientUpdates": {
+    // 阅读进度（客户端权威）
+    "readingProgress"?: {
+      "bookId": string,
+      "position": {
+        "page"?: number,
+        "cfi"?: string,        // EPUB CFI
+        "offset"?: number      // 页内偏移 0-1
+      },
+      "progress": number,      // 0-100
+      "timestamp": string      // ISO 8601
+    },
+    
+    // 离线创建的笔记（待上传）
+    "pendingNotes"?: Array<{
+      "clientId": string,      // 客户端临时 ID
+      "bookId": string,
+      "content": string,
+      "location": string,
+      "createdAt": string
+    }>,  // ⚠️ 单次最多 50 条
+    
+    // 离线创建的高亮（待上传）
+    "pendingHighlights"?: Array<{
+      "clientId": string,
+      "bookId": string,
+      "text": string,
+      "startLocation": string,
+      "endLocation": string,
+      "color"?: string,
+      "createdAt": string
+    }>,  // ⚠️ 单次最多 50 条
+    
+    // 是否还有更多待同步数据
+    "hasMore"?: boolean
+  }
+}
+```
+
+> **⚠️ 大 Payload 防护**
+> 
+> 为防止用户离线期间创建大量笔记/高亮导致请求体过大（超过 Nginx 默认 1MB 限制），采用分批上传策略：
+> - 单次心跳最多携带 50 条 notes + 50 条 highlights
+> - 当 `hasMore = true` 时，客户端应在收到响应后立即发起下一次心跳
+> - 后端请求体限制设为 512KB
+
+**Response Body**:
+```typescript
+{
+  // 服务端权威数据的最新版本
+  "serverVersions": {
+    "ocr": string,              // 当前 OCR 数据版本
+    "metadata": string,         // 当前元数据版本
+    "vectorIndex"?: string      // 向量索引版本（可选）
+  },
+  
+  // 需要客户端拉取的数据清单
+  "pullRequired": {
+    "ocr"?: {
+      "url": string,            // 下载地址
+      "size": number,           // 预估大小 (bytes)
+      "priority": "high" | "normal" | "low"
+    },
+    "metadata"?: {
+      "url": string,
+      "size": number
+    }
+  },
+  
+  // 客户端上传数据的处理结果
+  "pushResults": {
+    // 阅读进度处理结果
+    "readingProgress"?: "accepted" | "conflict",
+    
+    // 笔记创建结果
+    "notes"?: Array<{
+      "clientId": string,       // 客户端临时 ID
+      "serverId"?: string,      // 服务端分配的 UUID
+      "status": "created" | "conflict_copy" | "rejected",
+      "conflictId"?: string,    // 如果 status=conflict_copy，返回冲突副本 ID
+      "message"?: string
+    }>,
+    
+    // 高亮创建结果
+    "highlights"?: Array<{
+      "clientId": string,
+      "serverId"?: string,
+      "status": "created" | "conflict" | "merged" | "rejected",
+      "message"?: string
+    }>
+  },
+  
+  // 服务端建议的下次心跳间隔（毫秒）
+  "nextHeartbeatMs": number,    // 默认 30000
+  
+  // 待处理的服务端事件（可选，用于补偿 WebSocket 断连期间的事件）
+  "pendingEvents"?: Array<{
+    "type": "ocr_ready" | "metadata_updated" | "vector_ready",
+    "bookId": string,
+    "version": string,
+    "createdAt": string
+  }>
+}
+```
+
+**错误响应**:
+
+| HTTP Status | detail Code | 说明 |
+|------------|-------------|------|
+| 400 | `invalid_device_id` | 设备 ID 格式错误 |
+| 401 | `unauthorized` | Token 无效或过期 |
+| 404 | `book_not_found` | 指定的书籍不存在 |
+| 429 | `rate_limited` | 心跳频率过高 |
+
+### 5.3 版本指纹格式
+
+版本指纹采用内容哈希的前 16 位：
+
+```
+格式: sha256:<hash_prefix>
+示例: sha256:a1b2c3d4e5f67890
+```
+
+**生成规则**:
+- **OCR 版本**: `SHA256(ocr_report_json)` 的前 16 位
+- **元数据版本**: `SHA256(title + author + page_count + ...)` 的前 16 位
+- **向量索引版本**: `SHA256(embedding_model + dimension + count)` 的前 16 位
+
+### 5.4 心跳间隔动态调整
+
+| 场景 | 建议间隔 | 说明 |
+|-----|---------|------|
+| 用户活跃阅读中 | 10-15s | 频繁同步进度 |
+| 用户空闲（无操作 5 分钟） | 60s | 降低频率 |
+| 后台/最小化 | 300s | 极低频率 |
+| 刚完成 OCR 处理 | 立即推送 | WebSocket 事件 |
+
+### 5.5 客户端实现示例
+
+```typescript
+// web/src/hooks/useHeartbeat.ts
+
+interface HeartbeatState {
+  isActive: boolean;
+  lastSync: Date | null;
+  nextSyncMs: number;
+}
+
+export function useHeartbeat(bookId: string) {
+  const [state, setState] = useState<HeartbeatState>({
+    isActive: false,
+    lastSync: null,
+    nextSyncMs: 30000
+  });
+  
+  const { downloadOcr, localOcrVersion } = useOcrData(bookId);
+  
+  const sync = useCallback(async () => {
+    const response = await fetch('/api/v1/sync/heartbeat', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${getToken()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        bookId,
+        deviceId: getDeviceId(),
+        clientVersions: {
+          ocr: localOcrVersion
+        },
+        clientUpdates: {
+          readingProgress: getCurrentProgress()
+        }
+      })
+    });
+    
+    const data = await response.json();
+    
+    // 检查是否需要拉取 OCR
+    if (data.pullRequired?.ocr) {
+      await downloadOcr(data.pullRequired.ocr.url);
+    }
+    
+    // 更新下次心跳间隔
+    setState(prev => ({
+      ...prev,
+      lastSync: new Date(),
+      nextSyncMs: data.nextHeartbeatMs
+    }));
+  }, [bookId, localOcrVersion]);
+  
+  // 定时心跳
+  useEffect(() => {
+    const timer = setInterval(sync, state.nextSyncMs);
+    return () => clearInterval(timer);
+  }, [sync, state.nextSyncMs]);
+  
+  return { sync, state };
+}
+```
+
+### 5.6 与现有接口的关系
+
+| 现有接口 | 变更说明 |
+|---------|---------|
+| `WS /ws/realtime/heartbeat` | 扩展支持版本指纹 |
+| `GET /api/v1/books/{id}/ocr` | 新增 `version` 响应头 |
+| `GET /api/v1/books/{id}/ocr/full` | 无变更，仅在版本不匹配时调用 |
+| `PATCH /api/v1/reading_progress` | 被心跳协议合并，可废弃 |
+
+---
+
+## 6. OCR 服务触发接口
+
+> **设计原则**：OCR 是收费/限额服务，由用户主动触发，而非上传后自动执行。
+
+### 6.1 触发 OCR 处理
+
+#### `POST /api/v1/books/{book_id}/ocr`
+
+用户主动请求对图片型 PDF 进行 OCR 处理。
+
+**Request Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters**:
+| 参数 | 类型 | 说明 |
+|-----|------|------|
+| `book_id` | UUID | 书籍 ID |
+
+**Response 200** (成功加入队列):
+```typescript
+{
+  "status": "queued",
+  "queuePosition": number,        // 队列位置
+  "estimatedMinutes": number,     // 预计处理时间（分钟）
+  "message": "OCR 任务已进入排队，预计 15 分钟后完成。您现在可以继续阅读该书，但暂时无法使用笔记和 AI 服务。"
+}
+```
+
+**Response 400** (书籍已是文字型):
+```typescript
+{
+  "error": "already_digitalized",
+  "message": "该书籍已经是文字型，无需进行 OCR 处理。"
+}
+```
+
+**Response 403** (OCR 配额不足):
+```typescript
+{
+  "error": "ocr_quota_exceeded",
+  "message": "您的 OCR 配额已用尽。免费用户每月可处理 3 本书籍，升级会员可获得更多配额。",
+  "quota": {
+    "used": 3,
+    "limit": 3,
+    "resetAt": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+**Response 409** (OCR 已在处理中):
+```typescript
+{
+  "error": "ocr_in_progress",
+  "message": "该书籍的 OCR 任务正在处理中，请稍候。",
+  "queuePosition": 2,
+  "estimatedMinutes": 10
+}
+```
+
+### 6.2 查询 OCR 状态
+
+#### `GET /api/v1/books/{book_id}/ocr/status`
+
+查询书籍的 OCR 处理状态。
+
+**Response 200**:
+```typescript
+{
+  "bookId": string,
+  "isDigitalized": boolean,       // 是否已是文字型
+  "ocrStatus": "pending" | "processing" | "completed" | "failed" | null,
+  "queuePosition"?: number,       // 仅当 status=pending 时返回
+  "estimatedMinutes"?: number,
+  "completedAt"?: string,         // 仅当 status=completed 时返回
+  "errorMessage"?: string         // 仅当 status=failed 时返回
+}
+```
+
+### 6.3 前端集成示例
+
+```typescript
+// 检测到图片型 PDF 后显示的对话框
+function OcrPromptDialog({ book, onClose }: { book: Book; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  
+  const handleOcrNow = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/v1/books/${book.id}/ocr`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(`OCR 已进入排队，预计 ${data.estimatedMinutes} 分钟后完成`);
+        onClose();
+      } else if (res.status === 403) {
+        const data = await res.json();
+        toast.error(data.message);
+        // 显示升级会员弹窗
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <Dialog open onClose={onClose}>
+      <DialogTitle>📖 书籍初检完成</DialogTitle>
+      <DialogContent>
+        <p>
+          您上传的《{book.title}》经过雅典娜初步检查，此书为图片形式的 PDF 电子书。
+          为了获得更好的阅读、笔记以及 AI 提问体验，我们建议您对此书进行图片转文本（OCR）服务。
+        </p>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>稍后再处理</Button>
+        <Button variant="primary" onClick={handleOcrNow} loading={loading}>
+          🚀 马上转换
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+```
+
+---
+
+## 7. 笔记/高亮冲突处理接口
+
+### 7.1 获取冲突副本列表
+
+#### `GET /api/v1/notes/conflicts`
+
+获取当前用户所有存在冲突的笔记。
+
+**Response 200**:
+```typescript
+{
+  "conflicts": Array<{
+    "originalId": string,         // 原始笔记 ID
+    "originalContent": string,
+    "originalUpdatedAt": string,
+    "originalDeviceId": string,
+    "conflictCopyId": string,     // 冲突副本 ID
+    "conflictContent": string,
+    "conflictUpdatedAt": string,
+    "conflictDeviceId": string,
+    "bookId": string,
+    "bookTitle": string
+  }>
+}
+```
+
+### 7.2 解决冲突
+
+#### `POST /api/v1/notes/{note_id}/resolve-conflict`
+
+用户选择保留哪个版本或手动合并。
+
+**Request Body**:
+```typescript
+{
+  "resolution": "keep_original" | "keep_conflict" | "merge",
+  "mergedContent"?: string  // 仅当 resolution=merge 时需要
+}
+```
+
+**Response 200**:
+```typescript
+{
+  "noteId": string,
+  "content": string,
+  "message": "冲突已解决"
+}
+```
+
+---
+
+## 8. 书籍元数据管理接口
+
+### 8.1 更新书籍元数据
+
+#### `PATCH /api/v1/books/{book_id}/metadata`
+
+用户确认或修改书籍的元数据（书名、作者）。
+
+**Request Headers**:
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+If-Match: W/"<version>"  // 乐观锁（可选）
+```
+
+**Request Body**:
+```typescript
+{
+  "title"?: string,           // 书籍名称
+  "author"?: string,          // 作者
+  "confirmed": boolean        // 是否标记为已确认（即使不修改也可确认）
+}
+```
+
+**Response 200**:
+```typescript
+{
+  "id": string,
+  "title": string,
+  "author": string | null,
+  "metadataConfirmed": boolean,
+  "metadataConfirmedAt": string | null,
+  "metadataVersion": string,  // 版本指纹，用于心跳同步
+  "version": number           // 乐观锁版本号
+}
+```
+
+**Response 409** (版本冲突):
+```typescript
+{
+  "error": "version_conflict",
+  "message": "书籍信息已被其他设备修改，请刷新后重试",
+  "currentVersion": number
+}
+```
+
+### 8.2 元数据版本与心跳同步
+
+元数据（`title`, `author`）的变更会影响心跳同步的版本对比。
+
+**`metadataVersion` 生成规则**：
+```typescript
+// 基于 title + author 生成哈希
+const metadataVersion = sha256(`${title}|${author}`).substring(0, 16);
+// 例如: "sha256:a1b2c3d4e5f67890"
+```
+
+**心跳协议中的元数据同步**：
+
+在 `POST /api/v1/sync/heartbeat` 的请求和响应中：
+
+```typescript
+// Request - clientVersions
+{
+  "clientVersions": {
+    "ocr": "sha256:...",
+    "metadata": "sha256:a1b2c3d4",  // ← 包含元数据版本
+    "vectorIndex": "sha256:..."
+  }
+}
+
+// Response - serverVersions
+{
+  "serverVersions": {
+    "ocr": "sha256:...",
+    "metadata": "sha256:b2c3d4e5",  // ← 如果不一致，客户端需拉取最新
+    "vectorIndex": "sha256:..."
+  },
+  "pullRequired": {
+    "metadata": {
+      "url": "/api/v1/books/{id}",
+      "fields": ["title", "author"],  // 指示需要更新哪些字段
+      "priority": "normal"
+    }
+  }
+}
+```
+
+**客户端处理逻辑**：
+```typescript
+// 当 serverVersions.metadata !== clientVersions.metadata 时
+if (response.pullRequired?.metadata) {
+  // 拉取最新书籍信息
+  const bookData = await fetch(`/api/v1/books/${bookId}`);
+  // 更新本地缓存
+  await updateLocalBookCache(bookId, {
+    title: bookData.title,
+    author: bookData.author,
+    metadataVersion: response.serverVersions.metadata
+  });
+  // 刷新 UI
+  refreshBookDisplay();
+}
+```
+
+### 8.3 元数据确认状态事件
+
+当后台完成元数据提取后，通过 WebSocket 或心跳响应通知前端：
+
+**事件类型**: `metadata_extracted`
+
+```typescript
+// sync_events 或 WebSocket 消息
+{
+  "type": "metadata_extracted",
+  "bookId": "uuid",
+  "payload": {
+    "title": "经济学原理",       // 提取到的标题（可能为空）
+    "author": "曼昆",            // 提取到的作者（可能为空）
+    "extracted": true,          // 是否成功提取到任何元数据
+    "needsConfirmation": true   // 是否需要用户确认
+  }
+}
+```
+
+**前端响应**：
+- 收到事件后弹出元数据确认对话框
+- 用户确认后调用 `PATCH /api/v1/books/{id}/metadata`
+- 如果用户选择「跳过」，可调用 `PATCH` 仅设置 `confirmed: true`
+
+### 8.4 AI 对话中的元数据使用
+
+> **⚠️ 重要设计决策**
+
+书籍的 `title` 和 `author` 字段会作为上下文信息发送给上游 AI 模型，以提高回答的精准度。
+
+**系统提示词模板** (参见 `api/app/ai.py`):
+```python
+BOOK_CONTEXT_PROMPT = """
+用户正在阅读的文档信息：
+- 书籍/文档名称：{title}
+- 作者：{author if author else "未知"}
+
+请基于以上背景信息，结合文档内容回答用户的问题。
+"""
+```
+
+**影响说明**：
+| 元数据状态 | AI 对话表现 |
+|-----------|------------|
+| 有书名+作者 | AI 能准确理解上下文，引用时使用正确书名 |
+| 仅有书名 | AI 能识别文档，但可能无法关联作者信息 |
+| 均为空/文件名 | AI 仅基于内容回答，可能缺乏背景理解 |
+
+**私人资料场景**：
+- 用户上传的可能不是书籍，而是个人文档、笔记、资料等
+- 此时用户可跳过元数据确认
+- AI 对话仍可正常使用，仅基于文档内容本身回答

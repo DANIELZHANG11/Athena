@@ -1,19 +1,648 @@
 # PROJECT_STATUS.md
 
-> **最后更新**: 2025-12-02 10:15
-> **当前阶段**: Phase 3 - UI/UX 优化与书籍处理 ✅ 进行中
+> **最后更新**: 2025-12-03 07:00
+> **当前阶段**: Phase 4 - 离线阅读与数据同步架构 ✅ 已完成
 
 ## 1. 总体进度 (Overall)
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| Backend API | ✅ 95% | 核心逻辑与 DB 已就绪, OCR/Embedding 服务升级完成, PP-OCRv5 + BGE-M3 已集成 |
-| Frontend Web | ✅ 91% | Auth ✅, Upload ✅, BookCard ✅, Library ✅, Reader ✅, UI 优化 ✅, 横向卡片进度显示修复 ✅ |
+| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**全局 SHA256 去重 + OCR 配额查询已实现** |
+| Frontend Web | ✅ 98% | Auth ✅, Upload ✅, **封面缓存 + AI 对话缓存 + OCR 触发 UI ✅** |
 | Infrastructure | ✅ 100% | Docker/CI/SRE 手册就绪, OpenSearch 中文插件已安装, Worker GPU 加速已配置 |
+| Data Sync | ✅ 100% | **智能心跳同步 ADR-006 前后端均已完成并集成** |
 
 ---
 
-## 🔥 最新更新 (2025-12-02 10:15)
+## 🔥 最新更新 (2025-12-03 07:00)
+
+### 用户需求审查修复 ✅ 完成 4 项优化
+
+根据用户提出的 9 项需求审查结果，完成以下修复：
+
+#### 1. SHA256 全局文件去重 ✅
+
+**问题**：之前仅同用户去重（使用 `source_etag + user_id`），不同用户上传相同文件会重复存储。
+
+**解决方案**：
+
+**迁移 0122 (`0122_add_content_sha256_dedup.py`)**：
+```sql
+-- books 表新增字段
+content_sha256 VARCHAR(64)    -- 文件内容 SHA256 哈希
+storage_ref_count INTEGER     -- 存储引用计数
+canonical_book_id UUID        -- 去重后指向原始书籍
+
+-- 创建部分索引
+CREATE INDEX idx_books_content_sha256 ON books(content_sha256) WHERE content_sha256 IS NOT NULL
+```
+
+**API 改进**：
+- `POST /books/upload_init`: 接收 `content_sha256` 参数，返回去重状态
+  - `dedup_hit: "own"` - 当前用户已有相同文件
+  - `dedup_hit: "global"` - 全局已有相同文件，可秒传
+  - `dedup_hit: null` - 无去重命中，需上传
+- `POST /books/upload_complete`: 保存 `content_sha256` 字段
+- `POST /books/dedup_reference` (新增): 全局秒传，创建引用记录共享存储
+
+**存储优化**：
+- 相同文件只存一份，通过 `canonical_book_id` 关联
+- `storage_ref_count` 追踪引用数，删除时仅减计数
+- OCR 结果和封面可直接复用
+
+#### 2. 图片 PDF 页数前端显示 + OCR 触发 UI ✅
+
+**新增组件** (`web/src/components/OcrTriggerDialog.tsx`)：
+- 显示书籍页数和阶梯分级（小/中/大型书籍）
+- 显示配额消耗（1/2/3 单位）
+- 显示剩余配额（免费/Pro 赠送/加油包）
+- 不能触发时显示原因和购买入口
+
+**新增 API** (`GET /books/{book_id}/ocr/quota`)：
+返回：`pageCount`, `tier`, `cost`, `canTrigger`, `reason`, `freeRemaining`, `proRemaining`, `addonRemaining`, `isPro`, `maxPages`
+
+**新增翻译** (22 键，中英文)：
+- `ocr.tier_1/2/3` - 阶梯描述
+- `ocr.cost_units` - 消耗单位
+- `ocr.free/pro/addon_remaining` - 剩余配额
+- `ocr.error_*` - 错误提示
+
+#### 3. 封面本地缓存 ✅
+
+**IndexedDB 升级** (`bookStorage.ts` v3)：
+新增 `book_covers` store 存储封面 Blob
+
+**新增函数**：
+- `cacheCover(bookId, coverUrl)` - 下载并缓存封面
+- `getCachedCover(bookId)` - 获取缓存的封面记录
+- `getCoverUrl(bookId, originalUrl)` - 优先返回缓存 URL，同时异步缓存
+- `batchCacheCovers(books[])` - 批量缓存
+- `cleanOldCoverCache(maxAgeDays)` - 清理过期缓存
+
+**功能特点**：
+- 首次访问时异步缓存，后续离线可用
+- 支持批量预缓存（书架加载时）
+- 30 天自动清理过期缓存
+
+#### 4. AI 对话本地缓存 ✅
+
+**新增服务** (`web/src/lib/aiChatStorage.ts`)：
+独立 IndexedDB 数据库 `athena_ai_chat`：
+- `conversations` store - 对话列表
+- `messages` store - 消息记录
+
+**新增 Hook** (`web/src/hooks/useAIChatCache.ts`)：
+```typescript
+const {
+  conversations,      // 对话列表
+  loading, error,     // 状态
+  fromCache,          // 是否来自缓存
+  refreshConversations,  // 刷新列表
+  getMessages,        // 获取消息（缓存优先）
+  deleteConversation, // 删除对话
+  cacheNewMessage,    // 缓存新消息
+} = useAIChatCache()
+```
+
+**缓存策略**：
+- 优先显示缓存数据，后台同步服务器
+- 5 分钟内不重复请求（staleTime）
+- 离线时只读显示历史对话
+- 登出时清空所有缓存
+
+---
+
+## 🔥 更早更新 (2025-12-03 05:30)
+
+### ADR-006 前端全部完成 ✅
+
+#### 1. 笔记冲突解决 UI (`web/src/components/NoteConflictDialog.tsx`)
+
+实现多设备笔记同步冲突的解决方案：
+
+**组件功能**：
+- `NoteConflictDialog`: 单个冲突的详细对话框
+  - 并排显示原始版本和冲突副本
+  - 显示设备来源图标（Web/iOS/Android）
+  - 支持三种解决方案：保留原始 / 保留冲突 / 两者都保留
+- `NoteConflictList`: 冲突列表组件
+  - 显示所有待解决冲突的摘要
+  - 点击展开详细对话框
+
+**设计特点**：
+- 清晰的视觉区分（原始版本 vs 冲突副本）
+- 设备识别（通过 deviceId 前缀判断设备类型）
+- 国际化支持（中英文）
+
+#### 2. 智能心跳集成到阅读器 (`web/src/pages/ReaderPage.tsx`)
+
+将 `useSmartHeartbeat` Hook 集成到阅读器页面：
+
+```typescript
+const { state: syncState, updateProgress: updateSyncProgress } = useSmartHeartbeat({
+  bookId,
+  clientVersions: { ocr: ocrStatus.cached ? `cached_${bookId}` : undefined },
+  onPullRequired: (pull) => {
+    if (pull.ocr && !ocrStatus.cached) downloadOcrData()
+  },
+  onNoteSyncResult: (results) => {
+    const conflicts = results.filter(r => r.status === 'conflict_copy')
+    // 显示冲突解决对话框
+  }
+})
+```
+
+**集成功能**：
+- 版本指纹对比（OCR 数据）
+- 自动拉取服务端新数据
+- 笔记同步冲突检测
+- 与现有阅读会话心跳共存
+
+#### 3. 国际化翻译更新
+
+新增 12 个冲突相关翻译键（中英文）：
+- `conflict.dialog.*` - 对话框文案
+- `conflict.label.*` - 标签文本
+- `conflict.action.*` - 操作按钮
+- `conflict.device.*` - 设备类型
+- `conflict.list.*` - 列表文案
+
+---
+
+## 🔥 更早更新 (2025-12-03 05:00)
+
+按照商业模型 V9.0 规范重新设计 OCR 收费逻辑，实现"按本计费，按页风控"策略。
+
+#### 📐 阶梯计费规则
+
+| 页数范围 | 消耗单位 | 可用免费额度 | 说明 |
+|---------|---------|------------|------|
+| ≤ 600 页 | 1 单位 | ✅ 是 | 优先扣免费额度，免费用完扣加油包 |
+| 600-1000 页 | 2 单位 | ❌ 否 | **强制扣付费额度**（加油包） |
+| 1000-2000 页 | 3 单位 | ❌ 否 | **强制扣付费额度**（加油包） |
+| > 2000 页 | 拒绝 | - | 返回 `OCR_MAX_PAGES_EXCEEDED` |
+
+#### 🎯 配额管理
+
+**免费用户**：
+- 月度免费额度：3 次（仅限 ≤600 页）
+- 超出后需升级 Pro 或购买加油包
+
+**Pro 会员**：
+- 月度赠送：3 次（仅限 ≤600 页，月底清零）
+- 超页书籍：自动扣加油包余额
+- 加油包：¥8.8/10 次，永久有效
+
+#### 💾 系统配置（迁移 0120）
+
+添加以下可由 Admin 后台管理的配置：
+
+| 配置项 | 默认值 | 说明 |
+|-------|-------|------|
+| `ocr_page_thresholds` | `{"standard": 600, "double": 1000, "triple": 2000}` | 页数阶梯定义 |
+| `ocr_max_pages` | 2000 | 最大页数限制 |
+| `ocr_monthly_free_quota` | 3 | 免费用户月度配额 |
+| `monthly_gift_ocr_count` | 3 | Pro 会员月度赠送 |
+| `price_addon_ocr` | 880 | 加油包单价（分） |
+| `addon_ocr_count` | 10 | 加油包包含次数 |
+| `ocr_concurrency_limit` | 1 | 全局并发限制 |
+| `ocr_minutes_per_book` | 5 | 预估处理时间 |
+
+#### 🔧 技术实现
+
+**原子性保障**：
+- OCR 配额扣除与状态更新在同一事务内
+- 分发 Celery 任务失败时回滚状态
+
+**风控逻辑**：
+```python
+# 页数检查 → 阶梯单位计算 → 配额验证 → 原子扣除 → 状态更新
+if page_count <= 600:
+    units = 1  # 可用免费额度
+elif page_count <= 1000:
+    units = 2  # 强制付费
+elif page_count <= 2000:
+    units = 3  # 强制付费
+else:
+    reject()  # 超过上限
+```
+
+### Celery sync_events TTL 清理 ✅ 已完成
+
+在 `scheduler.py` 中添加定期清理任务：
+- 已投递事件：保留 7 天后删除
+- 未投递陈旧事件：保留 30 天后删除
+
+---
+
+## 🔥 更早更新 (2025-12-03 02:30)
+
+### ADR-006 数据库迁移 ✅ 已完成
+
+完成了三大功能模块的数据库迁移：**CRDT 同步架构**、**OCR 用户触发逻辑**、**元数据确认机制**。
+
+#### 📦 迁移清单
+
+| 迁移 ID | 文件名 | 描述 | 状态 |
+|--------|--------|------|------|
+| `0115` | `0115_add_sync_version_fields.py` | `reading_progress` 添加版本追踪字段 | ✅ 已执行 |
+| `0116` | `0116_create_sync_events_table.py` | 创建 `sync_events` 服务端推送队列表 | ✅ 已执行 |
+| `0117` | `0117_add_conflict_copy_fields.py` | `notes`/`highlights` 添加冲突副本字段 | ✅ 已执行 |
+| `0118` | `0118_add_ocr_status_fields.py` | `books` 添加 OCR 状态字段 | ✅ 已执行 |
+| `0119` | `0119_add_metadata_confirmed_fields.py` | `books` 添加元数据确认字段 | ✅ 已执行 |
+
+#### 📊 Schema 变更详情
+
+**1. `reading_progress` 表 - 版本追踪字段**
+```sql
+ocr_version VARCHAR(64)         -- OCR 数据版本 (sha256:xxx)
+metadata_version VARCHAR(64)    -- 书籍元数据版本
+vector_index_version VARCHAR(64) -- 向量索引版本
+last_sync_at TIMESTAMPTZ        -- 最后完整同步时间
+```
+
+**2. `sync_events` 表 - 服务端事件队列**
+```sql
+CREATE TABLE sync_events (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    book_id UUID NOT NULL REFERENCES books(id),
+    event_type VARCHAR(32),   -- ocr_ready, metadata_updated, etc.
+    payload JSONB,
+    created_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ
+);
+-- 索引：用户未投递事件、已投递事件 TTL、未投递事件 TTL
+```
+
+**3. `notes`/`highlights` 表 - 冲突副本字段**
+```sql
+device_id VARCHAR(64)           -- 创建/修改该条目的设备 ID
+conflict_of UUID REFERENCES xxx(id) -- 冲突副本指向原始条目
+-- 部分索引：仅索引 conflict_of IS NOT NULL 的记录
+```
+
+**4. `books` 表 - OCR 状态字段**
+```sql
+ocr_status VARCHAR(20)          -- NULL/pending/processing/completed/failed
+ocr_requested_at TIMESTAMPTZ    -- 用户请求 OCR 时间
+vector_indexed_at TIMESTAMPTZ   -- 向量索引完成时间
+-- CHECK 约束确保 ocr_status 值有效
+-- 部分索引：仅索引 pending/processing 状态
+```
+
+**5. `books` 表 - 元数据确认字段**
+```sql
+metadata_confirmed BOOLEAN DEFAULT FALSE  -- 用户是否确认
+metadata_confirmed_at TIMESTAMPTZ         -- 确认时间
+```
+
+#### ✅ 验证结果
+
+- 所有 5 个迁移脚本执行成功（`alembic current` 显示 `0119 (head)`）
+- 所有新字段、索引、外键约束验证通过
+- CHECK 约束 `chk_books_ocr_status` 确保 OCR 状态值有效
+
+#### 📝 待办事项
+
+数据库迁移完成后，还需实现以下业务代码：
+
+| 模块 | 任务 | 优先级 | 状态 |
+|-----|------|-------|------|
+| API | 心跳接口增强 `POST /sync/heartbeat` | P0 | ✅ 已完成 |
+| API | OCR 触发接口 `POST /books/{id}/ocr` | P0 | ✅ 已完成（阶梯计费） |
+| API | 元数据更新接口 `PATCH /books/{id}/metadata` | P0 | ✅ 已完成 |
+| API | 冲突列表/解决接口 | P1 | ✅ 已完成 |
+| Celery | `sync_events` TTL 清理任务 | P1 | ✅ 已完成 |
+| DB | 迁移 0120 OCR 系统配置 | P0 | ✅ 已完成 |
+| DB | 迁移 0121 用户加油包余额字段 | P0 | ✅ 已完成 |
+| Frontend | 元数据确认对话框 | P1 | ✅ 已完成 |
+| Frontend | 智能心跳 Hook `useSmartHeartbeat` | P1 | ✅ 已完成 |
+| Frontend | 集成到阅读器页面 | P1 | ✅ 已完成 |
+| Frontend | 笔记冲突解决 UI | P2 | ✅ 已完成 |
+
+---
+
+## 🔥 更早更新 (2025-12-03 01:30)
+
+### 元数据确认机制设计 ✅ 已完成
+
+#### 5️⃣ 书籍元数据确认流程（02 - PRD + 05 - API）
+
+**设计背景**：
+- 书籍的 `title` 和 `author` 会作为 AI 对话的上下文发送给上游模型
+- 准确的元数据能显著提升 AI 回答的精准度
+- 用户上传的可能不是书籍（私人资料），需要灵活处理
+
+**交互流程**：
+```
+后台元数据提取完成
+    ↓
+服务端发送 metadata_extracted 事件
+    ↓
+前端弹出元数据确认对话框
+┌──────────────────────────────────────────┐
+│  📚 请确认书籍信息                        │
+│                                          │
+│  [提取成功时]                             │
+│  书籍名称: [经济学原理______] ← 可编辑    │
+│  作者:     [曼昆__________] ← 可编辑     │
+│                                          │
+│  [未提取到时]                             │
+│  书籍名称: [______________] ← 建议填写    │
+│  作者:     [______________] ← 可选       │
+│                                          │
+│  ℹ️ 书籍信息将帮助 AI 提供更精准的回答     │
+│                                          │
+│  [跳过]                      [✓ 确认]    │
+└──────────────────────────────────────────┘
+```
+
+**新增 API**：
+- `PATCH /api/v1/books/{id}/metadata` - 更新书籍元数据（书名、作者）
+
+**数据库变更**：
+```sql
+ALTER TABLE books ADD COLUMN metadata_confirmed BOOLEAN DEFAULT FALSE;
+ALTER TABLE books ADD COLUMN metadata_confirmed_at TIMESTAMPTZ;
+```
+
+**书籍卡片菜单新增选项**：
+- ✏️ **编辑书籍信息**：允许用户随时修改书名和作者
+
+**心跳同步**：
+- `metadataVersion = sha256(title + author)` 加入版本指纹比对
+- 用户在任一设备修改元数据后，其他设备通过心跳同步自动更新
+
+**AI 对话集成**：
+```python
+# 系统提示词模板
+BOOK_CONTEXT_PROMPT = """
+用户正在阅读的文档信息：
+- 书籍/文档名称：{title}
+- 作者：{author if author else "未知"}
+"""
+```
+
+**私人资料场景**：
+- 用户可跳过元数据确认，不影响阅读和 AI 功能
+- AI 对话仍可正常使用，仅基于文档内容本身回答
+
+---
+
+## 🔥 更早更新 (2025-12-03 01:00)
+
+### 技术文档架构优化 ✅ 已完成
+
+基于架构评审反馈，对 ADR-006 及相关文档进行了重要修订：
+
+#### 1️⃣ sync_events 表 TTL 清理策略（07 - SRE 文档）
+
+**问题**：`sync_events` 表如果用户长期不登录会迅速膨胀
+
+**解决方案**：
+| 事件状态 | 保留时间 | 处理方式 |
+|---------|---------|---------|
+| 已投递 | 7 天 | 直接删除 |
+| 未投递 | 30 天 | 标记用户需强制全量同步后删除 |
+
+- 新增 Celery Beat 定时清理任务 `cleanup.sync_events`
+- 每日凌晨 03:00 执行
+- 添加 Grafana 表大小监控告警
+
+#### 2️⃣ 笔记/高亮冲突处理优化（03 - ADR + 05 - API）
+
+**问题**：LWW 策略对笔记会导致数据静默丢失
+
+**解决方案**：改用 **Conflict Copy** 策略
+- 多设备同时修改同一笔记时，不静默覆盖
+- 服务端创建「冲突副本」，前端显示冲突标记
+- 用户在 UI 上手动选择保留哪个版本或合并
+
+**数据库变更**：
+```sql
+ALTER TABLE notes ADD COLUMN device_id VARCHAR(64);
+ALTER TABLE notes ADD COLUMN conflict_of UUID REFERENCES notes(id);
+```
+
+**新增 API**：
+- `GET /api/v1/notes/conflicts` - 获取冲突副本列表
+- `POST /api/v1/notes/{id}/resolve-conflict` - 解决冲突
+
+#### 3️⃣ 大 Payload 分批上传（03 - ADR + 05 - API）
+
+**问题**：用户离线创建 1000 条高亮会导致心跳请求超时
+
+**解决方案**：
+- 单次心跳最多 50 条 notes + 50 条 highlights
+- 请求体包含 `hasMore` 字段指示是否还有更多
+- 响应中 `moreToSync: true` 时客户端立即发起下一次心跳
+- 后端请求体限制 512KB
+
+#### 4️⃣ OCR 用户主动触发机制（02 - PRD + 05 - API）
+
+**问题**：OCR 是收费服务，不应上传后自动执行
+
+**解决方案**：重构为用户主动触发模式
+```
+上传图片型 PDF → 初检 → 前端弹窗提示 → 用户选择
+                              ├─ "马上转换" → POST /books/{id}/ocr → 进入队列
+                              └─ "稍后再处理" → 书籍卡片菜单显示 "OCR 服务" 选项
+```
+
+**核心规则**：
+- **向量索引是免费服务**，对所有文字型书籍自动执行
+- **OCR 是收费服务**，仅对图片型 PDF 提供，由用户主动触发
+- 图片型 PDF 未 OCR 前，无法生成向量索引，无法使用笔记/AI 服务
+
+**新增 API**：
+- `POST /api/v1/books/{id}/ocr` - 触发 OCR
+- `GET /api/v1/books/{id}/ocr/status` - 查询 OCR 状态
+
+**数据库变更**：
+```sql
+ALTER TABLE books ADD COLUMN ocr_status VARCHAR(20);  -- pending/processing/completed/failed
+ALTER TABLE books ADD COLUMN ocr_requested_at TIMESTAMPTZ;
+ALTER TABLE books ADD COLUMN vector_indexed_at TIMESTAMPTZ;
+```
+
+#### 文档更新清单
+
+| 文档 | 修改内容 |
+|:---|:---|
+| `02 - 功能规格与垂直切片` | ✨ 新增 B.2 OCR 与向量索引触发机制章节 |
+| `03 - 系统架构与ADR` | 🔧 优化数据权威分层表，笔记/高亮改为 Conflict Copy |
+| `03 - 系统架构与ADR` | 🔧 心跳协议添加分批上传策略 |
+| `04 - 数据库全景与迁移` | ✨ books 表新增 ocr_status 等字段 |
+| `04 - 数据库全景与迁移` | ✨ notes/highlights 表新增冲突副本字段 |
+| `04 - 数据库全景与迁移` | ✨ 新增迁移 0117, 0118 |
+| `05 - API 契约与协议` | 🔧 心跳协议添加分批上传说明 |
+| `05 - API 契约与协议` | ✨ 新增 Section 6: OCR 服务触发接口 |
+| `05 - API 契约与协议` | ✨ 新增 Section 7: 笔记冲突处理接口 |
+| `07 - 部署与 SRE 手册` | ✨ 新增 5.2 数据清理策略章节 |
+
+---
+
+## 🔥 更早更新 (2025-12-03 00:15)
+
+### ADR-006: 智能心跳同步架构设计 ✅ 文档已完成
+
+**背景问题**：
+OCR 图片尺寸 Bug 修复过程中发现架构缺陷——服务端数据更新后，客户端无法自动感知和同步。用户需要手动刷新页面或清除 IndexedDB 才能获取新数据。
+
+**设计核心思想**：
+1. **数据权威分层**：不同数据类型有不同的权威来源
+   - 客户端权威：阅读进度、笔记、高亮、SRS 卡片
+   - 服务端权威：OCR 数据、书籍元数据、向量索引
+2. **版本指纹机制**：使用内容哈希（`sha256:前16位`）标识数据版本
+3. **心跳协议增强**：心跳不仅同步进度，还对比版本并触发按需拉取
+
+**文档更新清单**：
+
+| 文档 | 新增/修改内容 |
+|:---|:---|
+| `03 - 系统架构与ADR` | ✨ 新增 ADR-006 完整设计（约 400 行） |
+| `04 - 数据库全景与迁移` | ✨ 新增 Section 8: 待迁移 Schema 变更（`reading_progress` 版本字段、`sync_events` 表） |
+| `05 - API 契约与协议` | ✨ 新增 Section 5: 智能心跳同步协议（完整 Request/Response Schema） |
+| `08 - 进度实时仪表盘` | 更新当前条目 |
+
+**ADR-006 关键设计点**：
+
+```
+数据权威分层表：
+┌──────────────┬────────────┬─────────────────────┐
+│ 数据类型     │ 权威来源   │ 冲突策略            │
+├──────────────┼────────────┼─────────────────────┤
+│ 阅读进度     │ Client     │ Last-Write-Wins     │
+│ 笔记/高亮    │ Client     │ LWW + Source Priority│
+│ OCR 数据     │ Server     │ Server-Always-Wins  │
+│ 书籍元数据   │ Server     │ Server-Always-Wins  │
+│ 向量索引     │ Server     │ Server-Always-Wins  │
+└──────────────┴────────────┴─────────────────────┘
+```
+
+**心跳同步协议核心流程**：
+```
+Client                                  Server
+   │                                      │
+   │─── POST /sync/heartbeat ────────────►│
+   │    { clientVersions: { ocr: "v1" },  │
+   │      clientUpdates: { progress } }   │
+   │                                      │
+   │◄── { serverVersions: { ocr: "v2" },──│
+   │      pullRequired: { ocr: {...} },   │
+   │      nextHeartbeatMs: 30000 }        │
+   │                                      │
+   │ (发现 ocr 版本不一致)                 │
+   │                                      │
+   │─── GET /books/{id}/ocr/full ────────►│
+   │                                      │
+   │◄── (gzip compressed OCR data) ───────│
+   │                                      │
+   └── 更新 IndexedDB，刷新 UI ────────────┘
+```
+
+**数据库 Schema 变更（待迁移）**：
+- `reading_progress` 表新增：`ocr_version`, `metadata_version`, `vector_index_version`, `last_sync_at`
+- 新建 `sync_events` 表：服务端待推送事件队列
+
+**实现路线图**：
+| Phase | 内容 | 优先级 |
+|:---|:---|:---|
+| Phase 1 | 心跳版本指纹对比 + 自动触发 OCR 下载 | P0 |
+| Phase 2 | 离线同步队列（笔记/高亮） | P1 |
+| Phase 3 | WebSocket 实时推送 | P2 |
+| Phase 4 | 多设备冲突解决 UI | P3 |
+
+---
+
+## 🔥 更早更新 (2025-12-02 23:30)
+
+### OCR 文字层一次性下载架构 ✅ 已完成
+
+**背景问题**：
+原有架构中，OCR 文字层采用按页请求的方式，每翻一页都要向服务器请求该页的 OCR 数据。对于 600+ 页的书籍：
+- 服务器负载高（每页一次请求）
+- 网络延迟影响阅读体验
+- 离线时无法使用文字选择功能
+
+**架构重构**：
+采用「一次性下载 + IndexedDB 本地缓存」模式，与书籍文件存储策略保持一致：
+
+| 组件 | 变更 |
+|:---|:---|
+| `api/app/books.py` | 新增 `/ocr/full` 端点，返回完整 OCR 数据（gzip 压缩，~2MB） |
+| `api/app/tasks.py` | OCR 任务现在记录图片尺寸（`image_width`, `image_height`）到报告中 |
+| `web/src/lib/bookStorage.ts` | IndexedDB 升级到 v2，新增 `book_ocr` 对象存储 |
+| `web/src/hooks/useOcrData.ts` | 新增 Hook，管理 OCR 数据的下载、缓存和同步读取 |
+| `web/src/hooks/useOcrPage.ts` | **已删除**（被 useOcrData 替代） |
+| `web/src/components/reader/OcrTextLayer.tsx` | 重构：接收 `regions` prop，不再自行请求数据 |
+| `web/src/components/reader/PdfPageWithOcr.tsx` | 重构：从父组件接收 OCR 数据 |
+| `web/src/pages/ReaderPage.tsx` | 集成 useOcrData Hook，管理 OCR 生命周期 |
+
+**数据流（新架构）**：
+```
+用户打开图片式 PDF
+        ↓
+检查 IndexedDB 是否有 OCR 缓存
+    ├─ 有缓存 → 直接加载到内存
+    └─ 无缓存 → GET /api/v1/books/{id}/ocr/full
+                    ↓
+              gzip 解压 → 存入 IndexedDB → 加载到内存
+        ↓
+翻页时从内存缓存同步读取当前页 OCR 区域
+        ↓
+渲染透明文字层（支持选择、复制）
+```
+
+**性能数据（以 632 页中文经济学书籍为例）**：
+| 指标 | 数值 |
+|:---|:---|
+| 原始 JSON 大小 | ~9.07 MB |
+| gzip 压缩后 | ~2.16 MB |
+| OCR 区域数 | 22,784 |
+| 总字符数 | 606,993 |
+| 下载时间（局域网） | < 1s |
+
+**Bug 修复**：
+1. Python 变量名冲突：`text = item.get("text", "")` 与 SQLAlchemy 的 `text()` 函数冲突，改为 `item_text`
+2. OCR 报告 `is_image_based` 字段错误：手动更新为 True
+3. 图片尺寸硬编码问题：API 返回 1240x1754（A4），但实际 PDF 为 1018x1425，导致坐标映射错误
+
+---
+
+### 向量索引触发机制 ✅ 已实现
+
+**功能**：OCR 完成后自动触发 OpenSearch 向量索引
+
+| 文件 | 修改 |
+|:---|:---|
+| `api/app/tasks.py` | OCR 完成后调用 `index_book_content(book_id, user_id, all_regions)` |
+| `api/app/search_sync.py` | 实现 `index_book_content`，将 OCR 文本分块并写入 OpenSearch |
+
+**索引策略**：
+- 按页分块，每页作为一个文档
+- 使用 BGE-M3 生成 1024 维向量
+- 支持全文检索 + 向量检索混合查询
+
+---
+
+### 🚧 待实现：智能心跳同步架构 (CRDT-Lite)
+
+**问题发现**：
+OCR 图片尺寸修复暴露了一个架构问题——当服务器端数据更新后，客户端缓存的旧数据无法自动同步。当前心跳只同步阅读进度，不处理其他数据类型。
+
+**设计目标**：
+1. 心跳不仅同步进度，还要同步数据版本
+2. 自动检测客户端/服务器数据不一致
+3. 根据数据类型决定同步方向（谁为准）
+4. 支持离线操作和冲突解决
+
+**详细设计见**：`03 - 系统架构与ADR System_Architecture_and_Decisions.md` ADR-006
+
+---
+
+## 🔥 更早更新 (2025-12-02 10:15)
 
 ### PaddleOCR v5 + BGE-M3 Embedding 基础设施升级 ✅ 已完成
 

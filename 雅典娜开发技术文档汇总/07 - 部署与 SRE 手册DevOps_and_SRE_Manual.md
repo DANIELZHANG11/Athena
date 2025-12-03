@@ -145,7 +145,104 @@ docker compose run --rm backup
     *   **快照**: 每日增量快照。
     *   **同步**: 使用 `rclone` 同步至异地 Bucket。
 
-### 5.2 灾难恢复 (DR)
+### 5.2 数据清理策略 (Data Retention & TTL)
+
+#### 5.2.1 `sync_events` 表清理（防止表膨胀）
+
+`sync_events` 表用于存储待推送给客户端的事件。如果用户长期不登录，该表会迅速膨胀。
+
+**清理规则**：
+| 事件状态 | 保留时间 | 处理方式 |
+|---------|---------|---------|
+| 已投递 (`delivered_at IS NOT NULL`) | 7 天 | 直接删除 |
+| 未投递 (`delivered_at IS NULL`) | 30 天 | 标记为过期，下次登录强制全量同步 |
+
+**定时任务**（Celery Beat 或 pg_cron）：
+```sql
+-- 每日凌晨 03:00 执行清理
+
+-- 1. 删除已投递超过 7 天的事件
+DELETE FROM sync_events 
+WHERE delivered_at IS NOT NULL 
+  AND delivered_at < NOW() - INTERVAL '7 days';
+
+-- 2. 处理超过 30 天未投递的事件
+-- 标记用户需要强制全量同步，然后删除事件
+WITH expired_users AS (
+    SELECT DISTINCT user_id, book_id 
+    FROM sync_events 
+    WHERE delivered_at IS NULL 
+      AND created_at < NOW() - INTERVAL '30 days'
+)
+UPDATE reading_progress rp
+SET last_sync_at = NULL,  -- 强制下次心跳进行全量对账
+    ocr_version = NULL,
+    metadata_version = NULL
+FROM expired_users eu
+WHERE rp.user_id = eu.user_id AND rp.book_id = eu.book_id;
+
+DELETE FROM sync_events 
+WHERE delivered_at IS NULL 
+  AND created_at < NOW() - INTERVAL '30 days';
+```
+
+**代码实现**（`api/scripts/scheduler.py`）：
+```python
+from celery import shared_task
+from celery.schedules import crontab
+from app.db import get_db
+
+@shared_task(name="cleanup.sync_events")
+def cleanup_sync_events():
+    """每日清理 sync_events 表，防止膨胀"""
+    with get_db() as db:
+        # 删除已投递超过 7 天的
+        db.execute(text("""
+            DELETE FROM sync_events 
+            WHERE delivered_at IS NOT NULL 
+              AND delivered_at < NOW() - INTERVAL '7 days'
+        """))
+        
+        # 处理未投递超过 30 天的
+        db.execute(text("""
+            WITH expired AS (
+                SELECT DISTINCT user_id, book_id FROM sync_events 
+                WHERE delivered_at IS NULL AND created_at < NOW() - INTERVAL '30 days'
+            )
+            UPDATE reading_progress rp
+            SET last_sync_at = NULL, ocr_version = NULL, metadata_version = NULL
+            FROM expired e WHERE rp.user_id = e.user_id AND rp.book_id = e.book_id
+        """))
+        
+        db.execute(text("""
+            DELETE FROM sync_events 
+            WHERE delivered_at IS NULL AND created_at < NOW() - INTERVAL '30 days'
+        """))
+        db.commit()
+
+# Celery Beat 配置
+beat_schedule = {
+    'cleanup-sync-events': {
+        'task': 'cleanup.sync_events',
+        'schedule': crontab(hour=3, minute=0),  # 每日 03:00
+    },
+}
+```
+
+**监控告警**：
+- 当 `sync_events` 表行数超过 100 万时触发告警
+- Grafana 仪表盘添加表大小监控面板
+
+#### 5.2.2 其他表清理策略
+
+| 表名 | 清理规则 | 频率 |
+|-----|---------|------|
+| `user_sessions` | 已撤销超过 30 天 | 每日 |
+| `ai_query_cache` | 创建超过 7 天 | 每日 |
+| `payment_webhook_events` | 处理成功超过 90 天 | 每周 |
+| `conversion_jobs` | 已完成超过 30 天 | 每日 |
+
+### 5.3 灾难恢复 (DR)
 *   **RTO (恢复时间目标)**: < 60 分钟。
 *   **RPO (数据丢失容忍)**: < 15 分钟。
 *   **演练**: 每月第一个周五进行一次数据恢复演练，验证备份文件的完整性。

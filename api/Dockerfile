@@ -38,8 +38,8 @@ RUN pip install --upgrade pip && \
 RUN if [ "$SKIP_HEAVY" != "true" ]; then \
     # PaddlePaddle GPU 版本 (CUDA 11.8) - 支持 PP-OCRv5
     pip install --no-cache-dir paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ --timeout 300 && \
-    # PaddleOCR 3.x (支持 PP-OCRv5 mobile)
-    pip install --no-cache-dir paddleocr==3.0.3 --timeout 300 && \
+    # PaddleOCR 3.x (支持 PP-OCRv5 mobile) - 3.3.2 修复与 PaddleX 3.3.10 的兼容性
+    pip install --no-cache-dir paddleocr==3.3.2 --timeout 300 && \
     # BGE-M3 Embedding 模型
     pip install --no-cache-dir FlagEmbedding --timeout 300 && \
     # Edge TTS

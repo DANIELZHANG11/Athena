@@ -67,6 +67,20 @@ async def run_daily_tasks():
                 text("INSERT INTO credit_ledger(id, owner_id, amount, currency, reason, direction) VALUES (:id, :uid, :amt, 'CREDITS', 'monthly_gift', 'credit')"),
                 {"id": lid, "uid": uid, "amt": credits_to_grant}
             )
+        
+        # 3. Clean up delivered sync_events (retain for 7 days)
+        res = await conn.execute(
+            text("DELETE FROM sync_events WHERE delivered_at IS NOT NULL AND delivered_at < now() - interval '7 days'")
+        )
+        if res.rowcount > 0:
+            logger.info(f"Cleaned up {res.rowcount} delivered sync_events")
+        
+        # 4. Clean up stale undelivered events (older than 30 days)
+        res = await conn.execute(
+            text("DELETE FROM sync_events WHERE delivered_at IS NULL AND created_at < now() - interval '30 days'")
+        )
+        if res.rowcount > 0:
+            logger.info(f"Cleaned up {res.rowcount} stale undelivered sync_events")
             
     logger.info("Daily tasks completed")
 

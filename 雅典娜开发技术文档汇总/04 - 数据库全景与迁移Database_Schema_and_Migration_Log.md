@@ -112,10 +112,15 @@ erDiagram
 *   `size` (BIGINT, Nullable)
 *   `cover_image_key` (TEXT, Nullable)
 *   `source_etag` (TEXT, Nullable)
-*   `is_digitalized` (BOOLEAN, Nullable)
+*   `is_digitalized` (BOOLEAN, Nullable) - `true`=文字型, `false`=图片型, `null`=未检测
 *   `initial_digitalization_confidence` (NUMERIC, Nullable)
 *   `converted_epub_key` (TEXT, Nullable)
 *   `digitalize_report_key` (TEXT, Nullable)
+*   `ocr_status` (VARCHAR(20), Nullable) - **[待迁移]** OCR 处理状态，枚举值见下表
+*   `ocr_requested_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 用户请求 OCR 的时间
+*   `vector_indexed_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 向量索引完成时间
+*   `metadata_confirmed` (BOOLEAN, Default: FALSE) - **[待迁移]** 用户是否已确认元数据
+*   `metadata_confirmed_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 元数据确认时间
 *   `meta` (JSONB, Default: '{}')
     *   `page_count` (int): 书籍页数
     *   `needs_manual` (bool): 是否需要人工介入
@@ -129,6 +134,20 @@ erDiagram
 *   `version` (INTEGER, Default: 1)
 *   `created_at` (TIMESTAMPTZ)
 *   `updated_at` (TIMESTAMPTZ)
+
+**`ocr_status` 枚举值**：
+| 值 | 说明 |
+|---|---|
+| `NULL` | 文字型书籍，无需 OCR |
+| `pending` | 用户已请求 OCR，等待排队 |
+| `processing` | OCR 正在处理中 |
+| `completed` | OCR 处理完成 |
+| `failed` | OCR 处理失败 |
+
+> **元数据确认说明**：
+> - `metadata_confirmed = false`：用户尚未确认元数据，上传后应弹出确认对话框
+> - `metadata_confirmed = true`：用户已确认（或跳过），不再提示
+> - `title` 和 `author` 字段会作为 AI 对话上下文发送给上游模型
 
 #### `shelves`
 书架。
@@ -173,9 +192,16 @@ erDiagram
 *   `pos_offset` (INTEGER, Nullable)
 *   `tsv` (TSVECTOR, Nullable) - 用于 Postgres 内置全文检索，当 OpenSearch 不可用时作为 fallback。
 *   `version` (INTEGER, Default: 1)
+*   `device_id` (VARCHAR(64), Nullable) - **[待迁移]** 创建该笔记的设备 ID，用于冲突检测
+*   `conflict_of` (UUID, Nullable, FK `notes.id`) - **[待迁移]** 如果是冲突副本，指向原始笔记
 *   `deleted_at` (TIMESTAMPTZ, Nullable)
 *   `created_at` (TIMESTAMPTZ)
 *   `updated_at` (TIMESTAMPTZ)
+
+> **冲突副本说明**：当多设备同时修改同一笔记时，不采用静默覆盖（LWW），而是创建冲突副本。
+> - `conflict_of` 指向原始笔记 ID
+> - 前端在笔记列表显示冲突标记，用户可手动合并
+> - 合并后删除冲突副本
 
 #### `highlights`
 高亮 (启用 RLS)。
@@ -188,6 +214,8 @@ erDiagram
 *   `comment` (TEXT, Nullable)
 *   `tsv` (TSVECTOR, Nullable) - 用于 Postgres 内置全文检索，当 OpenSearch 不可用时作为 fallback。
 *   `version` (INTEGER, Default: 1)
+*   `device_id` (VARCHAR(64), Nullable) - **[待迁移]** 创建该高亮的设备 ID
+*   `conflict_of` (UUID, Nullable, FK `highlights.id`) - **[待迁移]** 如果是冲突副本，指向原始高亮
 *   `deleted_at` (TIMESTAMPTZ, Nullable)
 *   `created_at` (TIMESTAMPTZ)
 *   `updated_at` (TIMESTAMPTZ)
@@ -600,6 +628,16 @@ WITH CHECK (
 | `0101_etag` | 2025-11-16 | Add books source_etag |
 | `0100_squash` | 2025-11-16 | Squash baseline (Core tables) |
 
+### 6.2 ADR-006 相关迁移（2025-12-03 已执行）
+
+| Revision ID | Date | Description |
+| :--- | :--- | :--- |
+| `0119` | 2025-12-03 | Add metadata confirmation fields to books |
+| `0118` | 2025-12-03 | Add OCR status fields to books |
+| `0117` | 2025-12-03 | Add conflict copy fields to notes/highlights |
+| `0116` | 2025-12-03 | Create sync_events table |
+| `0115` | 2025-12-03 | Add sync version fields to reading_progress |
+
 ## 7. 逻辑分层与命名规范 (Logical Domains & Naming Conventions)
 
 ### 7.1 领域逻辑划分
@@ -609,6 +647,7 @@ WITH CHECK (
 *   **Book Domain**: `books`, `shelves`, `shelf_items`, `conversion_jobs`
 *   **Notes Domain**: `notes`, `highlights`, `tags`, `note_tags`, `highlight_tags`
 *   **Reading Domain**: `reading_progress`, `reading_sessions`, `reading_daily`
+*   **Sync Domain**: `sync_events` *(新增)*
 *   **Billing Domain**: `credit_accounts`, `credit_ledger`, `credit_products`, `payment_*`, `pricing_rules`
 *   **AI Domain**: `ai_*`, `srs_*`, `vectors`
 *   **Realtime Docs Domain**: `doc_*`
@@ -624,3 +663,143 @@ WITH CHECK (
 
 
 建议后端工程师根据文档中的 Verified 警告，检查 api/app/books.py 中关于 conversion_jobs 的查询代码，尽快将 owner_id 统一重构为 user_id ，以消除隐患。
+
+---
+
+## 8. 已完成 Schema 变更（ADR-006 Migrations）
+
+> **状态**：✅ IMPLEMENTED（已执行）
+> **执行日期**：2025-12-03
+> **关联 ADR**：`03 - 系统架构与ADR` ADR-006
+
+### 8.1 `reading_progress` 表扩展（Migration 0115）
+
+为支持智能心跳同步，在 `reading_progress` 表添加版本追踪字段：
+
+```sql
+-- Migration: 0115_add_sync_version_fields (已执行)
+ALTER TABLE reading_progress
+    ADD COLUMN ocr_version VARCHAR(64),
+    ADD COLUMN metadata_version VARCHAR(64),
+    ADD COLUMN vector_index_version VARCHAR(64),
+    ADD COLUMN last_sync_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN reading_progress.ocr_version IS 'OCR 数据版本（服务端权威）';
+COMMENT ON COLUMN reading_progress.metadata_version IS '书籍元数据版本（服务端权威）';
+COMMENT ON COLUMN reading_progress.vector_index_version IS '向量索引版本（服务端权威）';
+COMMENT ON COLUMN reading_progress.last_sync_at IS '最后一次完整同步时间';
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 | 权威来源 |
+|-----|------|------|---------|
+| `ocr_version` | VARCHAR(64) | OCR 数据版本哈希，格式 `sha256:abc123...` 前 16 位 | Server |
+| `metadata_version` | VARCHAR(64) | 书籍元数据版本，格式同上 | Server |
+| `vector_index_version` | VARCHAR(64) | 向量索引版本（可选） | Server |
+| `last_sync_at` | TIMESTAMPTZ | 客户端最后完整同步时间，用于判断是否需要全量对账 | Client |
+
+#### 8.1.2 `sync_events` 表（可选）
+
+用于服务端记录待推送给客户端的事件队列：
+
+```sql
+-- Migration: 0116_create_sync_events
+CREATE TABLE sync_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    event_type VARCHAR(32) NOT NULL,
+    payload JSONB,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    delivered_at TIMESTAMPTZ
+);
+
+-- 索引：查询用户未投递的事件
+CREATE INDEX idx_sync_events_user_pending 
+    ON sync_events(user_id, created_at) 
+    WHERE delivered_at IS NULL;
+
+-- 索引：清理已投递的旧事件
+CREATE INDEX idx_sync_events_delivered 
+    ON sync_events(delivered_at) 
+    WHERE delivered_at IS NOT NULL;
+
+COMMENT ON TABLE sync_events IS '服务端待推送事件队列，用于 WebSocket/心跳同步';
+```
+
+**事件类型枚举**：
+
+| event_type | 说明 | payload 示例 |
+|-----------|------|-------------|
+| `ocr_ready` | OCR 处理完成 | `{ "version": "sha256:...", "size": 2200000 }` |
+| `metadata_updated` | 书籍元数据更新 | `{ "version": "sha256:...", "fields": ["title", "author"] }` |
+| `vector_ready` | 向量索引生成完成 | `{ "version": "sha256:...", "dimension": 1024 }` |
+| `cover_updated` | 封面更新 | `{ "coverUrl": "/covers/..." }` |
+| `ocr_analysis_done` | 初检完成（图片型 PDF） | `{ "is_digitalized": false, "page_count": 632 }` |
+
+#### 8.1.3 `notes` 和 `highlights` 冲突副本字段
+
+为支持多设备冲突检测和保留双版本：
+
+```sql
+-- Migration: 0117_add_conflict_fields
+ALTER TABLE notes ADD COLUMN device_id VARCHAR(64);
+ALTER TABLE notes ADD COLUMN conflict_of UUID REFERENCES notes(id) ON DELETE CASCADE;
+
+ALTER TABLE highlights ADD COLUMN device_id VARCHAR(64);
+ALTER TABLE highlights ADD COLUMN conflict_of UUID REFERENCES highlights(id) ON DELETE CASCADE;
+
+-- 索引：查询某笔记的冲突副本
+CREATE INDEX idx_notes_conflict ON notes(conflict_of) WHERE conflict_of IS NOT NULL;
+CREATE INDEX idx_highlights_conflict ON highlights(conflict_of) WHERE conflict_of IS NOT NULL;
+
+COMMENT ON COLUMN notes.device_id IS '创建该笔记的设备 ID';
+COMMENT ON COLUMN notes.conflict_of IS '如果是冲突副本，指向原始笔记 ID';
+```
+
+### 8.4 `books` 表 OCR 状态字段（Migration 0118）
+
+为支持用户主动触发 OCR 服务：
+
+```sql
+-- Migration: 0118_add_ocr_status_fields (已执行)
+ALTER TABLE books ADD COLUMN ocr_status VARCHAR(20);
+ALTER TABLE books ADD COLUMN ocr_requested_at TIMESTAMPTZ;
+ALTER TABLE books ADD COLUMN vector_indexed_at TIMESTAMPTZ;
+
+-- CHECK 约束确保状态值有效
+ALTER TABLE books ADD CONSTRAINT chk_books_ocr_status 
+    CHECK (ocr_status IS NULL OR ocr_status IN ('pending', 'processing', 'completed', 'failed'));
+
+-- 部分索引：仅索引待处理任务
+CREATE INDEX idx_books_ocr_pending ON books(user_id, ocr_status) 
+    WHERE ocr_status IN ('pending', 'processing');
+
+COMMENT ON COLUMN books.ocr_status IS 'OCR 状态: NULL/pending/processing/completed/failed';
+COMMENT ON COLUMN books.ocr_requested_at IS '用户请求 OCR 的时间';
+COMMENT ON COLUMN books.vector_indexed_at IS '向量索引完成时间';
+```
+
+### 8.5 `books` 表元数据确认字段（Migration 0119）
+
+为支持用户确认书籍元数据：
+
+```sql
+-- Migration: 0119_add_metadata_confirmed_fields (已执行)
+ALTER TABLE books ADD COLUMN metadata_confirmed BOOLEAN DEFAULT FALSE;
+ALTER TABLE books ADD COLUMN metadata_confirmed_at TIMESTAMPTZ;
+
+COMMENT ON COLUMN books.metadata_confirmed IS '用户是否已确认元数据（书名、作者）';
+COMMENT ON COLUMN books.metadata_confirmed_at IS '元数据确认时间';
+```
+
+### 8.6 迁移执行状态
+
+| 迁移 ID | 描述 | 状态 | 执行日期 |
+|--------|------|------|---------|
+| `0115` | 为 `reading_progress` 添加版本字段 | ✅ 已执行 | 2025-12-03 |
+| `0116` | 创建 `sync_events` 表 | ✅ 已执行 | 2025-12-03 |
+| `0117` | 为 `notes`/`highlights` 添加冲突副本字段 | ✅ 已执行 | 2025-12-03 |
+| `0118` | 为 `books` 添加 OCR 状态字段 | ✅ 已执行 | 2025-12-03 |
+| `0119` | 为 `books` 添加元数据确认字段 | ✅ 已执行 | 2025-12-03 |

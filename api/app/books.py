@@ -91,12 +91,71 @@ async def upload_init(
     quota=Depends(require_upload_permission),
     auth=Depends(require_user),
 ):
+    """
+    初始化上传，支持全局 SHA256 去重。
+    
+    如果客户端提供了 content_sha256，服务端会检查是否已有相同文件：
+    - 全局已存在：返回 dedup_available=true，客户端可跳过上传
+    - 仅当前用户已有：返回现有 book_id
+    """
     user_id, _ = auth
     filename = body.get("filename")
     if not filename:
         raise HTTPException(status_code=400, detail="missing_filename")
     content_type = body.get("content_type")
+    content_sha256 = body.get("content_sha256")  # 客户端计算的 SHA256
+    
+    # 如果提供了 SHA256，检查全局去重
+    if content_sha256 and len(content_sha256) == 64:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            # 1. 先检查当前用户是否已有相同文件
+            res = await conn.execute(
+                text(
+                    "SELECT id::text, title FROM books WHERE user_id = cast(:uid as uuid) AND content_sha256 = :sha"
+                ),
+                {"uid": user_id, "sha": content_sha256},
+            )
+            own_row = res.fetchone()
+            if own_row:
+                # 用户自己已有相同文件，返回现有记录
+                return {
+                    "status": "success",
+                    "data": {
+                        "dedup_hit": "own",
+                        "existing_book_id": own_row[0],
+                        "existing_title": own_row[1],
+                        "message": "您已上传过该文件"
+                    }
+                }
+            
+            # 2. 检查全局是否有相同文件（其他用户上传过）
+            res = await conn.execute(
+                text(
+                    "SELECT id::text, minio_key, cover_key FROM books WHERE content_sha256 = :sha LIMIT 1"
+                ),
+                {"sha": content_sha256},
+            )
+            global_row = res.fetchone()
+            if global_row:
+                # 全局已存在，告知客户端可以秒传
+                return {
+                    "status": "success",
+                    "data": {
+                        "dedup_hit": "global",
+                        "dedup_available": True,
+                        "canonical_book_id": global_row[0],
+                        "canonical_minio_key": global_row[1],
+                        "canonical_cover_key": global_row[2],
+                        "message": "文件已存在，可快速添加到书库"
+                    }
+                }
+    
+    # 没有去重命中，返回上传 URL
     data = await svc_get_upload_url(user_id, filename, content_type)
+    data["dedup_hit"] = None
     return {"status": "success", "data": data}
 
 
@@ -115,6 +174,7 @@ async def upload_complete(
     language = body.get("language") or ""
     original_format = body.get("original_format") or ""
     size = body.get("size") or None
+    content_sha256 = body.get("content_sha256")  # 客户端计算的 SHA256
     if idempotency_key:
         idem_key = f"idem:books:upload_complete:{user_id}:{idempotency_key}"
         cached = r.get(idem_key)
@@ -156,8 +216,8 @@ async def upload_complete(
         await conn.execute(
             text(
                 """
-        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag)
-        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag)
+        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag, content_sha256, storage_ref_count)
+        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag, :sha256, 1)
         """
             ),
             {
@@ -172,6 +232,7 @@ async def upload_complete(
                 "dig": (conf >= 0.8),
                 "conf": conf,
                 "etag": etag,
+                "sha256": content_sha256,
             },
         )
         # 初始化 meta.page_count 为占位，后台任务将补齐
@@ -196,11 +257,122 @@ async def upload_complete(
             # EPUB/PDF 直接提取封面和元数据
             celery_app.send_task("tasks.extract_book_cover", args=[book_id, user_id])
             celery_app.send_task("tasks.extract_book_metadata", args=[book_id, user_id])
+            # 触发深度分析（OCR + 向量索引）
+            celery_app.send_task("tasks.deep_analyze_book", args=[book_id, user_id])
         else:
             # 其他格式（AZW3, MOBI 等）先转换为 EPUB，转换完成后会自动触发封面和元数据提取
             celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
     except Exception:
         pass
+    return {"status": "success", "data": data}
+
+
+@router.post("/dedup_reference")
+async def dedup_reference(
+    body: dict = Body(...),
+    idempotency_key: str | None = Header(None),
+    quota=Depends(require_upload_permission),
+    auth=Depends(require_user),
+):
+    """
+    全局去重秒传：当 upload_init 返回 dedup_available=true 时调用。
+    不需要实际上传文件，直接创建指向已有存储的书籍记录。
+    """
+    user_id, _ = auth
+    content_sha256 = body.get("content_sha256")
+    canonical_book_id = body.get("canonical_book_id")
+    title = body.get("title") or "Untitled"
+    author = body.get("author") or ""
+    language = body.get("language") or ""
+    original_format = body.get("original_format") or ""
+    
+    if not content_sha256 or not canonical_book_id:
+        raise HTTPException(status_code=400, detail="missing_content_sha256_or_canonical_book_id")
+    
+    if idempotency_key:
+        idem_key = f"idem:books:dedup_reference:{user_id}:{idempotency_key}"
+        cached = r.get(idem_key)
+        if cached:
+            return {"status": "success", "data": eval(cached)}
+    
+    book_id = str(uuid.uuid4())
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 获取原始书籍信息
+        res = await conn.execute(
+            text(
+                """
+                SELECT minio_key, cover_key, size, original_format, is_digitalized, 
+                       initial_digitalization_confidence, meta, ocr_fingerprint, ocr_data_key
+                FROM books WHERE id = cast(:cid as uuid) AND content_sha256 = :sha
+                """
+            ),
+            {"cid": canonical_book_id, "sha": content_sha256},
+        )
+        canonical = res.fetchone()
+        if not canonical:
+            raise HTTPException(status_code=404, detail="canonical_book_not_found")
+        
+        (c_minio_key, c_cover_key, c_size, c_fmt, c_dig, c_conf, c_meta, c_ocr_fp, c_ocr_key) = canonical
+        
+        # 增加原始存储的引用计数
+        await conn.execute(
+            text(
+                "UPDATE books SET storage_ref_count = COALESCE(storage_ref_count, 1) + 1 WHERE id = cast(:cid as uuid)"
+            ),
+            {"cid": canonical_book_id},
+        )
+        
+        # 创建新的书籍记录，共享存储
+        await conn.execute(
+            text(
+                """
+                INSERT INTO books(id, user_id, title, author, language, original_format, 
+                                  minio_key, cover_key, size, is_digitalized, initial_digitalization_confidence,
+                                  content_sha256, canonical_book_id, storage_ref_count, meta,
+                                  ocr_fingerprint, ocr_data_key)
+                VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt,
+                        :key, :cover, :size, :dig, :conf, :sha256, cast(:cid as uuid), 0, :meta,
+                        :ocr_fp, :ocr_key)
+                """
+            ),
+            {
+                "id": book_id,
+                "uid": user_id,
+                "title": title,
+                "author": author,
+                "language": language,
+                "fmt": c_fmt if not original_format else original_format,
+                "key": c_minio_key,
+                "cover": c_cover_key,
+                "size": c_size,
+                "dig": c_dig,
+                "conf": c_conf,
+                "sha256": content_sha256,
+                "cid": canonical_book_id,
+                "meta": c_meta,
+                "ocr_fp": c_ocr_fp,
+                "ocr_key": c_ocr_key,
+            },
+        )
+    
+    download_url = presigned_get(BOOKS_BUCKET, c_minio_key)
+    index_book(book_id, user_id, title, author)
+    
+    data = {
+        "id": book_id,
+        "download_url": download_url,
+        "dedup_hit": "global",
+        "inherited_ocr": c_ocr_fp is not None,
+    }
+    
+    if idempotency_key:
+        r.setex(idem_key, 24 * 3600, str(data))
+    
     return {"status": "success", "data": data}
 
 
@@ -473,6 +645,894 @@ async def presign_convert_output(book_id: str, auth=Depends(require_user)):
             "status": "success",
             "data": {"download_url": presigned_get(BOOKS_BUCKET, row[0])},
         }
+
+
+@router.get("/{book_id}/ocr")
+async def get_book_ocr(book_id: str, auth=Depends(require_user)):
+    """
+    获取书籍的 OCR 识别结果
+    返回按页组织的文本内容，用于前端显示和搜索
+    """
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text(
+                "SELECT digitalize_report_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"
+            ),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="not_found")
+        
+        report_key = row[0]
+        is_digitalized = row[1]
+        
+        if not report_key:
+            return {
+                "status": "success",
+                "data": {
+                    "available": False,
+                    "is_digitalized": bool(is_digitalized),
+                    "pages": {},
+                    "total_pages": 0,
+                    "total_chars": 0,
+                }
+            }
+        
+        # 读取 OCR 报告
+        try:
+            from .storage import read_full
+            report_data = read_full(BOOKS_BUCKET, report_key)
+            if not report_data:
+                raise Exception("Report not found")
+            
+            import json
+            report = json.loads(report_data)
+            ocr_result = report.get("ocr", {})
+            ocr_pages = ocr_result.get("pages", [])
+            
+            # 按页组织文本
+            pages_dict = {}
+            for item in ocr_pages:
+                page_num = item.get("page", 1)
+                item_text = item.get("text", "")
+                if item_text:
+                    if page_num not in pages_dict:
+                        pages_dict[page_num] = []
+                    pages_dict[page_num].append(item_text)
+            
+            # 转换为前端友好格式
+            pages_formatted = {}
+            total_chars = 0
+            for page_num, texts in pages_dict.items():
+                page_text = "\n".join(texts)
+                pages_formatted[str(page_num)] = page_text
+                total_chars += len(page_text)
+            
+            return {
+                "status": "success",
+                "data": {
+                    "available": True,
+                    "is_digitalized": bool(is_digitalized),
+                    "is_image_based": report.get("is_image_based", False),
+                    "confidence": report.get("confidence", 0),
+                    "pages": pages_formatted,
+                    "total_pages": len(pages_formatted),
+                    "total_chars": total_chars,
+                }
+            }
+        except Exception as e:
+            print(f"[OCR] Failed to read report: {e}")
+            return {
+                "status": "success",
+                "data": {
+                    "available": False,
+                    "is_digitalized": bool(is_digitalized),
+                    "pages": {},
+                    "total_pages": 0,
+                    "total_chars": 0,
+                    "error": str(e),
+                }
+            }
+
+
+@router.get("/{book_id}/ocr/full")
+async def get_book_ocr_full(
+    book_id: str,
+    auth=Depends(require_user)
+):
+    """
+    获取书籍完整的 OCR 识别结果（含所有页面坐标信息）
+    用于前端一次性下载并缓存到 IndexedDB
+    
+    注意：PDF 每一页的尺寸可能不同，page_sizes 字典包含每页的实际尺寸
+    
+    返回格式（支持 gzip 压缩）:
+    {
+        "is_image_based": true,
+        "confidence": 0.95,
+        "total_pages": 603,
+        "total_chars": 606993,
+        "total_regions": 22784,
+        "page_sizes": {           // 每页的实际尺寸（页码为字符串 key）
+            "1": {"width": 1240, "height": 1754},
+            "2": {"width": 1240, "height": 1600},
+            ...
+        },
+        "regions": [
+            {
+                "text": "识别的文字",
+                "confidence": 0.99,
+                "bbox": [x1, y1, x2, y2],
+                "polygon": [[x1,y1], ...],
+                "page": 1
+            },
+            ...
+        ]
+    }
+    """
+    import gzip
+    import json
+    
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text(
+                "SELECT digitalize_report_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"
+            ),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        report_key, is_digitalized = row
+        if not report_key:
+            raise HTTPException(status_code=404, detail="ocr_not_available")
+        
+        try:
+            from .storage import read_full
+            report_data = read_full(BOOKS_BUCKET, report_key)
+            if not report_data:
+                raise Exception("Report not found")
+            
+            report = json.loads(report_data)
+            ocr_result = report.get("ocr", {})
+            all_regions = ocr_result.get("regions", [])
+            
+            # 计算统计信息
+            total_chars = sum(len(r.get("text", "")) for r in all_regions)
+            page_numbers = set(r.get("page", 1) for r in all_regions)
+            total_pages = max(page_numbers) if page_numbers else 0
+            
+            # 获取每页的尺寸信息
+            # PDF 每一页的尺寸可能不同，需要从报告中读取或推断
+            page_sizes = report.get("page_sizes", {})  # {"1": {"width": w, "height": h}, ...}
+            
+            # 如果报告中没有 page_sizes，则从每页的 region 坐标推断
+            if not page_sizes:
+                page_sizes = {}
+                # 按页分组 regions
+                page_regions_map = {}
+                for r in all_regions:
+                    p = r.get("page", 1)
+                    if p not in page_regions_map:
+                        page_regions_map[p] = []
+                    page_regions_map[p].append(r)
+                
+                # 为每页推断尺寸
+                for page_num, regions in page_regions_map.items():
+                    max_x, max_y = 0.0, 0.0
+                    for r in regions:
+                        bbox = r.get("bbox", [])
+                        if len(bbox) >= 4:
+                            max_x = max(max_x, bbox[2])
+                            max_y = max(max_y, bbox[3])
+                    
+                    if max_x > 0 and max_y > 0:
+                        # 添加约 8% 边距估算完整页面尺寸
+                        page_sizes[str(page_num)] = {
+                            "width": int(max_x * 1.08),
+                            "height": int(max_y * 1.08)
+                        }
+            
+            # 构建响应数据
+            response_data = {
+                "is_image_based": report.get("is_image_based", False),
+                "confidence": report.get("confidence", 0),
+                "total_pages": total_pages,
+                "total_chars": total_chars,
+                "total_regions": len(all_regions),
+                "page_sizes": page_sizes,
+                "regions": all_regions,
+            }
+            
+            # 使用 gzip 压缩
+            json_bytes = json.dumps(response_data, ensure_ascii=False).encode("utf-8")
+            compressed = gzip.compress(json_bytes, compresslevel=6)
+            
+            return Response(
+                content=compressed,
+                media_type="application/json",
+                headers={
+                    "Content-Encoding": "gzip",
+                    "Content-Length": str(len(compressed)),
+                    "X-Original-Size": str(len(json_bytes)),
+                    "X-Compressed-Size": str(len(compressed)),
+                }
+            )
+        except Exception as e:
+            print(f"[OCR] Failed to read full OCR data: {e}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{book_id}/ocr/quota")
+async def get_ocr_quota_info(book_id: str, auth=Depends(require_user)):
+    """
+    获取 OCR 配额信息，用于前端显示。
+    
+    返回:
+    - pageCount: 书籍页数
+    - tier: 阶梯 (1, 2, 3)
+    - cost: 所需配额单位
+    - canTrigger: 是否可以触发 OCR
+    - reason: 不能触发的原因
+    - freeRemaining: 免费剩余额度
+    - proRemaining: Pro 赠送剩余额度
+    - addonRemaining: 加油包剩余额度
+    - isPro: 是否是 Pro 用户
+    - maxPages: 最大支持页数
+    """
+    from datetime import datetime, timezone
+    
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 获取书籍信息
+        res = await conn.execute(
+            text("""
+                SELECT id, is_digitalized, ocr_status,
+                       COALESCE((meta->>'page_count')::int, 0) as page_count
+                FROM books 
+                WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        _, is_digitalized, ocr_status, page_count = row
+        
+        # 获取系统配置
+        settings_res = await conn.execute(
+            text("""
+                SELECT key, value FROM system_settings 
+                WHERE key IN (
+                    'ocr_page_thresholds', 'ocr_max_pages', 'ocr_monthly_free_quota',
+                    'monthly_gift_ocr_count'
+                )
+            """)
+        )
+        settings = {r[0]: r[1] for r in settings_res.fetchall()}
+        
+        thresholds = settings.get("ocr_page_thresholds", {"standard": 600, "double": 1000, "triple": 2000})
+        max_pages = int(settings.get("ocr_max_pages", 2000))
+        free_quota = int(settings.get("ocr_monthly_free_quota", 3))
+        gift_quota = int(settings.get("monthly_gift_ocr_count", 3))
+        
+        # 获取用户信息
+        user_res = await conn.execute(
+            text("""
+                SELECT membership_tier, membership_expire_at, free_ocr_usage,
+                       COALESCE(ocr_addon_balance, 0) as addon_balance
+                FROM users WHERE id = cast(:uid as uuid)
+            """),
+            {"uid": user_id},
+        )
+        user_row = user_res.fetchone()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="user_not_found")
+        
+        tier, membership_expire_at, free_ocr_used, addon_balance = user_row
+        
+        # Pro 会员检查
+        is_pro = False
+        if tier and tier != "FREE" and membership_expire_at:
+            if membership_expire_at > datetime.now(timezone.utc):
+                is_pro = True
+        
+        # 计算阶梯和所需单位
+        if page_count <= thresholds["standard"]:
+            tier_level = 1
+            units_needed = 1
+        elif page_count <= thresholds["double"]:
+            tier_level = 2
+            units_needed = 2
+        elif page_count <= thresholds["triple"]:
+            tier_level = 3
+            units_needed = 3
+        else:
+            tier_level = 3
+            units_needed = 3
+        
+        # 计算剩余配额
+        free_remaining = max(0, free_quota - (free_ocr_used or 0))
+        pro_remaining = max(0, gift_quota - (free_ocr_used or 0)) if is_pro else 0
+        
+        # 判断是否可以触发
+        can_trigger = True
+        reason = None
+        
+        if is_digitalized:
+            can_trigger = False
+            reason = "书籍已是文字型，无需 OCR"
+        elif ocr_status in ('pending', 'processing'):
+            can_trigger = False
+            reason = "OCR 任务正在处理中"
+        elif not page_count or page_count == 0:
+            can_trigger = False
+            reason = "无法获取书籍页数"
+        elif page_count > max_pages:
+            can_trigger = False
+            reason = f"页数超过上限 (最大 {max_pages} 页)"
+        elif not is_pro:
+            # 免费用户检查
+            if tier_level > 1:
+                can_trigger = False
+                reason = "免费用户仅支持 ≤600 页的书籍"
+            elif free_remaining < 1:
+                can_trigger = False
+                reason = "本月免费配额已用尽"
+        else:
+            # Pro 用户检查
+            if tier_level == 1 and pro_remaining >= 1:
+                pass  # 可以使用月度赠送
+            elif addon_balance < units_needed:
+                can_trigger = False
+                reason = "配额不足，请购买加油包"
+        
+        return {
+            "status": "success",
+            "data": {
+                "pageCount": page_count if page_count > 0 else None,
+                "tier": tier_level,
+                "cost": units_needed,
+                "canTrigger": can_trigger,
+                "reason": reason,
+                "freeRemaining": free_remaining if not is_pro else 0,
+                "proRemaining": pro_remaining,
+                "addonRemaining": addon_balance,
+                "isPro": is_pro,
+                "maxPages": max_pages,
+            }
+        }
+
+
+@router.post("/{book_id}/ocr")
+async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
+    """
+    用户主动请求对图片型 PDF 进行 OCR 处理。
+    
+    检查:
+    1. 书籍是否存在且属于用户
+    2. 书籍是否已是文字型 (is_digitalized=true)
+    3. 是否已有 OCR 任务在处理中
+    4. 用户 OCR 配额是否充足
+    
+    成功后更新 books.ocr_status='pending', ocr_requested_at=now()
+    并分发 Celery 任务进行 OCR 处理
+    """
+    from datetime import datetime, timezone
+    
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 1. 获取书籍信息
+        res = await conn.execute(
+            text("""
+                SELECT id, is_digitalized, ocr_status, ocr_requested_at, minio_key, 
+                       COALESCE((meta->>'page_count')::int, 0) as page_count
+                FROM books 
+                WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        book_id_db, is_digitalized, ocr_status, ocr_requested_at, minio_key, page_count = row
+        
+        # 2. 检查是否已是文字型
+        if is_digitalized:
+            raise HTTPException(status_code=400, detail="already_digitalized")
+        
+        # 3. 检查是否已有 OCR 任务在处理中
+        if ocr_status in ('pending', 'processing'):
+            # 计算队列位置
+            queue_res = await conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM books 
+                    WHERE ocr_status IN ('pending', 'processing') 
+                    AND ocr_requested_at < :req_at
+                """),
+                {"req_at": ocr_requested_at or datetime.now(timezone.utc)},
+            )
+            queue_pos = (queue_res.fetchone()[0] or 0) + 1
+            
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "ocr_in_progress",
+                    "queuePosition": queue_pos
+                }
+            )
+        
+        # 4. 页数风控检查
+        if not page_count or page_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "OCR_NEEDS_MANUAL_CHECK",
+                    "message": "无法获取书籍页数信息，请联系客服"
+                }
+            )
+        
+        # 获取系统配置
+        settings_res = await conn.execute(
+            text("""
+                SELECT key, value FROM system_settings 
+                WHERE key IN (
+                    'ocr_page_thresholds', 'ocr_max_pages', 'ocr_monthly_free_quota',
+                    'monthly_gift_ocr_count', 'ocr_minutes_per_book'
+                )
+            """)
+        )
+        settings = {r[0]: r[1] for r in settings_res.fetchall()}
+        
+        # 解析配置（value 是 JSONB，已经是 Python 对象）
+        thresholds = settings.get("ocr_page_thresholds", {"standard": 600, "double": 1000, "triple": 2000})
+        max_pages = int(settings.get("ocr_max_pages", 2000))
+        free_quota = int(settings.get("ocr_monthly_free_quota", 3))
+        gift_quota = int(settings.get("monthly_gift_ocr_count", 3))
+        minutes_per_book = int(settings.get("ocr_minutes_per_book", 5))
+        
+        # 检查页数上限
+        if page_count > max_pages:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "OCR_MAX_PAGES_EXCEEDED",
+                    "pages": page_count,
+                    "limit": max_pages
+                }
+            )
+        
+        # 计算所需单位数（按阶梯）
+        if page_count <= thresholds["standard"]:
+            units_needed = 1
+        elif page_count <= thresholds["double"]:
+            units_needed = 2
+        elif page_count <= thresholds["triple"]:
+            units_needed = 3
+        else:
+            units_needed = 3  # fallback
+        
+        # 5. 检查用户配额
+        user_res = await conn.execute(
+            text("""
+                SELECT membership_tier, membership_expire_at, free_ocr_usage,
+                       COALESCE(monthly_gift_reset_at, '1970-01-01'::timestamptz) as gift_reset_at
+                FROM users WHERE id = cast(:uid as uuid)
+            """),
+            {"uid": user_id},
+        )
+        user_row = user_res.fetchone()
+        if not user_row:
+            raise HTTPException(status_code=401, detail="user_not_found")
+        
+        tier, membership_expire_at, free_ocr_used, gift_reset_at = user_row
+        
+        # Pro 会员检查
+        is_pro = False
+        if tier and tier != "FREE" and membership_expire_at:
+            if membership_expire_at > datetime.now(timezone.utc):
+                is_pro = True
+        
+        # 检查月度赠送是否需要重置
+        now_utc = datetime.now(timezone.utc)
+        if is_pro and gift_reset_at < now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0):
+            # 重置月度赠送
+            await conn.execute(
+                text("UPDATE users SET free_ocr_usage = 0, monthly_gift_reset_at = now() WHERE id = cast(:uid as uuid)"),
+                {"uid": user_id}
+            )
+            free_ocr_used = 0
+        
+        # 配额检查逻辑（按商业模型 V9.0）
+        can_use_free = units_needed == 1  # 仅 ≤600 页可用免费额度
+        
+        if is_pro:
+            # Pro 会员：优先用月度赠送
+            if can_use_free and free_ocr_used < gift_quota:
+                # 使用月度赠送额度
+                quota_type = "monthly_gift"
+            else:
+                # 需要检查加油包余额
+                addon_res = await conn.execute(
+                    text("SELECT ocr_addon_balance FROM users WHERE id = cast(:uid as uuid)"),
+                    {"uid": user_id}
+                )
+                addon_balance = (addon_res.fetchone() or (0,))[0] or 0
+                if addon_balance < units_needed:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "code": "ocr_quota_exceeded",
+                            "quota": {
+                                "giftUsed": free_ocr_used,
+                                "giftLimit": gift_quota,
+                                "addonBalance": addon_balance,
+                                "unitsNeeded": units_needed,
+                                "pageCount": page_count
+                            }
+                        }
+                    )
+                quota_type = "addon"
+        else:
+            # 免费用户：仅能用月度免费配额（仅 ≤600 页）
+            if not can_use_free:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "OCR_MAX_PAGES_EXCEEDED",
+                        "message": "免费用户仅支持 600 页以内的书籍 OCR"
+                    }
+                )
+            if free_ocr_used >= free_quota:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "ocr_quota_exceeded",
+                        "quota": {
+                            "used": free_ocr_used,
+                            "limit": free_quota
+                        }
+                    }
+                )
+            quota_type = "free"
+        
+        # 6. 扣除配额（在同一事务内）
+        if quota_type == "monthly_gift":
+            await conn.execute(
+                text("UPDATE users SET free_ocr_usage = free_ocr_usage + 1 WHERE id = cast(:uid as uuid)"),
+                {"uid": user_id}
+            )
+        elif quota_type == "addon":
+            await conn.execute(
+                text("UPDATE users SET ocr_addon_balance = ocr_addon_balance - :units WHERE id = cast(:uid as uuid)"),
+                {"uid": user_id, "units": units_needed}
+            )
+        elif quota_type == "free":
+            await conn.execute(
+                text("UPDATE users SET free_ocr_usage = free_ocr_usage + 1 WHERE id = cast(:uid as uuid)"),
+                {"uid": user_id}
+            )
+        
+        # 7. 更新书籍 OCR 状态
+        await conn.execute(
+            text("""
+                UPDATE books 
+                SET ocr_status = 'pending', 
+                    ocr_requested_at = now(),
+                    updated_at = now()
+                WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id}
+        )
+        
+        # 8. 计算队列位置
+        queue_res = await conn.execute(
+            text("""
+                SELECT COUNT(*) FROM books 
+                WHERE ocr_status IN ('pending', 'processing') 
+                AND ocr_requested_at < now()
+            """)
+        )
+        queue_position = (queue_res.fetchone()[0] or 0) + 1
+        estimated_minutes = max(minutes_per_book, queue_position * minutes_per_book + (page_count or 100) // 50)
+        
+        # 9. 分发 Celery 任务
+        try:
+            celery_app.send_task(
+                "tasks.process_book_ocr",
+                args=[book_id, user_id],
+                priority=7 if is_pro else 3
+            )
+        except Exception as e:
+            print(f"[OCR] Failed to dispatch Celery task: {e}")
+            # 任务分发失败，回滚状态
+            await conn.execute(
+                text("UPDATE books SET ocr_status = NULL, ocr_requested_at = NULL WHERE id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            raise HTTPException(status_code=503, detail="ocr_service_unavailable")
+    
+    return {
+        "status": "queued",
+        "queuePosition": queue_position,
+        "estimatedMinutes": estimated_minutes
+    }
+
+
+@router.get("/{book_id}/ocr/status")
+async def get_book_ocr_status(book_id: str, auth=Depends(require_user)):
+    """
+    查询书籍的 OCR 处理状态。
+    
+    返回:
+    - isDigitalized: 是否已是文字型
+    - ocrStatus: pending | processing | completed | failed | null
+    - queuePosition: 仅当 status=pending 时返回
+    - estimatedMinutes: 预计处理时间
+    - completedAt: 仅当 status=completed 时返回
+    - errorMessage: 仅当 status=failed 时返回
+    """
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        res = await conn.execute(
+            text("""
+                SELECT id, is_digitalized, ocr_status, ocr_requested_at, 
+                       vector_indexed_at, COALESCE((meta->>'page_count')::int, 0) as page_count,
+                       meta->>'ocr_error' as ocr_error
+                FROM books 
+                WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        book_id_db, is_digitalized, ocr_status, ocr_requested_at, vector_indexed_at, page_count, ocr_error = row
+        
+        result = {
+            "bookId": str(book_id_db),
+            "isDigitalized": bool(is_digitalized),
+            "ocrStatus": ocr_status,
+        }
+        
+        if ocr_status == 'pending':
+            # 计算队列位置
+            queue_res = await conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM books 
+                    WHERE ocr_status IN ('pending', 'processing') 
+                    AND ocr_requested_at < :req_at
+                """),
+                {"req_at": ocr_requested_at},
+            )
+            queue_pos = (queue_res.fetchone()[0] or 0) + 1
+            result["queuePosition"] = queue_pos
+            # 从 system_settings 获取配置
+            settings_row = await conn.execute(
+                text("SELECT value FROM system_settings WHERE key = 'ocr_minutes_per_book'")
+            )
+            mins_per_book = int((settings_row.fetchone() or (5,))[0])
+            result["estimatedMinutes"] = max(mins_per_book, queue_pos * mins_per_book + (page_count or 100) // 50)
+        
+        elif ocr_status == 'processing':
+            settings_row = await conn.execute(
+                text("SELECT value FROM system_settings WHERE key = 'ocr_minutes_per_book'")
+            )
+            mins_per_book = int((settings_row.fetchone() or (5,))[0])
+            result["estimatedMinutes"] = max(mins_per_book, (page_count or 100) // 50)
+        
+        elif ocr_status == 'completed':
+            result["completedAt"] = str(vector_indexed_at) if vector_indexed_at else None
+        
+        elif ocr_status == 'failed':
+            result["errorCode"] = "ocr_failed"
+            if ocr_error:
+                result["errorMessage"] = ocr_error
+        
+        return result
+
+
+@router.get("/{book_id}/ocr/page/{page}")
+async def get_book_ocr_page(
+    book_id: str, 
+    page: int,
+    auth=Depends(require_user)
+):
+    """
+    获取书籍单页的 OCR 识别结果（含坐标信息）
+    用于前端渲染 OCR 文字叠加层，实现文字选择和高亮功能
+    
+    注意：PDF 每一页的尺寸可能不同，image_width 和 image_height 是该页的实际尺寸
+    
+    返回格式:
+    {
+        "regions": [
+            {
+                "text": "识别的文字",
+                "confidence": 0.99,
+                "bbox": [x1, y1, x2, y2],  # 边界框坐标
+                "polygon": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]  # 4点多边形
+            },
+            ...
+        ],
+        "page": 1,
+        "image_width": 1240,  # 该页的原始图片宽度（用于坐标映射）
+        "image_height": 1754  # 该页的原始图片高度
+    }
+    """
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text(
+                "SELECT digitalize_report_key FROM books WHERE id = cast(:id as uuid)"
+            ),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row or not row[0]:
+            raise HTTPException(status_code=404, detail="ocr_not_available")
+        
+        report_key = row[0]
+        
+        try:
+            from .storage import read_full
+            report_data = read_full(BOOKS_BUCKET, report_key)
+            if not report_data:
+                raise Exception("Report not found")
+            
+            import json
+            report = json.loads(report_data)
+            ocr_result = report.get("ocr", {})
+            all_regions = ocr_result.get("regions", [])
+            
+            # 筛选指定页的 regions
+            page_regions = [
+                {
+                    "text": r.get("text", ""),
+                    "confidence": r.get("confidence", 0),
+                    "bbox": r.get("bbox"),
+                    "polygon": r.get("polygon"),
+                }
+                for r in all_regions
+                if r.get("page") == page
+            ]
+            
+            # 获取该页的图片尺寸
+            # PDF 每一页的尺寸可能不同，需要从报告中读取每页的实际尺寸
+            page_sizes = report.get("page_sizes", {})  # {"1": {"width": 1240, "height": 1754}, ...}
+            page_size = page_sizes.get(str(page), {})
+            
+            if page_size:
+                image_width = page_size.get("width", 0)
+                image_height = page_size.get("height", 0)
+            else:
+                # 如果报告中没有该页尺寸，从该页的 region 坐标推断
+                max_x, max_y = 0.0, 0.0
+                for r in page_regions:
+                    bbox = r.get("bbox", [])
+                    if bbox and len(bbox) >= 4:
+                        max_x = max(max_x, bbox[2])  # x2
+                        max_y = max(max_y, bbox[3])  # y2
+                
+                if max_x > 0 and max_y > 0:
+                    # 添加约 8% 边距估算完整页面尺寸
+                    image_width = int(max_x * 1.08)
+                    image_height = int(max_y * 1.08)
+                else:
+                    # 无法推断时返回 0 表示未知
+                    image_width = 0
+                    image_height = 0
+            
+            return {
+                "status": "success",
+                "data": {
+                    "regions": page_regions,
+                    "page": page,
+                    "image_width": image_width,
+                    "image_height": image_height,
+                    "total_regions": len(page_regions),
+                }
+            }
+        except Exception as e:
+            print(f"[OCR] Failed to read page {page} OCR: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{book_id}/ocr/search")
+async def search_book_ocr(
+    book_id: str, 
+    q: str = Query(..., min_length=1, description="搜索关键词"),
+    auth=Depends(require_user)
+):
+    """
+    在书籍 OCR 内容中搜索
+    使用 OpenSearch 进行全文搜索
+    """
+    import requests
+    
+    user_id, _ = auth
+    ES_URL = os.getenv("ES_URL", "http://opensearch:9200")
+    
+    if not ES_URL:
+        raise HTTPException(status_code=503, detail="search_unavailable")
+    
+    try:
+        query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"match": {"content": q}},
+                        {"term": {"book_id": book_id}},
+                        {"term": {"user_id": user_id}},
+                    ]
+                }
+            },
+            "size": 50,
+            "sort": [{"page": "asc"}],
+            "_source": ["page", "content"],
+            "highlight": {
+                "fields": {"content": {}},
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+            }
+        }
+        
+        resp = requests.post(f"{ES_URL}/book_content/_search", json=query, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        
+        hits = []
+        for hit in result.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {})
+            highlight = hit.get("highlight", {}).get("content", [])
+            hits.append({
+                "page": src.get("page"),
+                "content": src.get("content", "")[:200],
+                "highlight": highlight[0] if highlight else None,
+                "score": hit.get("_score", 0),
+            })
+        
+        return {
+            "status": "success",
+            "data": {
+                "query": q,
+                "total": result.get("hits", {}).get("total", {}).get("value", 0),
+                "hits": hits,
+            }
+        }
+    except Exception as e:
+        print(f"[Search] Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{book_id}/presign_put_converted")
@@ -982,6 +2042,134 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
         print(f"[Delete Book] Error: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"delete_failed: {str(e)}")
+
+
+@router.patch("/{book_id}/metadata")
+async def update_book_metadata(
+    book_id: str,
+    body: dict = Body(...),
+    if_match: str | None = Header(None),
+    auth=Depends(require_user),
+):
+    """
+    用户确认或修改书籍的元数据（书名、作者）。
+    
+    Request Body:
+    {
+        "title"?: string,       // 书籍名称
+        "author"?: string,      // 作者
+        "confirmed": boolean    // 是否标记为已确认（即使不修改也可确认）
+    }
+    
+    支持乐观锁（If-Match 头），防止并发冲突。
+    更新成功后设置 metadata_confirmed=true, metadata_confirmed_at=now()
+    """
+    import hashlib
+    
+    user_id, _ = auth
+    title = body.get("title")
+    author = body.get("author")
+    confirmed = body.get("confirmed", True)
+    
+    # 乐观锁检查（可选）
+    current_version = None
+    if if_match and if_match.startswith('W/"'):
+        try:
+            current_version = int(if_match.split('"')[1])
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid_if_match")
+    
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        
+        # 获取当前书籍信息
+        res = await conn.execute(
+            text("""
+                SELECT id, title, author, version, metadata_confirmed
+                FROM books WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id},
+        )
+        row = res.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="book_not_found")
+        
+        book_id_db, old_title, old_author, version, already_confirmed = row
+        
+        # 乐观锁版本检查
+        if current_version is not None and version != current_version:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "version_conflict",
+                    "message": "书籍信息已被其他设备修改，请刷新后重试",
+                    "currentVersion": version
+                }
+            )
+        
+        # 计算新的元数据
+        new_title = title if title is not None else old_title
+        new_author = author if author is not None else old_author
+        
+        # 生成元数据版本指纹 (sha256 的前 16 位)
+        metadata_str = f"{new_title}|{new_author or ''}"
+        metadata_hash = hashlib.sha256(metadata_str.encode('utf-8')).hexdigest()[:16]
+        metadata_version = f"sha256:{metadata_hash}"
+        
+        # 更新数据库
+        if confirmed:
+            update_res = await conn.execute(
+                text("""
+                    UPDATE books SET
+                        title = COALESCE(:title, title),
+                        author = COALESCE(:author, author),
+                        metadata_confirmed = TRUE,
+                        metadata_confirmed_at = now(),
+                        version = version + 1,
+                        updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                    RETURNING version
+                """),
+                {"title": title, "author": author, "id": book_id},
+            )
+        else:
+            update_res = await conn.execute(
+                text("""
+                    UPDATE books SET
+                        title = COALESCE(:title, title),
+                        author = COALESCE(:author, author),
+                        version = version + 1,
+                        updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                    RETURNING version
+                """),
+                {"title": title, "author": author, "id": book_id},
+            )
+        
+        new_version_row = update_res.fetchone()
+        new_version = new_version_row[0] if new_version_row else version + 1
+        
+        # 获取更新后的完整信息
+        final_res = await conn.execute(
+            text("""
+                SELECT id, title, author, metadata_confirmed, metadata_confirmed_at, version
+                FROM books WHERE id = cast(:id as uuid)
+            """),
+            {"id": book_id},
+        )
+        final_row = final_res.fetchone()
+    
+    return {
+        "id": str(final_row[0]),
+        "title": final_row[1],
+        "author": final_row[2],
+        "metadataConfirmed": bool(final_row[3]),
+        "metadataConfirmedAt": str(final_row[4]) if final_row[4] else None,
+        "metadataVersion": metadata_version,
+        "version": final_row[5]
+    }
 
 
 @router.patch("/{book_id}")

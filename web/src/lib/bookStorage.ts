@@ -10,9 +10,11 @@
  */
 
 const DB_NAME = 'athena_books'
-const DB_VERSION = 1
+const DB_VERSION = 3  // 升级版本以添加封面缓存
 const STORE_NAME = 'book_files'
 const META_STORE = 'book_meta'
+const OCR_STORE = 'book_ocr'
+const COVER_STORE = 'book_covers'  // 新增封面存储
 
 export interface BookFileRecord {
   bookId: string
@@ -32,6 +34,38 @@ export interface BookMetaRecord {
   size: number
   isDownloaded: boolean
   downloadedAt?: number
+}
+
+/** 封面缓存记录 */
+export interface CoverCacheRecord {
+  bookId: string
+  blob: Blob
+  mimeType: string
+  cachedAt: number
+  originalUrl: string
+}
+
+/** OCR 区域数据 */
+export interface OcrRegion {
+  text: string
+  confidence: number
+  bbox: [number, number, number, number]  // [x1, y1, x2, y2]
+  polygon: [number, number][]  // [[x1,y1], [x2,y2], ...]
+  page: number
+}
+
+/** OCR 数据记录 */
+export interface OcrDataRecord {
+  bookId: string
+  isImageBased: boolean
+  confidence: number
+  totalPages: number
+  totalChars: number
+  totalRegions: number
+  imageWidth: number
+  imageHeight: number
+  regions: OcrRegion[]
+  downloadedAt: number
 }
 
 // 打开数据库
@@ -64,6 +98,20 @@ function openDB(): Promise<IDBDatabase> {
         const metaStore = db.createObjectStore(META_STORE, { keyPath: 'bookId' })
         metaStore.createIndex('isDownloaded', 'isDownloaded', { unique: false })
         console.log('[BookStorage] Created book_meta store')
+      }
+      
+      // OCR 数据存储（v2 新增）
+      if (!db.objectStoreNames.contains(OCR_STORE)) {
+        const ocrStore = db.createObjectStore(OCR_STORE, { keyPath: 'bookId' })
+        ocrStore.createIndex('downloadedAt', 'downloadedAt', { unique: false })
+        console.log('[BookStorage] Created book_ocr store')
+      }
+      
+      // 封面缓存存储（v3 新增）
+      if (!db.objectStoreNames.contains(COVER_STORE)) {
+        const coverStore = db.createObjectStore(COVER_STORE, { keyPath: 'bookId' })
+        coverStore.createIndex('cachedAt', 'cachedAt', { unique: false })
+        console.log('[BookStorage] Created book_covers store')
       }
     }
   })
@@ -301,4 +349,319 @@ export function createBlobUrl(blob: Blob): string {
  */
 export function revokeBlobUrl(url: string): void {
   URL.revokeObjectURL(url)
+}
+
+// ==================== OCR 数据存储 ====================
+
+/**
+ * 保存 OCR 数据到 IndexedDB
+ */
+export async function saveOcrData(
+  bookId: string,
+  ocrData: Omit<OcrDataRecord, 'bookId' | 'downloadedAt'>
+): Promise<void> {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OCR_STORE, 'readwrite')
+    const store = tx.objectStore(OCR_STORE)
+    
+    const record: OcrDataRecord = {
+      bookId,
+      ...ocrData,
+      downloadedAt: Date.now(),
+    }
+    
+    const request = store.put(record)
+    
+    request.onsuccess = () => {
+      console.log(`[BookStorage] Saved OCR data for ${bookId}, ${ocrData.totalRegions} regions, ${ocrData.totalChars} chars`)
+      resolve()
+    }
+    
+    request.onerror = () => {
+      console.error('[BookStorage] Failed to save OCR data:', request.error)
+      reject(request.error)
+    }
+    
+    tx.oncomplete = () => db.close()
+  })
+}
+
+/**
+ * 从 IndexedDB 获取 OCR 数据
+ */
+export async function getOcrData(bookId: string): Promise<OcrDataRecord | null> {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OCR_STORE, 'readonly')
+    const store = tx.objectStore(OCR_STORE)
+    const request = store.get(bookId)
+    
+    request.onsuccess = () => {
+      const record = request.result as OcrDataRecord | undefined
+      if (record) {
+        console.log(`[BookStorage] Found OCR data for ${bookId}, ${record.totalRegions} regions`)
+      } else {
+        console.log(`[BookStorage] OCR data for ${bookId} not found in cache`)
+      }
+      resolve(record || null)
+    }
+    
+    request.onerror = () => {
+      console.error('[BookStorage] Failed to get OCR data:', request.error)
+      reject(request.error)
+    }
+    
+    tx.oncomplete = () => db.close()
+  })
+}
+
+/**
+ * 检查书籍是否有 OCR 数据缓存
+ */
+export async function hasOcrData(bookId: string): Promise<boolean> {
+  try {
+    const record = await getOcrData(bookId)
+    return record !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 获取指定页的 OCR 区域
+ */
+export async function getOcrPageRegions(bookId: string, page: number): Promise<OcrRegion[]> {
+  const ocrData = await getOcrData(bookId)
+  if (!ocrData) return []
+  
+  return ocrData.regions.filter(r => r.page === page)
+}
+
+/**
+ * 删除 OCR 数据缓存
+ */
+export async function deleteOcrData(bookId: string): Promise<void> {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OCR_STORE, 'readwrite')
+    const store = tx.objectStore(OCR_STORE)
+    const request = store.delete(bookId)
+    
+    request.onsuccess = () => {
+      console.log(`[BookStorage] Deleted OCR data for ${bookId}`)
+      resolve()
+    }
+    
+    request.onerror = () => {
+      console.error('[BookStorage] Failed to delete OCR data:', request.error)
+      reject(request.error)
+    }
+    
+    tx.oncomplete = () => db.close()
+  })
+}
+
+// ============================================================
+// 封面缓存功能 (v3 新增)
+// ============================================================
+
+/**
+ * 缓存封面图片到 IndexedDB
+ * @param bookId 书籍 ID
+ * @param coverUrl 原始封面 URL
+ */
+export async function cacheCover(bookId: string, coverUrl: string): Promise<void> {
+  if (!coverUrl) return
+  
+  try {
+    // 下载封面图片
+    const response = await fetch(coverUrl)
+    if (!response.ok) {
+      console.warn(`[BookStorage] Failed to fetch cover for ${bookId}: ${response.status}`)
+      return
+    }
+    
+    const blob = await response.blob()
+    const mimeType = response.headers.get('content-type') || 'image/jpeg'
+    
+    const db = await openDB()
+    
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(COVER_STORE, 'readwrite')
+      const store = tx.objectStore(COVER_STORE)
+      
+      const record: CoverCacheRecord = {
+        bookId,
+        blob,
+        mimeType,
+        cachedAt: Date.now(),
+        originalUrl: coverUrl,
+      }
+      
+      const request = store.put(record)
+      
+      request.onsuccess = () => {
+        console.log(`[BookStorage] Cached cover for ${bookId}, size: ${blob.size} bytes`)
+        resolve()
+      }
+      
+      request.onerror = () => {
+        console.error('[BookStorage] Failed to cache cover:', request.error)
+        reject(request.error)
+      }
+      
+      tx.oncomplete = () => db.close()
+    })
+  } catch (e) {
+    console.error('[BookStorage] Error caching cover:', e)
+  }
+}
+
+/**
+ * 获取缓存的封面
+ * @param bookId 书籍 ID
+ * @returns 封面记录或 null
+ */
+export async function getCachedCover(bookId: string): Promise<CoverCacheRecord | null> {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(COVER_STORE, 'readonly')
+    const store = tx.objectStore(COVER_STORE)
+    const request = store.get(bookId)
+    
+    request.onsuccess = () => {
+      const record = request.result as CoverCacheRecord | undefined
+      if (record) {
+        console.log(`[BookStorage] Found cached cover for ${bookId}`)
+      }
+      resolve(record || null)
+    }
+    
+    request.onerror = () => {
+      console.error('[BookStorage] Failed to get cached cover:', request.error)
+      reject(request.error)
+    }
+    
+    tx.oncomplete = () => db.close()
+  })
+}
+
+/**
+ * 获取封面的 Object URL（用于 img src）
+ * 优先使用缓存，如果没有缓存则返回原始 URL 并异步缓存
+ * @param bookId 书籍 ID
+ * @param originalUrl 原始封面 URL
+ * @returns Object URL 或原始 URL
+ */
+export async function getCoverUrl(bookId: string, originalUrl: string): Promise<string> {
+  if (!originalUrl) return ''
+  
+  try {
+    const cached = await getCachedCover(bookId)
+    if (cached) {
+      // 返回缓存的 Blob URL
+      return URL.createObjectURL(cached.blob)
+    }
+    
+    // 没有缓存，异步缓存后返回原始 URL
+    cacheCover(bookId, originalUrl).catch(console.error)
+    return originalUrl
+  } catch {
+    return originalUrl
+  }
+}
+
+/**
+ * 批量缓存多本书的封面
+ * @param books 书籍列表 [{id, coverUrl}]
+ */
+export async function batchCacheCovers(books: { id: string; coverUrl?: string }[]): Promise<void> {
+  const BATCH_SIZE = 5  // 每批并发数量
+  
+  for (let i = 0; i < books.length; i += BATCH_SIZE) {
+    const batch = books.slice(i, i + BATCH_SIZE)
+    await Promise.all(
+      batch
+        .filter(b => b.coverUrl)
+        .map(b => cacheCover(b.id, b.coverUrl!))
+    )
+  }
+}
+
+/**
+ * 删除封面缓存
+ */
+export async function deleteCachedCover(bookId: string): Promise<void> {
+  const db = await openDB()
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(COVER_STORE, 'readwrite')
+    const store = tx.objectStore(COVER_STORE)
+    const request = store.delete(bookId)
+    
+    request.onsuccess = () => {
+      console.log(`[BookStorage] Deleted cached cover for ${bookId}`)
+      resolve()
+    }
+    
+    request.onerror = () => {
+      console.error('[BookStorage] Failed to delete cached cover:', request.error)
+      reject(request.error)
+    }
+    
+    tx.oncomplete = () => db.close()
+  })
+}
+
+/**
+ * 检查封面是否已缓存
+ */
+export async function isCoverCached(bookId: string): Promise<boolean> {
+  try {
+    const record = await getCachedCover(bookId)
+    return record !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 清理过期的封面缓存（超过 30 天）
+ */
+export async function cleanOldCoverCache(maxAgeDays: number = 30): Promise<number> {
+  const db = await openDB()
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+  let deletedCount = 0
+  
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(COVER_STORE, 'readwrite')
+    const store = tx.objectStore(COVER_STORE)
+    const index = store.index('cachedAt')
+    const range = IDBKeyRange.upperBound(cutoff)
+    const request = index.openCursor(range)
+    
+    request.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result
+      if (cursor) {
+        cursor.delete()
+        deletedCount++
+        cursor.continue()
+      }
+    }
+    
+    tx.oncomplete = () => {
+      console.log(`[BookStorage] Cleaned ${deletedCount} old cover caches`)
+      db.close()
+      resolve(deletedCount)
+    }
+    
+    tx.onerror = () => {
+      reject(tx.error)
+    }
+  })
 }

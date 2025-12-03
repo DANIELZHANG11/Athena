@@ -280,5 +280,281 @@ services:
   - Search Analyzer：`ik_smart + stconvert`
 - 现状：`docker-compose.yml` 当前为官方镜像（单节点、`DISABLE_SECURITY_PLUGIN=true`，`docker-compose.yml:181-188`）；中文插件与映射为可选增强，代码侧查询已兼容（`api/app/search.py:49-111`）。
 
+---
+
+# Architecture Decision Records (ADR)
+
+## ADR-006: 智能心跳同步架构（Smart Heartbeat Sync）
+
+### 状态
+- **状态**：PROPOSED
+- **提出日期**：2025-01-20
+- **决策者**：架构组
+- **相关 ADR**：ADR-003（离线优先存储策略）
+
+### 背景与问题陈述
+
+当前系统存在以下数据同步场景：
+1. **阅读进度**：用户在多设备间切换时需要同步阅读位置
+2. **OCR 数据**：服务端 OCR 处理完成后需要通知客户端获取
+3. **笔记/高亮**：用户在离线状态下创建的笔记需要上传同步
+4. **书籍元数据**：封面、标题、作者等信息的更新
+
+**原有问题**：
+- 心跳接口仅同步阅读进度，忽略其他数据类型
+- 用户需要手动刷新页面才能获取新的 OCR 数据
+- 缺乏统一的版本控制和冲突解决机制
+- 没有区分数据权威来源（Client vs Server）
+
+### 决策
+
+采用 **CRDT-Lite + 数据权威分层** 的智能心跳同步架构。
+
+#### 核心原则
+
+##### 1. 数据权威分层（Data Authority Stratification）
+
+| 数据类型 | 权威来源 | 冲突策略 | 说明 |
+|---------|---------|---------|------|
+| 阅读进度 | **Client** | Last-Write-Wins (LWW) | 用户正在阅读的设备最准确 |
+| 笔记内容 | **Client** | **Conflict Copy** | ⚠️ 冲突时保留双版本，用户 UI 选择 |
+| 高亮标注 | **Client** | **Conflict Copy** | ⚠️ 冲突时保留双版本，用户 UI 选择 |
+| SRS 卡片 | **Client** | LWW + Source Priority | 复习记录以最新为准 |
+| OCR 数据 | **Server** | Server-Always-Wins | 服务端计算，客户端只读 |
+| 书籍元数据 | **Client → Server** | LWW | 用户可编辑，但需同步到所有设备 |
+| 向量索引 | **Server** | Server-Always-Wins | 服务端计算，客户端只读 |
+| 用户设置 | **Client** | LWW + Device Merge | 用户偏好，设备可合并 |
+
+> **📚 书籍元数据说明**
+> 
+> `title` 和 `author` 字段虽然可以由用户编辑，但属于**客户端 → 服务端同步**的数据：
+> - 用户在任一设备上编辑元数据后，通过 `PATCH /books/{id}/metadata` 提交到服务端
+> - 其他设备通过心跳同步的 `metadataVersion` 比对发现变化后拉取最新值
+> - 元数据会作为 AI 对话的上下文发送给上游模型，影响回答质量
+
+> **⚠️ 重要：笔记/高亮冲突处理**
+> 
+> 采用 LWW 策略对笔记/高亮存在静默丢失风险。当用户 A 设备离线修改笔记，用户 B 设备也修改同一笔记时，LWW 会导致一方数据丢失。
+> 
+> **解决方案：Conflict Copy 策略**
+> 1. 服务端检测到同一笔记在不同设备上被修改（基于 `version` 和 `device_id`）
+> 2. 不进行静默覆盖，而是创建 "冲突副本"（Conflict Copy）
+> 3. 前端在笔记列表显示冲突标记，用户点击后可查看两个版本并手动合并
+> 4. 合并后删除冲突副本
+>
+> **数据库表变更**：
+> ```sql
+> ALTER TABLE notes ADD COLUMN conflict_of UUID REFERENCES notes(id);
+> ALTER TABLE notes ADD COLUMN device_id VARCHAR(64);
+> ALTER TABLE highlights ADD COLUMN conflict_of UUID REFERENCES highlights(id);
+> ALTER TABLE highlights ADD COLUMN device_id VARCHAR(64);
+> ```
+
+##### 2. 版本指纹机制（Version Fingerprinting）
+
+```typescript
+interface VersionFingerprint {
+  // 每种数据类型的版本戳
+  versions: {
+    ocr: string;           // 例如 "sha256:abc123..." 或时间戳
+    metadata: string;      // 书籍元数据版本 = sha256(title + author)
+    vectorIndex: string;   // 向量索引版本（可选）
+    settings: string;      // 用户设置版本
+  };
+  // 数据大小提示（用于带宽预估）
+  sizes: {
+    ocr: number;           // bytes
+    metadata: number;
+  };
+}
+```
+
+##### 3. 心跳同步协议（Heartbeat Sync Protocol）
+
+**请求（Client → Server）**：
+```typescript
+POST /api/v1/sync/heartbeat
+{
+  // 当前书籍上下文
+  "bookId": "uuid",
+  "deviceId": "device-fingerprint",
+  
+  // 客户端已有版本
+  "clientVersions": {
+    "ocr": "v1.2.3",
+    "metadata": "v1.0.0"
+  },
+  
+  // 客户端权威数据（待上传）
+  // ⚠️ 限制：单次最多 50 条 notes + 50 条 highlights
+  "clientUpdates": {
+    "readingProgress": {
+      "position": { "page": 42, "offset": 0.35 },
+      "timestamp": "2025-01-20T10:30:00Z"
+    },
+    "pendingNotes": [...],      // 离线创建的笔记（单次 ≤ 50 条）
+    "pendingHighlights": [...], // 离线创建的高亮（单次 ≤ 50 条）
+    "hasMore": true             // 是否还有更多待同步数据
+  }
+}
+```
+
+> **⚠️ 大 Payload 防护**
+> 
+> 用户离线期间可能创建大量笔记/高亮，导致心跳请求包体过大（超过 Nginx 默认 1MB 限制）。
+> 
+> **分批上传策略**：
+> 1. 前端同步队列按类型、时间排序
+> 2. 每次心跳最多携带 50 条 notes + 50 条 highlights
+> 3. 响应中的 `moreToSync: true` 指示客户端立即发起下一次心跳
+> 4. 后端设置请求体限制为 512KB（足够 100 条内容）
+
+**响应（Server → Client）**：
+```typescript
+{
+  // 服务端权威数据版本（客户端需对比更新）
+  "serverVersions": {
+    "ocr": "v1.2.4",           // 新版本！需要客户端拉取
+    "metadata": "v1.0.0",       // 无变化
+    "vectorIndex": "v2.0.0"     // 新增向量索引
+  },
+  
+  // 需要客户端拉取的数据
+  "pullRequired": {
+    "ocr": {
+      "url": "/api/v1/books/{id}/ocr/full",
+      "size": 2200000,          // 预估大小
+      "priority": "high"
+    }
+  },
+  
+  // 服务端处理的客户端更新结果
+  "pushResults": {
+    "readingProgress": "accepted",
+    "notes": [
+      { "clientId": "temp-1", "serverId": "uuid-1", "status": "created" },
+      { "clientId": "temp-2", "serverId": "uuid-2", "status": "conflict", "resolution": "merged" }
+    ]
+  },
+  
+  // 下次心跳建议间隔（动态调整）
+  "nextHeartbeatMs": 30000
+}
+```
+
+##### 4. 增量同步与完整同步
+
+| 场景 | 同步策略 | 触发条件 |
+|------|---------|---------|
+| 常规心跳 | 增量同步 | 每 30s 或页面切换 |
+| 首次打开书籍 | 版本检查 | 比对本地缓存版本 |
+| 长时间离线后 | 完整对账 | 离线超过 1 小时 |
+| 服务端处理完成 | 推送通知 | WebSocket/SSE 事件 |
+
+##### 5. 客户端状态机
+
+```
+┌─────────────┐
+│   IDLE      │◄────────────────────────┐
+└──────┬──────┘                         │
+       │ 心跳定时器触发                   │
+       ▼                                │
+┌─────────────┐                         │
+│  SYNCING    │──────────────────────────┤
+└──────┬──────┘  成功/失败               │
+       │ 发现需要拉取的数据              │
+       ▼                                │
+┌─────────────┐                         │
+│ DOWNLOADING │─────────────────────────┘
+└─────────────┘  下载完成/失败
+```
+
+#### 实现路线图
+
+##### Phase 1: 基础心跳增强（当前优先）
+- [ ] 心跳请求增加 `clientVersions` 字段
+- [ ] 心跳响应增加 `serverVersions` 和 `pullRequired`
+- [ ] 客户端收到 `pullRequired.ocr` 时自动触发 OCR 下载
+- [ ] 阅读进度继续使用现有 LWW 机制
+
+##### Phase 2: 离线同步队列
+- [ ] IndexedDB 增加 `pending_sync` 存储
+- [ ] 离线创建的笔记/高亮进入队列
+- [ ] 心跳时批量上传队列内容
+- [ ] 服务端返回冲突时进行合并
+
+##### Phase 3: 实时推送通道
+- [ ] WebSocket 连接用于服务端主动推送
+- [ ] OCR 完成事件：`{ type: "ocr_ready", bookId, version }`
+- [ ] 心跳间隔动态调整（活跃时短，空闲时长）
+
+##### Phase 4: 多设备冲突解决
+- [ ] 设备 ID 注册与管理
+- [ ] 笔记冲突时显示合并 UI
+- [ ] 阅读进度冲突时询问用户
+
+### 替代方案对比
+
+| 方案 | 优点 | 缺点 | 决策 |
+|-----|------|------|------|
+| 轮询检查版本 | 实现简单 | 浪费带宽，延迟高 | ❌ |
+| 纯 WebSocket | 实时性好 | 服务端资源消耗大 | 部分采用 |
+| **心跳 + 版本指纹** | 平衡实时性与资源 | 需要版本管理 | ✅ 采用 |
+| 完整 CRDT | 冲突解决完美 | 实现复杂，数据膨胀 | ❌ |
+
+### 代码影响范围
+
+#### 后端
+- `api/app/realtime.py`: 心跳接口增强
+- `api/app/books.py`: OCR/元数据版本字段
+- `api/app/tasks.py`: 处理完成后更新版本
+- 数据库: `user_books` 表增加 `ocr_version`, `metadata_version` 字段
+
+#### 前端
+- `web/src/hooks/useHeartbeat.ts`: 心跳逻辑增强
+- `web/src/hooks/useOcrData.ts`: 响应心跳触发下载
+- `web/src/lib/bookStorage.ts`: 版本存储
+- `web/src/lib/syncQueue.ts`: 新增同步队列管理
+
+### 数据库 Schema 变更
+
+```sql
+-- user_books 表增加版本字段
+ALTER TABLE user_books ADD COLUMN ocr_version VARCHAR(64);
+ALTER TABLE user_books ADD COLUMN metadata_version VARCHAR(64);
+ALTER TABLE user_books ADD COLUMN vector_index_version VARCHAR(64);
+
+-- 可选：同步队列表（用于服务端记录待推送事件）
+CREATE TABLE sync_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id),
+    book_id UUID NOT NULL REFERENCES books(id),
+    event_type VARCHAR(32) NOT NULL,  -- 'ocr_ready', 'metadata_updated', etc.
+    payload JSONB,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    delivered_at TIMESTAMPTZ,
+    INDEX idx_sync_events_user_pending (user_id, delivered_at) WHERE delivered_at IS NULL
+);
+```
+
+### 接口契约变更
+
+详见 `05 - API 契约与协议API_Contracts_and_Protocols.md` 中的心跳接口更新。
+
+### 风险与缓解
+
+| 风险 | 概率 | 影响 | 缓解措施 |
+|-----|------|------|---------|
+| 版本不一致导致重复下载 | 中 | 低 | 使用内容哈希而非时间戳 |
+| 心跳过于频繁 | 低 | 中 | 动态调整间隔，指数退避 |
+| 大文件下载中断 | 中 | 中 | 支持断点续传，分块下载 |
+| 离线队列数据丢失 | 低 | 高 | IndexedDB 事务保证 |
+
+### 参考
+
+- [Figma 的 CRDT 实现](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)
+- [Local-First Software](https://www.inkandswitch.com/local-first/)
+- [CouchDB 复制协议](https://docs.couchdb.org/en/stable/replication/protocol.html)
+
 
 

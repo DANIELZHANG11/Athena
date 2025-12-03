@@ -12,68 +12,149 @@ class MockOCR:
 
 class PaddleOCREngine:
     """
-    PP-OCRv5 Mobile Engine
+    PP-OCRv5 Engine (PaddleOCR 3.x API)
     - 支持：简体中文、繁体中文、英文、日文、手写体
-    - GPU 内存：~3.5GB/实例
+    - GPU 自动检测：PaddlePaddle 3.0 根据安装版本自动选择设备
     - 推荐并发：2 Workers (8GB GPU) / 3 Workers (12GB GPU)
+    
+    PaddleOCR 3.x 主要变化：
+    - 使用 predict() 而非 ocr()
+    - 通过 text_detection_model_name / text_recognition_model_name 指定模型
+    - 设备选择由 PaddlePaddle 框架自动处理
     """
     
-    def __init__(self, lang: str | None = None):
+    def __init__(self):
         from paddleocr import PaddleOCR
-
-        # GPU 内存限制（每个 Worker 3.5GB，开发环境 8GB 可跑 2 个）
-        gpu_mem = int(os.getenv("OCR_GPU_MEM", "3500"))
-        cpu_threads = int(os.getenv("OCR_CPU_THREADS", "6"))
-        use_gpu = os.getenv("OCR_USE_GPU", "true").lower() == "true"
+        
+        # PaddleOCR 3.x 初始化参数
+        # 模型选择：PP-OCRv5_server (高精度) 或 PP-OCRv5_mobile (平衡)
+        use_mobile = os.getenv("OCR_USE_MOBILE", "true").lower() == "true"
+        
+        model_suffix = "mobile" if use_mobile else "server"
+        det_model = os.getenv("OCR_DET_MODEL", f"PP-OCRv5_{model_suffix}_det")
+        rec_model = os.getenv("OCR_REC_MODEL", f"PP-OCRv5_{model_suffix}_rec")
         
         self.ocr = PaddleOCR(
-            use_angle_cls=True,
-            lang=lang or os.getenv("OCR_LANG", "ch"),
-            use_gpu=use_gpu,
-            gpu_mem=gpu_mem,
-            cpu_threads=cpu_threads,
-            enable_mkldnn=True,  # Intel CPU 优化
-            # PP-OCRv5 mobile 模型（精度+效率平衡）
-            # 如需更高精度可切换为 server 版本
-            det_model_dir=os.getenv("OCR_DET_MODEL"),  # None = 自动下载
-            rec_model_dir=os.getenv("OCR_REC_MODEL"),  # None = 自动下载
-            show_log=False,
+            text_detection_model_name=det_model,
+            text_recognition_model_name=rec_model,
+            use_doc_orientation_classify=False,  # 关闭文档方向分类（加速）
+            use_doc_unwarping=False,             # 关闭文档矫正（加速）
+            use_textline_orientation=False,      # 关闭文本行方向分类（加速）
         )
+        
+        import logging
+        logging.info(f"[OCR] PaddleOCR 3.x initialized with det={det_model}, rec={rec_model}")
 
-    def _fetch_image(self, bucket: str, key: str) -> Any:
-        import numpy as np
+    def _download_to_temp(self, bucket: str, key: str) -> str:
+        """
+        下载文件到临时目录并返回本地路径
+        PaddleOCR 3.x 的 predict() 方法需要文件后缀来识别文件类型
+        presigned URL 中的查询参数会导致后缀识别失败
+        """
+        import tempfile
         import requests
-        from PIL import Image
-
-        url = (
-            key
-            if isinstance(key, str) and key.startswith("http")
-            else presigned_get(bucket, key)
-        )
-        data = requests.get(url, timeout=30).content
-        img = Image.open(io.BytesIO(data)).convert("RGB")
-        return np.array(img)
+        from urllib.parse import urlparse
+        
+        url = presigned_get(bucket, key) if not key.startswith("http") else key
+        
+        # 从 key 中提取原始文件扩展名
+        path = urlparse(key if not key.startswith("http") else url).path
+        # 获取不含查询参数的路径的扩展名
+        ext = os.path.splitext(path.split('?')[0])[1] or '.png'
+        
+        # 创建临时文件
+        fd, temp_path = tempfile.mkstemp(suffix=ext)
+        try:
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+            os.write(fd, response.content)
+        finally:
+            os.close(fd)
+        
+        return temp_path
 
     def recognize(self, bucket: str, key: str) -> dict:
         """
         识别单张图片
-        返回: {"pages": [{"text": "行文本"}], "text": "完整文本"}
+        Args:
+            bucket: S3 bucket 名称，如果为空则 key 视为本地文件路径
+            key: S3 object key 或本地文件路径
+        返回: {"pages": [{"text": "行文本", "confidence": 0.99}], "text": "完整文本"}
         """
+        temp_path = None
+        is_local = not bucket  # bucket 为空表示 key 是本地路径
+        
         try:
-            img = self._fetch_image(bucket, key)
-            res = self.ocr.ocr(img, cls=True)
-            pages = []
+            if is_local:
+                # 直接使用本地路径
+                file_path = key
+            else:
+                # 从 S3 下载到临时文件（带正确后缀）
+                temp_path = self._download_to_temp(bucket, key)
+                file_path = temp_path
+            
+            # PaddleOCR 3.x 使用 predict() 方法
+            results = self.ocr.predict(file_path)
+            
+            regions = []
             text = ""
-            lines = res[0] if isinstance(res, list) else []
-            for item in lines or []:
-                s = item[1][0]
-                text += s + "\n"
-                pages.append({"text": s, "confidence": item[1][1]})
-            return {"pages": pages, "text": text.strip()}
+            
+            for res in results:
+                # 获取识别结果 - 包含坐标信息
+                rec_texts = getattr(res, 'rec_texts', []) or []
+                rec_scores = getattr(res, 'rec_scores', []) or []
+                rec_polys = getattr(res, 'rec_polys', []) or []  # 4点多边形坐标
+                rec_boxes = getattr(res, 'rec_boxes', []) or []  # 边界框 [x1,y1,x2,y2]
+                
+                # 兼容 res['res'] 格式
+                if not rec_texts and hasattr(res, '__getitem__'):
+                    try:
+                        res_data = res.get('res', res) if isinstance(res, dict) else res
+                        rec_texts = getattr(res_data, 'rec_texts', []) or res_data.get('rec_texts', []) if isinstance(res_data, dict) else []
+                        rec_scores = getattr(res_data, 'rec_scores', []) or res_data.get('rec_scores', []) if isinstance(res_data, dict) else []
+                        rec_polys = getattr(res_data, 'rec_polys', []) or res_data.get('rec_polys', []) if isinstance(res_data, dict) else []
+                        rec_boxes = getattr(res_data, 'rec_boxes', []) or res_data.get('rec_boxes', []) if isinstance(res_data, dict) else []
+                    except Exception:
+                        pass
+                
+                for i, txt in enumerate(rec_texts):
+                    if txt:
+                        score = rec_scores[i] if i < len(rec_scores) else 0.0
+                        text += txt + "\n"
+                        
+                        region = {
+                            "text": txt,
+                            "confidence": float(score),
+                        }
+                        
+                        # 添加边界框坐标 [x1, y1, x2, y2]
+                        if i < len(rec_boxes):
+                            bbox = rec_boxes[i]
+                            if hasattr(bbox, 'tolist'):
+                                bbox = bbox.tolist()
+                            region["bbox"] = [float(v) for v in bbox]
+                        
+                        # 添加多边形坐标 [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                        if i < len(rec_polys):
+                            poly = rec_polys[i]
+                            if hasattr(poly, 'tolist'):
+                                poly = poly.tolist()
+                            region["polygon"] = [[float(p[0]), float(p[1])] for p in poly]
+                        
+                        regions.append(region)
+            
+            return {"regions": regions, "text": text.strip()}
         except Exception as e:
             import logging
             logging.warning(f"[OCR] Recognition failed: {e}")
             return {"pages": [], "text": ""}
+        finally:
+            # 清理临时文件
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
 
 def get_ocr():

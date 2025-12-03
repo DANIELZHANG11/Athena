@@ -10,7 +10,7 @@ from sqlalchemy import text as _text
 
 from .db import engine
 from .services import get_ocr
-from .storage import make_object_key, read_head, upload_bytes, get_s3, ensure_bucket, presigned_get
+from .storage import make_object_key, read_head, read_full, upload_bytes, get_s3, ensure_bucket, presigned_get
 from .ws import broadcast as ws_broadcast
 
 BUCKET = os.getenv("MINIO_BUCKET", "athena")
@@ -699,9 +699,58 @@ def analyze_book_type(book_id: str, user_id: str):
     asyncio.get_event_loop().run_until_complete(_run())
 
 
+def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple:
+    """
+    将 PDF 转换为图片列表，用于 OCR
+    Args:
+        pdf_data: PDF 文件二进制数据
+        max_pages: 最大处理页数，0 表示处理所有页面
+        dpi: 渲染分辨率
+    Returns:
+        (images, image_width, image_height)
+        images: [(page_num, image_bytes, total_pages), ...]
+        image_width, image_height: 渲染后的图片尺寸（像素）
+    """
+    import fitz  # PyMuPDF
+    
+    images = []
+    image_width = 0
+    image_height = 0
+    try:
+        doc = fitz.open(stream=pdf_data, filetype="pdf")
+        total_pages = len(doc)
+        pages_to_process = total_pages if max_pages <= 0 else min(total_pages, max_pages)
+        
+        print(f"[OCR] PDF has {total_pages} pages, will process {pages_to_process} pages")
+        
+        for page_num in range(pages_to_process):
+            page = doc[page_num]
+            # 渲染为像素图
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat)
+            
+            # 记录图片尺寸（使用第一页的尺寸作为标准）
+            if page_num == 0:
+                image_width = pix.width
+                image_height = pix.height
+                print(f"[OCR] Page size at {dpi} DPI: {image_width} x {image_height} pixels")
+            
+            # 转换为 PNG 格式
+            img_data = pix.tobytes("png")
+            images.append((page_num + 1, img_data, total_pages))
+        
+        doc.close()
+    except Exception as e:
+        print(f"[OCR] Failed to convert PDF to images: {e}")
+    
+    return images, image_width, image_height
+
+
 @shared_task(name="tasks.deep_analyze_book")
 def deep_analyze_book(book_id: str, user_id: str):
     import asyncio
+    import tempfile
+    import os as _os
 
     async def _run():
         async with engine.begin() as conn:
@@ -717,15 +766,78 @@ def deep_analyze_book(book_id: str, user_id: str):
                 return
             key = row[0]
             img, conf = _quick_confidence(key)
+            
             ocr = get_ocr()
-            ocr_res = ocr.recognize(BUCKET, key)
+            ocr_res = {"regions": [], "text": ""}
+            
+            # 判断文件类型
+            is_pdf = key.lower().endswith('.pdf')
+            
+            # 图片尺寸变量（用于存入报告）
+            ocr_image_width = 0
+            ocr_image_height = 0
+            
+            if is_pdf:
+                # PDF 文件：先转换为图片再 OCR（处理所有页面）
+                print(f"[OCR] Processing PDF: {key}")
+                pdf_data = read_full(BUCKET, key)
+                if pdf_data:
+                    # max_pages=0 表示处理所有页面
+                    page_images, ocr_image_width, ocr_image_height = _pdf_to_images(pdf_data, max_pages=0, dpi=150)
+                    all_text = []
+                    all_regions = []
+                    total_pages = page_images[0][2] if page_images else 0
+                    
+                    for page_num, img_bytes, _ in page_images:
+                        # 将图片保存到临时文件
+                        fd, temp_path = tempfile.mkstemp(suffix='.png')
+                        try:
+                            _os.write(fd, img_bytes)
+                            _os.close(fd)
+                            
+                            # 对单页进行 OCR
+                            page_result = ocr.recognize("", temp_path)  # 直接传本地路径
+                            if page_result.get("text"):
+                                all_text.append(f"--- Page {page_num} ---")
+                                all_text.append(page_result["text"])
+                                # 使用 regions（包含坐标信息）
+                                for r in page_result.get("regions", []):
+                                    r["page"] = page_num
+                                    all_regions.append(r)
+                            print(f"[OCR] Page {page_num}/{total_pages}: {len(page_result.get('text', ''))} chars, {len(page_result.get('regions', []))} regions")
+                        except Exception as e:
+                            print(f"[OCR] Page {page_num}/{total_pages} failed: {e}")
+                        finally:
+                            try:
+                                _os.remove(temp_path)
+                            except Exception:
+                                pass
+                    
+                    print(f"[OCR] Completed: {len(all_regions)} text regions, {len(''.join(all_text))} total chars")
+                    ocr_res = {"regions": all_regions, "text": "\n".join(all_text)}
+                    
+                    # 触发向量索引任务
+                    from .search_sync import index_book_content
+                    index_book_content(book_id, user_id, all_regions)
+                    print(f"[OCR] Triggered search indexing for book {book_id}")
+            else:
+                # 图片文件：直接 OCR
+                ocr_res = ocr.recognize(BUCKET, key)
+            
             rep_key = make_object_key(user_id, f"digitalize-report-{book_id}.json")
+            report_data = {
+                "is_image_based": img, 
+                "confidence": conf, 
+                "ocr": ocr_res,
+            }
+            # 如果有图片尺寸信息，添加到报告中
+            if ocr_image_width > 0 and ocr_image_height > 0:
+                report_data["image_width"] = ocr_image_width
+                report_data["image_height"] = ocr_image_height
             upload_bytes(
                 BUCKET,
                 rep_key,
-                json.dumps(
-                    {"is_image_based": img, "confidence": conf, "ocr": ocr_res}
-                ).encode("utf-8"),
+                json.dumps(report_data).encode("utf-8"),
                 "application/json",
             )
             await conn.execute(
