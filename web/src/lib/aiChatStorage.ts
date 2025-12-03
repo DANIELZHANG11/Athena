@@ -39,13 +39,6 @@ export interface MessageRecord {
   }
 }
 
-/** 缓存元数据 */
-interface CacheMeta {
-  key: string
-  value: string | number
-  updatedAt: number
-}
-
 // 打开数据库
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

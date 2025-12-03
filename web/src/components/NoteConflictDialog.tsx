@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, Check, Copy, Trash2, Monitor, Smartphone } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Monitor, Smartphone } from 'lucide-react'
 import {
   Dialog,
   DialogContent,

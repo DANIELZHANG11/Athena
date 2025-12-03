@@ -13,7 +13,6 @@ import { useAuthStore } from '@/stores/auth'
 import { 
   getOcrData, 
   saveOcrData, 
-  hasOcrData,
   getOcrPageRegions,
   type OcrDataRecord,
   type OcrRegion 

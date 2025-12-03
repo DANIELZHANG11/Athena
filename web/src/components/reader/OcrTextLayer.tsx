@@ -106,7 +106,8 @@ const OcrTextRegion = memo(function OcrTextRegion({
  * OCR 文字叠加层
  */
 export const OcrTextLayer = memo(function OcrTextLayer({
-  bookId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  bookId: _bookId,  // Reserved for future analytics
   pageNumber,
   renderedWidth,
   renderedHeight,

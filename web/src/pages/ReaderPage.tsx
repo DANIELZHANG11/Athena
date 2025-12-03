@@ -15,7 +15,7 @@
  * 4. 支持离线文字选择、复制和高亮
  */
 
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { Document, pdfjs } from 'react-pdf'
@@ -23,13 +23,13 @@ import { ReactReader, type IReactReaderStyle } from 'react-reader'
 import type { Rendition } from 'epubjs'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
-import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Download, AlertCircle, Eye, EyeOff, Type } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Download, AlertCircle, Type } from 'lucide-react'
 import { useReaderHeartbeat } from '@/hooks/useReaderHeartbeat'
 import { useSmartHeartbeat, type PullRequired, type NoteResult } from '@/hooks/useSmartHeartbeat'
 import { useReadingProgress, parsePdfLocation, parseEpubLocation, formatProgress } from '@/hooks/useReadingProgress'
 import { useBookDownload, formatFileSize } from '@/hooks/useBookDownload'
 import { PdfPageWithOcr } from '@/components/reader/PdfPageWithOcr'
-import { useOcrData, preloadOcrToMemory, clearOcrMemoryCache } from '@/hooks/useOcrData'
+import { useOcrData, clearOcrMemoryCache } from '@/hooks/useOcrData'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
@@ -105,7 +105,7 @@ export default function ReaderPage() {
     
     // OCR 文字叠加层状态
     const [ocrLayerEnabled, setOcrLayerEnabled] = useState(false)
-    const [ocrDebugMode, setOcrDebugMode] = useState(false)
+    const [, /* setOcrDebugMode */] = useState(false)  // Reserved for debug toggle
     const [isImageBasedPdf, setIsImageBasedPdf] = useState(false)
     
     // 判断格式
@@ -160,11 +160,8 @@ export default function ReaderPage() {
     })
     
     // 智能心跳同步（ADR-006: 版本对比、离线数据同步）
-    const {
-        state: syncState,
-        updateProgress: updateSyncProgress,
-        syncNow: smartSyncNow,
-    } = useSmartHeartbeat({
+    // syncState, updateSyncProgress, smartSyncNow reserved for future UI integration
+    useSmartHeartbeat({
         bookId: bookId || '',
         enabled: !!bookId && !!book,
         clientVersions: {
@@ -244,7 +241,7 @@ export default function ReaderPage() {
                             setIsImageBasedPdf(isImageBased)
                             console.log('[Reader] PDF type:', { isImageBased })
                         }
-                    } catch (e) {
+                    } catch {
                         console.log('[Reader] OCR check failed, using default text layer')
                     }
                 }
