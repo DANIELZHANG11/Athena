@@ -1,3 +1,8 @@
+/**
+ * 上传进度组件
+ * - 展示阶段、进度百分比与错误信息
+ * - 支持取消、重试、关闭等交互
+ */
 import { useTranslation } from 'react-i18next'
 import { X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'

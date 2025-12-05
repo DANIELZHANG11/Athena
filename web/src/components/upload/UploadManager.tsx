@@ -1,10 +1,20 @@
-import { useCallback, useState } from 'react'
+/**
+ * 上传管理组件
+ *
+ * 说明：
+ * - 负责发起文件选择与上传流程（使用 `useBookUpload`）
+ * - 监听后台处理状态（封面、元数据、OCR）并弹出确认对话框
+ * - 上传完成后广播事件，供书库页面刷新
+ */
+import { useCallback, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import { useBookUpload, UploadResult, UploadErrorCode } from '@/hooks/useBookUpload'
+import { useUploadPostProcessing } from '@/hooks/useUploadPostProcessing'
 import UploadDropzone from './UploadDropzone'
 import UploadProgress from './UploadProgress'
+import { UploadPostProcessDialog } from '@/components/UploadPostProcessDialog'
 import Modal from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
 
@@ -32,6 +42,73 @@ export default function UploadManager({
   const navigate = useNavigate()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  
+  // 上传后处理状态
+  const [postProcessOpen, setPostProcessOpen] = useState(false)
+  const [postProcessData, setPostProcessData] = useState<{
+    bookId: string
+    bookTitle: string
+    needsMetadataConfirm: boolean
+    extractedTitle?: string
+    extractedAuthor?: string
+    isImageBasedPdf: boolean
+    pageCount?: number
+  } | null>(null)
+  
+  // 保存最近上传成功的书籍信息
+  const lastUploadRef = useRef<{ id: string; title: string; author?: string; format?: string } | null>(null)
+  // 标记对话框是否已显示，避免重复弹出
+  const dialogShownRef = useRef(false)
+
+  // 后处理监控 hook
+  const { startMonitoring, stopMonitoring } = useUploadPostProcessing({
+    pollInterval: 2000,
+    maxPollCount: 30,
+    onStatusUpdate: (status) => {
+      console.log('[UploadManager] Processing status update:', status)
+      
+      // 如果对话框已显示，只更新图片 PDF 状态
+      if (dialogShownRef.current) {
+        if (status.isImageBasedPdf && postProcessData && !postProcessData.isImageBasedPdf) {
+          setPostProcessData(prev => prev ? {
+            ...prev,
+            isImageBasedPdf: true,
+            pageCount: status.pageCount,
+          } : null)
+        }
+        return
+      }
+      
+      // 元数据提取任务完成且尚未确认 → 弹出对话框
+      if (status.metadataExtracted && !status.metadataConfirmed && lastUploadRef.current) {
+        console.log('[UploadManager] Metadata extraction complete, showing dialog')
+        dialogShownRef.current = true
+        setPostProcessData({
+          bookId: status.bookId,
+          bookTitle: status.title || lastUploadRef.current.title,
+          needsMetadataConfirm: true,
+          extractedTitle: status.extractedTitle,
+          extractedAuthor: status.extractedAuthor,
+          isImageBasedPdf: status.isImageBasedPdf,
+          pageCount: status.pageCount,
+        })
+        setPostProcessOpen(true)
+      }
+    },
+    onMetadataReady: (status) => {
+      console.log('[UploadManager] Metadata ready callback:', status.metadataExtracted)
+    },
+    onImagePdfDetected: (status) => {
+      console.log('[UploadManager] Image-based PDF detected:', status.isImageBasedPdf)
+    },
+    onCoverReady: (status) => {
+      console.log('[UploadManager] Cover ready, broadcasting event:', status.bookId)
+      // 广播封面就绪事件，通知 LibraryPage 刷新
+      window.dispatchEvent(new CustomEvent('book_cover_ready', {
+        detail: { bookId: status.bookId, coverUrl: status.coverUrl }
+      }))
+    },
+  })
 
   const {
     stage,
@@ -48,19 +125,45 @@ export default function UploadManager({
       // 广播上传成功事件，供其他组件监听
       window.dispatchEvent(new CustomEvent('book_uploaded', { detail: result }))
       
-      // 延迟关闭 modal 和导航
+      // 保存上传信息并开始监控后处理状态
+      lastUploadRef.current = { id: result.id, title: result.title }
+      dialogShownRef.current = false  // 重置对话框显示标记
+      startMonitoring(result.id, result.title)
+      
+      // 延迟关闭上传 modal（但不立即导航，等待后处理完成）
       setTimeout(() => {
         setIsModalOpen(false)
         reset()
-        if (navigateOnSuccess) {
-          navigate('/app/library')
-        }
       }, 1500)
     },
     onError: (code) => {
       onError?.(code)
     },
   })
+
+  // 后处理完成后的回调
+  const handlePostProcessComplete = useCallback(() => {
+    stopMonitoring()
+    setPostProcessData(null)
+    lastUploadRef.current = null
+    dialogShownRef.current = false  // 重置对话框显示标记
+    
+    // 广播事件通知 LibraryPage 刷新数据，确保 isImageBased 等字段更新
+    window.dispatchEvent(new CustomEvent('book_data_updated'))
+    
+    if (navigateOnSuccess) {
+      navigate('/app/library')
+    }
+  }, [navigateOnSuccess, navigate, stopMonitoring])
+
+  // 后处理对话框关闭
+  const handlePostProcessClose = useCallback((open: boolean) => {
+    setPostProcessOpen(open)
+    if (!open) {
+      // 用户关闭对话框，也执行导航
+      handlePostProcessComplete()
+    }
+  }, [handlePostProcessComplete])
 
   // 处理文件选择
   const handleFileSelect = useCallback((file: File) => {
@@ -165,7 +268,26 @@ export default function UploadManager({
 
   // inline 变体直接渲染，不需要 Modal
   if (variant === 'inline') {
-    return renderTrigger()
+    return (
+      <>
+        {renderTrigger()}
+        {/* 后处理对话框 */}
+        {postProcessData && (
+          <UploadPostProcessDialog
+            open={postProcessOpen}
+            onOpenChange={handlePostProcessClose}
+            bookId={postProcessData.bookId}
+            bookTitle={postProcessData.bookTitle}
+            needsMetadataConfirm={postProcessData.needsMetadataConfirm}
+            extractedTitle={postProcessData.extractedTitle}
+            extractedAuthor={postProcessData.extractedAuthor}
+            isImageBasedPdf={postProcessData.isImageBasedPdf}
+            pageCount={postProcessData.pageCount}
+            onComplete={handlePostProcessComplete}
+          />
+        )}
+      </>
+    )
   }
 
   return (
@@ -198,7 +320,22 @@ export default function UploadManager({
           </div>
         </Modal>
       )}
+      
+      {/* 后处理对话框 */}
+      {postProcessData && (
+        <UploadPostProcessDialog
+          open={postProcessOpen}
+          onOpenChange={handlePostProcessClose}
+          bookId={postProcessData.bookId}
+          bookTitle={postProcessData.bookTitle}
+          needsMetadataConfirm={postProcessData.needsMetadataConfirm}
+          extractedTitle={postProcessData.extractedTitle}
+          extractedAuthor={postProcessData.extractedAuthor}
+          isImageBasedPdf={postProcessData.isImageBasedPdf}
+          pageCount={postProcessData.pageCount}
+          onComplete={handlePostProcessComplete}
+        />
+      )}
     </>
   )
 }
-

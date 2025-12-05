@@ -1,3 +1,14 @@
+"""
+TTS（文本转语音）引擎封装
+
+职责：
+- 生产环境优先使用 Edge TTS（微软在线合成），支持设置 `voice` 与 `rate`
+- 失败或本地离线时回退到 `MockTTS`，生成示例正弦波与简单字幕分割
+
+返回：
+- `synthesize(text) -> (audio_bytes, captions)`
+- `synthesize_vtt(text) -> (audio_bytes, vtt_string)`
+"""
 import asyncio
 import io
 import math
@@ -84,6 +95,10 @@ class EdgeTTSEngine:
         return audio, vtt
 
 def get_tts():
+    """
+    获取 TTS 引擎实例
+    生产环境返回 `EdgeTTSEngine`，异常时回退到 `MockTTS`
+    """
     try:
         return EdgeTTSEngine()
     except Exception:

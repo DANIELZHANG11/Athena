@@ -58,7 +58,20 @@
 - `books`：
   - 字段：`id (UUID, PK)`、`user_id (UUID, FK)`、`title (TEXT)`、`author (TEXT)`、`language (TEXT)`、`original_format (TEXT)`、`minio_key (TEXT)`、`size (BIGINT)`、`is_digitalized (BOOL)`、`initial_digitalization_confidence (FLOAT)`、`source_etag (TEXT)`、`meta (JSONB)`、`digitalize_report_key (TEXT)`、`cover_image_key (TEXT)`、`converted_epub_key (TEXT)`、`updated_at (TIMESTAMPTZ)`。
   - 权限字段：`user_id`（RLS）。
-  - 新增字段说明：
+  - **新增字段（SHA256 去重 ADR-007）**：
+    - `content_sha256 (VARCHAR(64))`：文件内容 SHA256 哈希，用于全局去重
+    - `storage_ref_count (INTEGER, DEFAULT 1)`：存储引用计数，初始值 1 代表原书自己
+    - `canonical_book_id (UUID, FK books.id)`：去重引用指向的原始书籍 ID，非空表示是引用书
+    - `deleted_at (TIMESTAMPTZ)`：软删除时间戳，非空表示已软删除
+  - **新增字段（OCR 相关）**：
+    - `ocr_status (VARCHAR(20))`：OCR 状态 (NULL/pending/processing/completed/failed)
+    - `ocr_requested_at (TIMESTAMPTZ)`：用户请求 OCR 的时间
+    - `ocr_result_key (TEXT)`：OCR 结果 JSON 文件的 S3 Key
+    - `vector_indexed_at (TIMESTAMPTZ)`：向量索引完成时间
+  - **新增字段（元数据确认）**：
+    - `metadata_confirmed (BOOLEAN, DEFAULT FALSE)`：用户是否已确认元数据
+    - `metadata_confirmed_at (TIMESTAMPTZ)`：元数据确认时间
+  - 其他字段说明：
     - `cover_image_key`：封面图片在 S3 中的存储路径（WebP 格式，400×600）
     - `converted_epub_key`：Calibre 转换后的 EPUB 路径（标记已转换）
 - `shelves`：
@@ -83,49 +96,159 @@
 ```
 前端选择文件
     ↓
-计算 SHA256 指纹 (file_fingerprint)
+计算 SHA256 指纹 (content_sha256)
     ↓
-POST /books/upload_init
+POST /books/upload_init { content_sha256, filename, size }
     ├─ 检查配额 → 403 QUOTA_EXCEEDED
-    ├─ 检查秒传 (相同 source_etag) → 返回已有书籍
-    └─ 返回 { key, upload_url }
+    ├─ 检查全局去重 (相同 SHA256)
+    │   ├─ 命中自己 → 返回已有书籍 ID
+    │   └─ 命中全局 → 返回 dedup_available: true
+    └─ 无命中 → 返回 { key, upload_url }
     ↓
-PUT upload_url (S3 直传)
-    ↓
-POST /books/upload_complete
-    ├─ 创建 books 记录 (title=文件名, original_format)
-    └─ 触发后台任务链
-    ↓
-┌─────────────────────────────────────────┐
-│         后台任务链 (Celery)              │
-├─────────────────────────────────────────┤
-│ 1. tasks.convert_to_epub                │
-│    ├─ 仅对 MOBI/AZW3/FB2 等格式触发      │
-│    ├─ 通过共享卷与 Calibre 容器交互      │
-│    ├─ 转换成功后删除原始文件 (节省存储)   │
-│    └─ 更新 minio_key → 新 EPUB           │
-├─────────────────────────────────────────┤
-│ 2. tasks.extract_book_cover             │
-│    ├─ 从 EPUB/PDF 提取封面               │
-│    ├─ 转换为 WebP (400×600, 80%)        │
-│    └─ 更新 cover_image_key              │
-├─────────────────────────────────────────┤
-│ 3. tasks.extract_book_metadata          │
-│    ├─ 从 EPUB 提取 dc:title/dc:creator  │
-│    ├─ 从 PDF 提取 metadata              │
-│    └─ 智能更新 title/author             │
-│        ↳ 仅当当前标题为文件名格式时覆盖   │
-├─────────────────────────────────────────┤
-│ 4. tasks.initial_book_analysis          │
-│    ├─ 检测书籍类型（文字型/图片型）       │
-│    ├─ 更新 is_digitalized 字段          │
-│    └─ 根据类型决定后续处理流程           │
-│        ├─ 文字型 → 直接触发向量索引      │
-│        └─ 图片型 → 通知前端，等待用户决策 │
-└─────────────────────────────────────────┘
+┌─────────────────────┬───────────────────────────────────────┐
+│ dedup_available     │ 正常上传流程                          │
+├─────────────────────┼───────────────────────────────────────┤
+│ POST /books/dedup_  │ PUT upload_url (S3 直传)              │
+│      reference      │       ↓                               │
+│       ↓             │ POST /books/upload_complete           │
+│ 创建引用书籍记录     │       ↓                               │
+│ (共享存储，秒传)     │ 创建书籍记录，触发后台任务链           │
+│       ↓             │       ↓                               │
+│ 检查原书 OCR 状态    │ ┌─────────────────────────────────────┐
+│ ├─ 已 OCR → 可复用   │ │         后台任务链 (Celery)          │
+│ └─ 未 OCR → 同原书   │ ├─────────────────────────────────────┤
+└─────────────────────┴─┤ 1. tasks.convert_to_epub            │
+                        │    ├─ 仅对 MOBI/AZW3/FB2 等格式触发  │
+                        │    ├─ 通过共享卷与 Calibre 容器交互  │
+                        │    ├─ 转换成功后删除原始文件         │
+                        │    └─ 更新 minio_key → 新 EPUB       │
+                        ├─────────────────────────────────────┤
+                        │ 2. tasks.extract_book_cover         │
+                        │    ├─ 从 EPUB/PDF 提取封面           │
+                        │    ├─ 转换为 WebP (400×600, 80%)    │
+                        │    └─ 更新 cover_image_key          │
+                        ├─────────────────────────────────────┤
+                        │ 3. tasks.extract_book_metadata      │
+                        │    ├─ 从 EPUB 提取 dc:title/creator │
+                        │    ├─ 从 PDF 提取 metadata          │
+                        │    └─ 智能更新 title/author         │
+                        ├─────────────────────────────────────┤
+                        │ 4. tasks.initial_book_analysis      │
+                        │    ├─ 检测书籍类型（文字/图片型）    │
+                        │    ├─ 更新 is_digitalized 字段      │
+                        │    └─ 根据类型决定后续处理流程       │
+                        └─────────────────────────────────────┘
     ↓
 书籍可阅读 (WebSocket 通知前端刷新)
 ```
+
+#### B.1.1 SHA256 全局去重机制（ADR-007）
+
+**核心原则**：
+1. **存储去重**：相同文件只存储一份，通过引用计数管理
+2. **OCR 复用**：相同文件只需一次真实 OCR，后续用户秒级复用
+3. **智能删除**：区分公共数据和私人数据，实现软删除/硬删除分层
+
+**数据库字段**：
+```sql
+-- books 表新增字段
+content_sha256 VARCHAR(64)     -- 文件内容 SHA256 哈希
+storage_ref_count INTEGER      -- 存储引用计数（初始值 1）
+canonical_book_id UUID         -- 去重引用指向的原始书籍 ID
+deleted_at TIMESTAMPTZ         -- 软删除时间戳
+
+-- 部分索引
+CREATE INDEX idx_books_content_sha256 ON books(content_sha256) 
+    WHERE content_sha256 IS NOT NULL;
+```
+
+**去重检查流程**：
+```
+POST /books/upload_init
+    ↓
+检查 content_sha256 是否存在
+    ↓
+┌─────────────────────────────┬──────────────────────────────────┐
+│ 无命中                       │ 有命中                            │
+├─────────────────────────────┼──────────────────────────────────┤
+│ dedup_available: false      │ 检查是否是当前用户的书             │
+│ 返回 presigned URL          │ ├─ 是 → dedup_hit: "own"          │
+│ 继续正常上传流程              │ │     返回已有书籍 ID             │
+│                             │ └─ 否 → dedup_available: true     │
+│                             │         canonical_id: 原书 ID     │
+└─────────────────────────────┴──────────────────────────────────┘
+```
+
+**秒传接口**：
+```
+POST /api/v1/books/dedup_reference
+├─ 请求体：
+│   {
+│     "filename": "小说的艺术.pdf",
+│     "content_sha256": "6f4c24abd60a55d3...",
+│     "size": 12345678
+│   }
+├─ 处理逻辑：
+│   1. 查找 canonical_book（原始书籍）
+│   2. 增加原书 storage_ref_count
+│   3. 创建新书籍记录，设置 canonical_book_id
+│   4. 复制原书的：minio_key, cover_image_key, meta
+│   5. 如果原书已 OCR：
+│      - 设置 is_digitalized = true, confidence = 0.1
+│      - 用户可点击 OCR 触发"假 OCR"复用
+├─ 响应 201：
+│   {
+│     "id": "new-book-uuid",
+│     "dedup_type": "global",
+│     "canonical_book_id": "original-book-uuid",
+│     "has_ocr": true
+│   }
+└─ 响应 404：CANONICAL_NOT_FOUND (原书不存在)
+```
+
+**引用计数规则**：
+| 操作 | storage_ref_count 变化 |
+|-----|----------------------|
+| 原书上传完成 | 初始值 = 1（代表自己） |
+| 秒传创建引用书 | 原书 +1 |
+| 引用书删除 | 原书 -1 |
+| 判断是否有引用 | `> 1` 表示有其他用户共享 |
+
+#### B.1.2 书籍删除策略（Soft Delete & Hard Delete）
+
+**删除决策流程**：
+```
+用户删除书籍
+    ↓
+判断书籍类型
+    ├─ 引用书 (canonical_book_id IS NOT NULL)
+    │   ├─ 删除用户私有数据（笔记/进度/书架）
+    │   ├─ 物理删除书籍记录
+    │   ├─ 减少原书 storage_ref_count
+    │   └─ 检查原书是否需要清理
+    │       └─ 如果原书已软删除 + ref_count ≤ 1 → 物理删除原书
+    │
+    └─ 原书 (canonical_book_id IS NULL)
+        ├─ 删除用户私有数据
+        └─ 检查引用计数
+            ├─ ref_count > 1 → 软删除
+            │   └─ 设置 deleted_at，保留公共数据
+            └─ ref_count ≤ 1 → 硬删除
+                ├─ 删除 S3 文件（PDF/封面/OCR结果）
+                ├─ 删除向量索引
+                └─ 物理删除数据库记录
+```
+
+**公共数据 vs 私人数据**：
+| 数据类型 | 所有者 | 软删除时 | 硬删除时 |
+|---------|-------|---------|---------|
+| PDF/EPUB 文件 | 共享 | ✅ 保留 | ❌ 删除 |
+| 封面图片 | 共享 | ✅ 保留 | ❌ 删除 |
+| OCR 结果 JSON | 共享 | ✅ 保留 | ❌ 删除 |
+| 向量索引 | 共享 | ✅ 保留 | ❌ 删除 |
+| 笔记/高亮 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
+| 阅读进度 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
+| 书架关联 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
 
 #### B.2 OCR 与向量索引触发机制（⚠️ 重要架构决策）
 
@@ -133,18 +256,29 @@ POST /books/upload_complete
 1. **向量索引是免费服务**，对所有书籍自动执行
 2. **OCR 是收费/限额服务**，由用户主动触发
 3. 图片型 PDF 未经 OCR 前，无法生成向量索引
+4. **OCR 结果可复用**：相同文件只需一次真实 OCR（ADR-007）
 
 **书籍类型判断**：
 | 类型 | 判断条件 | 后续处理 |
 |-----|---------|---------|
 | 文字型 EPUB | `original_format = 'epub'` | 直接向量索引 |
-| 文字型 PDF | 初检有文字层 (`is_digitalized = true`) | 直接向量索引 |
-| 图片型 PDF | 初检无文字层 (`is_digitalized = false`) | 等待用户触发 OCR |
+| 文字型 PDF | 初检有文字层 (`is_digitalized = true, confidence >= 0.8`) | 直接向量索引 |
+| 图片型 PDF | 初检无文字层 (`is_digitalized = true, confidence < 0.8`) | 等待用户触发 OCR |
 | 转换后 EPUB | MOBI/AZW3/FB2 转换而来 | 直接向量索引 |
+| 秒传引用书 | `canonical_book_id IS NOT NULL` | 继承原书状态，可触发假 OCR |
+
+**is_image_based 判断逻辑**（前端用于显示 OCR 按钮）：
+```python
+# 需要显示 OCR 按钮的条件
+is_image_based = (
+    (is_digitalized == True AND confidence < 0.8)  # 图片型 PDF
+    OR ocr_status == 'completed'  # 已完成 OCR 的书籍（可能需要重做）
+)
+```
 
 **图片型 PDF 处理流程**：
 ```
-初检发现图片型 PDF (is_digitalized = false)
+初检发现图片型 PDF (is_digitalized = true, confidence < 0.8)
     ↓
 服务端发送 WebSocket/心跳 事件到前端
     ↓
@@ -186,25 +320,67 @@ POST /api/v1/books/{book_id}/ocr
 ├─ 权限：用户已登录
 ├─ 前置检查：
 │   ├─ 书籍存在且属于当前用户
-│   ├─ 书籍是图片型 (is_digitalized = false)
-│   └─ 用户 OCR 配额充足 (free_ocr_usage < limit 或 membership_tier 允许)
-├─ 响应 200：
+│   ├─ 书籍是图片型 (is_digitalized = true AND confidence < 0.8)
+│   │   或 is_digitalized = false (未检测)
+│   └─ 用户 OCR 配额充足 (阶梯计费规则)
+├─ OCR 复用检查：
+│   SELECT id, ocr_result_key FROM books 
+│   WHERE content_sha256 = :sha256 
+│   AND ocr_status = 'completed' LIMIT 1
+│   ├─ 找到 → 假 OCR，秒级完成
+│   └─ 未找到 → 真实 OCR，提交 Celery 任务
+├─ 响应 200 (假 OCR)：
+│   {
+│     "status": "instant_completed",
+│     "ocr_result_key": "ocr-result-xxx.json",
+│     "message": "OCR 结果已复用"
+│   }
+├─ 响应 200 (真实 OCR)：
 │   {
 │     "status": "queued",
 │     "queue_position": 3,
 │     "estimated_minutes": 15
 │   }
 ├─ 响应 403：QUOTA_EXCEEDED (OCR 配额不足)
-└─ 响应 400：ALREADY_DIGITALIZED (已经是文字型)
+├─ 响应 400：ALREADY_DIGITALIZED (confidence >= 0.8，已是文字型)
+└─ 响应 400：OCR_MAX_PAGES_EXCEEDED (超过 2000 页)
+```
+
+**OCR 复用机制（假 OCR）**：
+> **商业逻辑（⚠️ 重要）**：
+> - 用户**必须**点击 OCR 按钮才能看到 OCR 结果（商业闭环）
+> - 即使是复用，也**必须**扣除配额（维护商业公平性）
+> - 但不消耗 GPU 算力（降低运营成本）
+
+```
+用户点击 OCR 按钮
+    ↓
+正常配额检查和扣费
+    ↓
+检查是否可复用（相同 SHA256 已有 OCR 结果）
+    ├─ 可复用 → 直接复制 ocr_result_key，返回 instant_completed
+    └─ 不可复用 → 提交 Celery 任务，返回 queued
 ```
 
 **books 表新增字段（OCR 相关）**：
 ```sql
+-- OCR 状态字段
 ALTER TABLE books ADD COLUMN ocr_status VARCHAR(20) DEFAULT NULL;
 -- 可选值: NULL (未检测/文字型), 'pending' (待处理), 'processing' (处理中), 'completed' (已完成), 'failed' (失败)
 
 ALTER TABLE books ADD COLUMN ocr_requested_at TIMESTAMPTZ;
+ALTER TABLE books ADD COLUMN ocr_result_key TEXT;  -- OCR 结果 JSON 的 S3 Key
 ALTER TABLE books ADD COLUMN vector_indexed_at TIMESTAMPTZ;
+
+-- SHA256 去重相关字段（ADR-007）
+ALTER TABLE books ADD COLUMN content_sha256 VARCHAR(64);
+ALTER TABLE books ADD COLUMN storage_ref_count INTEGER DEFAULT 1;
+ALTER TABLE books ADD COLUMN canonical_book_id UUID REFERENCES books(id);
+ALTER TABLE books ADD COLUMN deleted_at TIMESTAMPTZ;
+
+-- 索引
+CREATE INDEX idx_books_content_sha256 ON books(content_sha256) WHERE content_sha256 IS NOT NULL;
+CREATE INDEX idx_books_canonical_book_id ON books(canonical_book_id) WHERE canonical_book_id IS NOT NULL;
 ```
 
 **任务链触发规则**：
@@ -368,6 +544,11 @@ const menuItems = [
 - [x] 元数据智能提取与标题更新逻辑
 - [x] RLS 策略与只读锁拦截测试通过
 - [x] 前端上传组件与状态管理对齐
+- [x] **SHA256 全局去重机制实现与测试（ADR-007）**
+- [x] **秒传接口 dedup_reference 实现**
+- [x] **OCR 复用（假 OCR）机制实现**
+- [x] **软删除/硬删除分层策略实现**
+- [x] **引用计数与删除联动测试通过**
 - [ ] Shelves 树形结构前端完善（待实现）
 
 ---

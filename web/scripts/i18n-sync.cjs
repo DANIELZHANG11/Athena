@@ -1,3 +1,9 @@
+/**
+ * i18n 同步脚本
+ * - 从后端拉取指定命名空间与语言的翻译
+ * - 写入到 `public/locales/<lang>/<ns>.json`
+ * - 需设置环境变量：`ADMIN_TOKEN` 与 `I18N_SYNC_BASE`
+ */
 const fs = require('fs')
 const path = require('path')
 const https = require('https')

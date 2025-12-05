@@ -1,3 +1,8 @@
+/**
+ * 抽屉组件（Vaul）
+ * - 提供底部弹出抽屉的结构与样式
+ * - 封装 Trigger/Overlay/Content 等子组件
+ */
 "use client"
 
 import * as React from 'react'

@@ -1,6 +1,17 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 
+/**
+ * Axios 实例与拦截器
+ *
+ * 功能：
+ * - 请求前自动附加 `Authorization: Bearer <token>`
+ * - Token 距过期 5 分钟内时，先刷新再发起请求
+ * - 响应 401 时，尝试刷新并重试一次，否则清空状态并跳转登录
+ *
+ * 注意：
+ * - 这里直接使用 `window.location.href` 做跳转，避免路由实例依赖
+ */
 const api = axios.create({
     baseURL: '/api/v1',
     headers: {
@@ -11,6 +22,7 @@ const api = axios.create({
 // 请求拦截器：自动携带 Token 并在即将过期时刷新
 api.interceptors.request.use(
     async (config) => {
+        // 从全局 store 取当前认证信息
         const store = useAuthStore.getState()
         const token = store.accessToken
 

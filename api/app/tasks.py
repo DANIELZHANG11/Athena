@@ -142,8 +142,11 @@ def _extract_epub_metadata(epub_data: bytes) -> dict:
 
 
 def _extract_pdf_metadata(pdf_data: bytes) -> dict:
-    """从 PDF 文件中提取元数据 (title, author)"""
-    metadata = {"title": None, "author": None}
+    """
+    从 PDF 文件中提取元数据 (title, author, page_count)
+    同时检测 PDF 是否是图片型（无可提取文字）
+    """
+    metadata = {"title": None, "author": None, "page_count": None, "is_image_based": False, "digitalization_confidence": 1.0}
     try:
         import fitz  # PyMuPDF
         doc = fitz.open(stream=pdf_data, filetype="pdf")
@@ -154,11 +157,50 @@ def _extract_pdf_metadata(pdf_data: bytes) -> dict:
             if pdf_meta.get("author"):
                 metadata["author"] = pdf_meta["author"].strip()
         
-        # 同时提取页数
+        # 提取页数
         page_count = len(doc)
-        doc.close()
         metadata["page_count"] = page_count
-        print(f"[Metadata] PDF metadata extracted: title={metadata['title']}, author={metadata['author']}, pages={page_count}")
+        
+        # ========== 检测是否是图片型 PDF ==========
+        # 采样前5页（或全部页面如果少于5页）检测是否有可提取的文字
+        sample_pages = min(5, page_count)
+        total_text_chars = 0
+        total_cjk_chars = 0
+        
+        import re
+        for i in range(sample_pages):
+            page = doc[i]
+            text = page.get_text("text")
+            if text:
+                # 统计有效字符（排除空白和控制字符）
+                clean_text = text.strip()
+                total_text_chars += len(clean_text)
+                # 统计 CJK 字符（中日韩文字）
+                total_cjk_chars += len(re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]', clean_text))
+        
+        # 判断逻辑：
+        # - 如果采样页面的平均可提取字符数少于 50，认为是图片型
+        # - 对于中文书籍，如果 CJK 字符占比极低也认为是图片型
+        avg_chars_per_page = total_text_chars / sample_pages if sample_pages > 0 else 0
+        
+        if avg_chars_per_page < 50:
+            # 几乎没有可提取文字，是图片型 PDF
+            metadata["is_image_based"] = True
+            metadata["digitalization_confidence"] = 0.1
+            print(f"[Metadata] PDF detected as IMAGE-BASED: avg {avg_chars_per_page:.1f} chars/page (threshold: 50)")
+        elif avg_chars_per_page < 200:
+            # 文字很少，可能是部分图片型
+            metadata["is_image_based"] = True
+            metadata["digitalization_confidence"] = 0.3
+            print(f"[Metadata] PDF detected as PARTIALLY IMAGE-BASED: avg {avg_chars_per_page:.1f} chars/page")
+        else:
+            # 有足够的可提取文字，是数字型
+            metadata["is_image_based"] = False
+            metadata["digitalization_confidence"] = min(1.0, avg_chars_per_page / 500)
+            print(f"[Metadata] PDF detected as DIGITAL: avg {avg_chars_per_page:.1f} chars/page")
+        
+        doc.close()
+        print(f"[Metadata] PDF metadata extracted: title={metadata['title']}, author={metadata['author']}, pages={page_count}, is_image_based={metadata['is_image_based']}")
     except Exception as e:
         print(f"[Metadata] Failed to extract PDF metadata: {e}")
     return metadata
@@ -415,10 +457,9 @@ def convert_to_epub(book_id: str, user_id: str):
                 traceback.print_exc()
                 return
         
-        # 转换完成后，触发封面和元数据提取
+        # 转换完成后，触发封面和元数据提取（使用合并任务）
         print(f"[Convert] Triggering cover and metadata extraction for: {book_id}")
-        celery_app.send_task("tasks.extract_book_cover", args=[book_id, user_id])
-        celery_app.send_task("tasks.extract_book_metadata", args=[book_id, user_id])
+        celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
     
     asyncio.get_event_loop().run_until_complete(_run())
 
@@ -611,17 +652,21 @@ def extract_book_metadata(book_id: str, user_id: str):
                 else:
                     print(f"[Metadata] Title not updated, current: '{current_title}', extracted: '{extracted_title}'")
             
-            # 更新 page_count 到 meta
+            # 更新 meta 字段：page_count 和 metadata_extracted
+            # 合并成一个语句避免 "multiple assignments to same column" 错误
             if metadata.get("page_count"):
-                updates.append("meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', cast(:page_count as integer), 'needs_manual', false)")
+                updates.append("meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', cast(:page_count as integer), 'needs_manual', false, 'metadata_extracted', true)")
                 params["page_count"] = int(metadata["page_count"])
                 print(f"[Metadata] Will update page_count to: {metadata['page_count']}")
+            else:
+                # 无论是否提取到有效数据，都标记元数据提取任务已完成
+                updates.append("meta = COALESCE(meta, '{}'::jsonb) || '{\"metadata_extracted\": true}'::jsonb")
             
             if updates:
                 updates.append("updated_at = now()")
                 update_sql = f"UPDATE books SET {', '.join(updates)} WHERE id = cast(:id as uuid)"
                 await conn.execute(text(update_sql), params)
-                print(f"[Metadata] Updated book metadata for: {book_id}")
+                print(f"[Metadata] Updated book metadata for: {book_id}, metadata_extracted=true")
                 
                 # 广播更新事件
                 try:
@@ -631,6 +676,7 @@ def extract_book_metadata(book_id: str, user_id: str):
                         "title": metadata.get("title"),
                         "author": metadata.get("author"),
                         "page_count": metadata.get("page_count"),
+                        "metadata_extracted": True,  # 标记任务完成
                     }
                     asyncio.create_task(
                         ws_broadcast(
@@ -641,7 +687,172 @@ def extract_book_metadata(book_id: str, user_id: str):
                 except Exception:
                     pass
             else:
-                print(f"[Metadata] No updates needed for: {book_id}")
+                # 即使没有其他更新，也要标记 metadata_extracted
+                await conn.execute(
+                    text("UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || '{\"metadata_extracted\": true}'::jsonb, updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id},
+                )
+                print(f"[Metadata] No metadata updates, but marked metadata_extracted=true for: {book_id}")
+    
+    asyncio.get_event_loop().run_until_complete(_run())
+
+
+@shared_task(name="tasks.extract_book_cover_and_metadata")
+def extract_book_cover_and_metadata(book_id: str, user_id: str):
+    """
+    合并的封面+元数据提取任务
+    只下载一次文件，同时提取封面和元数据，提高 PDF 处理效率
+    """
+    import asyncio
+    
+    async def _run():
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            res = await conn.execute(
+                text("SELECT minio_key, original_format, title, author, converted_epub_key FROM books WHERE id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            row = res.fetchone()
+            if not row:
+                print(f"[CoverMeta] Book not found: {book_id}")
+                return
+            
+            minio_key, original_format, current_title, current_author, converted_epub_key = row[0], row[1], row[2], row[3], row[4]
+            fmt_lower = (original_format or '').lower()
+            
+            # 对于非 EPUB/PDF 格式，优先使用转换后的 EPUB
+            if fmt_lower not in ('epub', 'pdf'):
+                if converted_epub_key:
+                    print(f"[CoverMeta] Using converted EPUB")
+                    minio_key = converted_epub_key
+                    fmt_lower = 'epub'
+                else:
+                    print(f"[CoverMeta] Non-EPUB/PDF format ({fmt_lower}) needs conversion first: {book_id}")
+                    return
+            
+            if not minio_key:
+                print(f"[CoverMeta] No minio_key for book: {book_id}")
+                return
+            
+            print(f"[CoverMeta] Extracting cover and metadata for: {book_id} (format: {fmt_lower})")
+            
+            # 下载书籍文件（只下载一次）
+            try:
+                client = get_s3()
+                ensure_bucket(client, BUCKET)
+                resp = client.get_object(Bucket=BUCKET, Key=minio_key)
+                book_data = resp["Body"].read()
+                print(f"[CoverMeta] Downloaded {len(book_data)} bytes")
+            except Exception as e:
+                print(f"[CoverMeta] Failed to download book: {e}")
+                return
+            
+            # ============ 提取封面 ============
+            cover_data = None
+            if fmt_lower == 'epub':
+                cover_data = _extract_epub_cover(book_data)
+            elif fmt_lower == 'pdf':
+                cover_data = _extract_pdf_cover(book_data)
+            
+            cover_key = None
+            if cover_data:
+                # 优化封面图片
+                optimized_data, content_type = _optimize_cover_image(cover_data, max_width=400, quality=80)
+                cover_key = make_object_key(user_id, f"covers/{book_id}.webp")
+                try:
+                    upload_bytes(BUCKET, cover_key, optimized_data, content_type)
+                    print(f"[CoverMeta] Uploaded cover: {cover_key} ({len(optimized_data)} bytes)")
+                except Exception as e:
+                    print(f"[CoverMeta] Failed to upload cover: {e}")
+                    cover_key = None
+            else:
+                print(f"[CoverMeta] No cover found for: {book_id}")
+            
+            # ============ 提取元数据 ============
+            metadata = {"title": None, "author": None, "page_count": None}
+            if fmt_lower == 'epub':
+                metadata = _extract_epub_metadata(book_data)
+            elif fmt_lower == 'pdf':
+                metadata = _extract_pdf_metadata(book_data)
+            
+            # ============ 构建数据库更新 ============
+            updates = []
+            params = {"id": book_id}
+            
+            # 更新封面
+            if cover_key:
+                updates.append("cover_image_key = :cover_key")
+                params["cover_key"] = cover_key
+            
+            # 更新作者（如果当前为空且提取到了）
+            if metadata.get("author") and (not current_author or current_author.strip() == ""):
+                updates.append("author = :author")
+                params["author"] = metadata["author"]
+                print(f"[CoverMeta] Will update author to: {metadata['author']}")
+            
+            # 更新标题（如果需要）
+            if metadata.get("title"):
+                extracted_title = metadata["title"].strip()
+                should_update = (
+                    not current_title or 
+                    current_title.strip() == "" or 
+                    "_" in current_title or 
+                    current_title.endswith(('.epub', '.pdf', '.mobi', '.azw3')) or
+                    ("-" in (current_title or "") and "-" not in extracted_title and len(extracted_title) < len(current_title or ""))
+                )
+                if should_update:
+                    updates.append("title = :title")
+                    params["title"] = extracted_title
+                    print(f"[CoverMeta] Will update title to: '{extracted_title}'")
+            
+            # 更新 meta 字段：page_count + metadata_extracted
+            if metadata.get("page_count"):
+                updates.append("meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('page_count', cast(:page_count as integer), 'needs_manual', false, 'metadata_extracted', true)")
+                params["page_count"] = int(metadata["page_count"])
+                print(f"[CoverMeta] Will update page_count to: {metadata['page_count']}")
+            else:
+                updates.append("meta = COALESCE(meta, '{}'::jsonb) || '{\"metadata_extracted\": true}'::jsonb")
+            
+            # ============ 更新图片型 PDF 检测结果（仅对 PDF 格式）============
+            if fmt_lower == 'pdf' and 'is_image_based' in metadata:
+                is_image_based = metadata.get("is_image_based", False)
+                confidence = metadata.get("digitalization_confidence", 1.0)
+                # is_digitalized = true 表示"已检测"，confidence < 0.8 表示是图片型
+                updates.append("is_digitalized = true")
+                updates.append("initial_digitalization_confidence = :confidence")
+                params["confidence"] = confidence
+                print(f"[CoverMeta] PDF type detection: is_image_based={is_image_based}, confidence={confidence}")
+            
+            # 执行更新
+            if updates:
+                updates.append("updated_at = now()")
+                update_sql = f"UPDATE books SET {', '.join(updates)} WHERE id = cast(:id as uuid)"
+                await conn.execute(text(update_sql), params)
+                print(f"[CoverMeta] Updated book: {book_id}")
+            
+            # 广播更新事件
+            try:
+                import json as _j
+                event_data = {
+                    "event": "COVER_AND_METADATA_EXTRACTED",
+                    "cover_key": cover_key,
+                    "title": metadata.get("title"),
+                    "author": metadata.get("author"),
+                    "page_count": metadata.get("page_count"),
+                    "metadata_extracted": True,
+                    "is_image_based": metadata.get("is_image_based", False),
+                    "digitalization_confidence": metadata.get("digitalization_confidence", 1.0),
+                }
+                asyncio.create_task(
+                    ws_broadcast(
+                        f"book:{book_id}",
+                        _j.dumps(event_data),
+                    )
+                )
+            except Exception:
+                pass
     
     asyncio.get_event_loop().run_until_complete(_run())
 
@@ -699,23 +910,31 @@ def analyze_book_type(book_id: str, user_id: str):
     asyncio.get_event_loop().run_until_complete(_run())
 
 
-def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple:
+def _pdf_to_images_with_sizes(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> list:
     """
     将 PDF 转换为图片列表，用于 OCR
-    Args:
+    每页单独记录尺寸（PDF 每页尺寸可能不同）
+    
+    参数：
         pdf_data: PDF 文件二进制数据
         max_pages: 最大处理页数，0 表示处理所有页面
         dpi: 渲染分辨率
-    Returns:
-        (images, image_width, image_height)
-        images: [(page_num, image_bytes, total_pages), ...]
-        image_width, image_height: 渲染后的图片尺寸（像素）
+    返回：
+        字典列表：[
+            {
+                "page_num": 1,
+                "image_bytes": bytes,
+                "width": 1200,   # 该页渲染后的像素宽度
+                "height": 1600,  # 该页渲染后的像素高度
+                "pdf_width": 595.0,   # PDF 原始宽度（points，72 DPI）
+                "pdf_height": 842.0,  # PDF 原始高度（points）
+            },
+            ...
+        ]
     """
     import fitz  # PyMuPDF
     
-    images = []
-    image_width = 0
-    image_height = 0
+    pages = []
     try:
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         total_pages = len(doc)
@@ -725,25 +944,613 @@ def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple
         
         for page_num in range(pages_to_process):
             page = doc[page_num]
+            
+            # 获取 PDF 原始页面尺寸 (points, 1 point = 1/72 inch)
+            pdf_rect = page.rect
+            pdf_width = pdf_rect.width
+            pdf_height = pdf_rect.height
+            
             # 渲染为像素图
             mat = fitz.Matrix(dpi / 72, dpi / 72)
             pix = page.get_pixmap(matrix=mat)
             
-            # 记录图片尺寸（使用第一页的尺寸作为标准）
+            # 渲染后的像素尺寸
+            pixel_width = pix.width
+            pixel_height = pix.height
+            
             if page_num == 0:
-                image_width = pix.width
-                image_height = pix.height
-                print(f"[OCR] Page size at {dpi} DPI: {image_width} x {image_height} pixels")
+                print(f"[OCR] First page: PDF size {pdf_width:.1f}x{pdf_height:.1f} pt -> {pixel_width}x{pixel_height} px at {dpi} DPI")
             
             # 转换为 PNG 格式
             img_data = pix.tobytes("png")
-            images.append((page_num + 1, img_data, total_pages))
+            
+            pages.append({
+                "page_num": page_num + 1,
+                "total_pages": total_pages,
+                "image_bytes": img_data,
+                "width": pixel_width,
+                "height": pixel_height,
+                "pdf_width": pdf_width,
+                "pdf_height": pdf_height,
+                "dpi": dpi,
+            })
         
         doc.close()
     except Exception as e:
         print(f"[OCR] Failed to convert PDF to images: {e}")
     
-    return images, image_width, image_height
+    return pages
+
+
+def _pdf_page_to_image(doc, page_num: int, total_pages: int, dpi: int = 150) -> dict:
+    """
+    将单个 PDF 页面转换为图片（供流水线模式使用）
+    """
+    page = doc[page_num]
+    
+    # 获取 PDF 原始页面尺寸
+    pdf_rect = page.rect
+    pdf_width = pdf_rect.width
+    pdf_height = pdf_rect.height
+    
+    # 渲染为像素图
+    import fitz
+    mat = fitz.Matrix(dpi / 72, dpi / 72)
+    pix = page.get_pixmap(matrix=mat)
+    
+    # 转换为 PNG 格式
+    img_data = pix.tobytes("png")
+    
+    return {
+        "page_num": page_num + 1,
+        "total_pages": total_pages,
+        "image_bytes": img_data,
+        "width": pix.width,
+        "height": pix.height,
+        "pdf_width": pdf_width,
+        "pdf_height": pdf_height,
+        "dpi": dpi,
+    }
+
+
+def _get_optimal_workers(reserved_cores: int = 2, max_workers: int = 8) -> int:
+    """
+    动态计算最优工作线程数
+    
+    考虑因素：
+    1. 系统总 CPU 核心数
+    2. 当前 CPU 使用率
+    3. 预留核心给其他任务（API、其他 Celery 任务）
+    4. 最大工作线程数限制（避免内存过高）
+    
+    参数：
+        reserved_cores: 预留给其他任务的核心数，默认 2
+        max_workers: 最大工作线程数，默认 8
+    
+    返回：
+        int: 推荐的工作线程数
+    """
+    import os
+    import psutil
+    
+    # 获取 CPU 核心数
+    cpu_count = os.cpu_count() or 4
+    
+    # 获取当前 CPU 使用率
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        # 估算空闲核心数
+        idle_cores = int(cpu_count * (100 - cpu_percent) / 100)
+    except Exception:
+        # 如果 psutil 不可用，假设 50% 空闲
+        idle_cores = cpu_count // 2
+    
+    # 计算可用核心数：空闲核心 - 预留核心
+    available_cores = max(1, idle_cores - reserved_cores)
+    
+    # 取 available_cores 和 max_workers 的较小值
+    workers = min(available_cores, max_workers)
+    
+    # 至少 1 个 worker
+    return max(1, workers)
+
+
+def _pipeline_ocr_process(
+    pdf_data: bytes,
+    ocr_instance,
+    max_pages: int = 0,
+    dpi: int = 150,
+    batch_size: int = 20,
+    progress_callback=None,
+) -> tuple:
+    """
+    流水线模式处理 PDF OCR
+    
+    使用生产者-消费者模式，CPU 图片转换和 OCR 识别并行执行：
+    - 生产者：将 PDF 页面转换为图片（CPU 密集）
+    - 消费者：对图片执行 OCR（CPU/GPU 密集）
+    
+    优化策略：
+    1. 动态计算工作线程数，预留核心给其他任务
+    2. 批量处理，控制内存占用
+    3. 使用队列实现流水线，减少等待时间
+    
+    参数：
+        pdf_data: PDF 文件二进制数据
+        ocr_instance: PaddleOCR 实例
+        max_pages: 最大处理页数，0 表示所有
+        dpi: 渲染 DPI
+        batch_size: 每批处理的页数
+        progress_callback: 进度回调函数 (processed, total) -> None
+    
+    返回：
+        元组: (ocr_pages, full_text, total_pages, processed_pages)
+    """
+    import fitz
+    import tempfile
+    import os as _os
+    from queue import Queue
+    from threading import Thread, Event
+    from concurrent.futures import ThreadPoolExecutor
+    
+    # 打开 PDF
+    doc = fitz.open(stream=pdf_data, filetype="pdf")
+    total_pages = len(doc)
+    pages_to_process = total_pages if max_pages <= 0 else min(total_pages, max_pages)
+    
+    print(f"[OCR Pipeline] PDF has {total_pages} pages, will process {pages_to_process} pages")
+    
+    # 获取最优工作线程数
+    image_workers = _get_optimal_workers(reserved_cores=2, max_workers=6)
+    print(f"[OCR Pipeline] Using {image_workers} workers for image conversion")
+    
+    # 结果存储
+    ocr_pages = [None] * pages_to_process  # 预分配，保持页面顺序
+    all_text_parts = []
+    processed_count = 0
+    
+    # 队列：图片转换结果
+    image_queue = Queue(maxsize=batch_size * 2)  # 限制队列大小，控制内存
+    
+    # 完成信号
+    conversion_done = Event()
+    
+    def convert_page(page_num: int) -> dict:
+        """转换单个页面为图片"""
+        try:
+            page = doc[page_num]
+            pdf_rect = page.rect
+            pdf_width = pdf_rect.width
+            pdf_height = pdf_rect.height
+            
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat)
+            img_data = pix.tobytes("png")
+            
+            return {
+                "page_num": page_num + 1,
+                "image_bytes": img_data,
+                "width": pix.width,
+                "height": pix.height,
+                "pdf_width": pdf_width,
+                "pdf_height": pdf_height,
+                "dpi": dpi,
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "page_num": page_num + 1,
+                "image_bytes": None,
+                "width": 0,
+                "height": 0,
+                "pdf_width": 0,
+                "pdf_height": 0,
+                "dpi": dpi,
+                "error": str(e),
+            }
+    
+    def image_producer():
+        """生产者：批量转换 PDF 页面为图片"""
+        nonlocal conversion_done
+        
+        with ThreadPoolExecutor(max_workers=image_workers) as executor:
+            # 分批提交任务
+            for batch_start in range(0, pages_to_process, batch_size):
+                batch_end = min(batch_start + batch_size, pages_to_process)
+                batch_pages = range(batch_start, batch_end)
+                
+                # 并行转换这一批页面
+                futures = {executor.submit(convert_page, p): p for p in batch_pages}
+                
+                # 收集结果并放入队列
+                for future in futures:
+                    try:
+                        result = future.result(timeout=60)
+                        image_queue.put(result)
+                    except Exception as e:
+                        page_num = futures[future]
+                        image_queue.put({
+                            "page_num": page_num + 1,
+                            "image_bytes": None,
+                            "error": str(e),
+                        })
+        
+        conversion_done.set()
+        print(f"[OCR Pipeline] Image conversion completed for {pages_to_process} pages")
+    
+    def ocr_consumer():
+        """消费者：对图片执行 OCR"""
+        nonlocal processed_count, all_text_parts
+        
+        while True:
+            # 检查是否所有图片都已处理完
+            if conversion_done.is_set() and image_queue.empty():
+                break
+            
+            try:
+                # 从队列获取图片（带超时，避免死锁）
+                page_info = image_queue.get(timeout=1)
+            except Exception:
+                continue
+            
+            page_num = page_info["page_num"]
+            page_idx = page_num - 1
+            
+            # 如果图片转换失败，记录错误
+            if page_info.get("error") or not page_info.get("image_bytes"):
+                ocr_pages[page_idx] = {
+                    "page_num": page_num,
+                    "width": page_info.get("width", 0),
+                    "height": page_info.get("height", 0),
+                    "pdf_width": page_info.get("pdf_width", 0),
+                    "pdf_height": page_info.get("pdf_height", 0),
+                    "dpi": page_info.get("dpi", dpi),
+                    "regions": [],
+                    "text": "",
+                    "error": page_info.get("error", "Unknown error"),
+                }
+                processed_count += 1
+                image_queue.task_done()
+                continue
+            
+            # 保存临时文件并执行 OCR
+            fd, temp_path = tempfile.mkstemp(suffix='.png')
+            try:
+                _os.write(fd, page_info["image_bytes"])
+                _os.close(fd)
+                
+                # 执行 OCR
+                page_result = ocr_instance.recognize("", temp_path)
+                
+                # 构建页面结果
+                page_data = {
+                    "page_num": page_num,
+                    "width": page_info["width"],
+                    "height": page_info["height"],
+                    "pdf_width": page_info["pdf_width"],
+                    "pdf_height": page_info["pdf_height"],
+                    "dpi": page_info["dpi"],
+                    "regions": page_result.get("regions", []),
+                    "text": page_result.get("text", ""),
+                }
+                ocr_pages[page_idx] = page_data
+                
+                if page_result.get("text"):
+                    all_text_parts.append((page_num, page_result["text"]))
+                
+                processed_count += 1
+                
+                # 进度回调
+                if progress_callback:
+                    progress_callback(processed_count, pages_to_process)
+                
+                # 日志（每 10 页输出一次）
+                if processed_count % 10 == 0 or processed_count == pages_to_process:
+                    print(f"[OCR Pipeline] Progress: {processed_count}/{pages_to_process} pages ({processed_count * 100 // pages_to_process}%)")
+                
+            except Exception as e:
+                ocr_pages[page_idx] = {
+                    "page_num": page_num,
+                    "width": page_info["width"],
+                    "height": page_info["height"],
+                    "pdf_width": page_info["pdf_width"],
+                    "pdf_height": page_info["pdf_height"],
+                    "dpi": page_info["dpi"],
+                    "regions": [],
+                    "text": "",
+                    "error": str(e),
+                }
+                processed_count += 1
+            finally:
+                try:
+                    _os.remove(temp_path)
+                except Exception:
+                    pass
+                image_queue.task_done()
+    
+    # 启动生产者和消费者线程
+    producer_thread = Thread(target=image_producer, name="OCR-ImageProducer")
+    consumer_thread = Thread(target=ocr_consumer, name="OCR-Consumer")
+    
+    print(f"[OCR Pipeline] Starting pipeline processing...")
+    start_time = __import__('time').time()
+    
+    producer_thread.start()
+    consumer_thread.start()
+    
+    # 等待完成
+    producer_thread.join()
+    consumer_thread.join()
+    
+    # 关闭 PDF 文档
+    doc.close()
+    
+    elapsed = __import__('time').time() - start_time
+    print(f"[OCR Pipeline] Completed in {elapsed:.1f}s, avg {elapsed / pages_to_process:.2f}s per page")
+    
+    # 整理文本（按页码排序）
+    all_text_parts.sort(key=lambda x: x[0])
+    full_text_parts = []
+    for page_num, text in all_text_parts:
+        full_text_parts.append(f"--- Page {page_num} ---")
+        full_text_parts.append(text)
+    
+    # 过滤掉 None（理论上不应该有）
+    ocr_pages = [p for p in ocr_pages if p is not None]
+    
+    return ocr_pages, "\n".join(full_text_parts), total_pages, len(ocr_pages)
+
+
+def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple:
+    """
+    将 PDF 转换为图片列表，用于 OCR（兼容旧接口）
+    参数：
+        pdf_data: PDF 文件二进制数据
+        max_pages: 最大处理页数，0 表示处理所有页面
+        dpi: 渲染分辨率
+    返回：
+        (images, image_width, image_height)
+        images: [(page_num, image_bytes, total_pages), ...]
+        image_width, image_height: 第一页的渲染尺寸（像素）
+    """
+    pages = _pdf_to_images_with_sizes(pdf_data, max_pages, dpi)
+    if not pages:
+        return [], 0, 0
+    
+    images = [(p["page_num"], p["image_bytes"], p["total_pages"]) for p in pages]
+    return images, pages[0]["width"], pages[0]["height"]
+
+
+@shared_task(name="tasks.process_book_ocr")
+def process_book_ocr(book_id: str, user_id: str):
+    """
+    处理书籍 OCR 任务（流水线模式）
+    
+    优化策略：
+    1. 使用生产者-消费者模式：CPU 图片转换和 OCR 识别并行执行
+    2. 动态计算工作线程数，预留核心给其他任务
+    3. 批量处理，控制内存占用
+    4. 减少用户等待时间，提高资源利用率
+    
+    流程:
+    1. 更新状态为 processing
+    2. 下载 PDF 文件
+    3. 流水线处理：图片转换 → OCR（并行）
+    4. 保存 OCR 结果到 MinIO
+    5. 更新书籍状态为 completed
+    6. 触发搜索索引
+    
+    OCR 结果格式:
+    {
+        "pages": [
+            {
+                "page_num": 1,
+                "width": 1200,       # 渲染图片宽度（OCR 坐标基于此）
+                "height": 1600,      # 渲染图片高度
+                "pdf_width": 595.0,  # PDF 原始宽度 (points)
+                "pdf_height": 842.0, # PDF 原始高度 (points)
+                "dpi": 150,          # 渲染 DPI
+                "regions": [         # OCR 识别的文本区域
+                    {
+                        "text": "识别的文字",
+                        "box": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]],  # 四点坐标
+                        "confidence": 0.95
+                    }
+                ],
+                "text": "该页全部文字..."
+            }
+        ],
+        "full_text": "全书文字...",
+        "total_pages": 100,
+        "processed_pages": 100,
+        "ocr_engine": "paddleocr",
+        "ocr_version": "3.x",
+        "pipeline_mode": true
+    }
+    """
+    import asyncio
+    
+    print(f"[OCR] Starting OCR task for book {book_id} (Pipeline Mode)")
+
+    async def _run():
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            
+            # 1. 更新状态为 processing
+            await conn.execute(
+                text("""
+                    UPDATE books 
+                    SET ocr_status = 'processing', updated_at = now() 
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": book_id}
+            )
+            
+            # 2. 获取书籍信息
+            res = await conn.execute(
+                text("SELECT minio_key, title FROM books WHERE id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            row = res.fetchone()
+            if not row:
+                print(f"[OCR] Book not found: {book_id}")
+                return
+            
+            minio_key, book_title = row
+            print(f"[OCR] Processing: {book_title} ({minio_key})")
+            
+            # 3. 下载 PDF
+            pdf_data = read_full(BUCKET, minio_key)
+            if not pdf_data:
+                print(f"[OCR] Failed to download PDF: {minio_key}")
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+                return
+            
+            print(f"[OCR] Downloaded PDF: {len(pdf_data)} bytes")
+            
+            # 4. 使用流水线模式处理 OCR
+            ocr = get_ocr()
+            
+            try:
+                ocr_pages, full_text, total_pages, processed_pages = _pipeline_ocr_process(
+                    pdf_data=pdf_data,
+                    ocr_instance=ocr,
+                    max_pages=0,  # 处理所有页面
+                    dpi=150,
+                    batch_size=20,  # 每批 20 页
+                    progress_callback=None,  # 可以后续添加进度回调
+                )
+            except Exception as e:
+                print(f"[OCR] Pipeline processing failed: {e}")
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+                return
+            
+            if not ocr_pages:
+                print(f"[OCR] No pages processed")
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+                return
+            
+            print(f"[OCR] Pipeline completed: {processed_pages}/{total_pages} pages")
+            
+            # 5. 构建完整 OCR 结果
+            ocr_result = {
+                "pages": ocr_pages,
+                "full_text": full_text,
+                "total_pages": total_pages,
+                "processed_pages": processed_pages,
+                "ocr_engine": "paddleocr",
+                "ocr_version": "3.x",
+                "pipeline_mode": True,
+            }
+            
+            # 6. 保存 OCR 结果到 MinIO
+            ocr_key = make_object_key(user_id, f"ocr-result-{book_id}.json")
+            upload_bytes(
+                BUCKET,
+                ocr_key,
+                json.dumps(ocr_result, ensure_ascii=False).encode("utf-8"),
+                "application/json",
+            )
+            print(f"[OCR] Saved OCR result to {ocr_key}")
+            
+            # 7. 更新书籍状态
+            # 【重要】OCR 完成后，保持 is_digitalized=true 但不修改 initial_digitalization_confidence
+            # confidence 应该保持低值（如 0.1），表示这是图片型 PDF
+            # 这样前端才能正确判断需要显示 OCR 层
+            await conn.execute(
+                text("""
+                    UPDATE books 
+                    SET ocr_status = 'completed',
+                        ocr_result_key = :ocr_key,
+                        is_digitalized = true,
+                        updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": book_id, "ocr_key": ocr_key}
+            )
+            print(f"[OCR] Updated book status to completed")
+            
+            # 8. 触发搜索索引
+            try:
+                # 转换为搜索索引格式
+                all_regions = []
+                for page_data in ocr_pages:
+                    for region in page_data.get("regions", []):
+                        region_with_page = region.copy()
+                        region_with_page["page"] = page_data["page_num"]
+                        region_with_page["page_width"] = page_data["width"]
+                        region_with_page["page_height"] = page_data["height"]
+                        all_regions.append(region_with_page)
+                
+                from .search_sync import index_book_content
+                index_book_content(book_id, user_id, all_regions)
+                print(f"[OCR] Triggered search indexing for book {book_id}")
+            except Exception as e:
+                print(f"[OCR] Failed to trigger search indexing: {e}")
+            
+            # 9. WebSocket 通知
+            try:
+                import json as _j
+                asyncio.create_task(
+                    ws_broadcast(
+                        f"book:{book_id}",
+                        _j.dumps({
+                            "event": "OCR_COMPLETED",
+                            "book_id": book_id,
+                            "total_pages": total_pages,
+                            "processed_pages": processed_pages,
+                        }),
+                    )
+                )
+            except Exception:
+                pass
+            
+            # 10. 审计日志
+            try:
+                await conn.execute(
+                    text(
+                        "INSERT INTO audit_logs(id, owner_id, action, details) VALUES (gen_random_uuid(), cast(:uid as uuid), :act, cast(:det as jsonb))"
+                    ),
+                    {
+                        "uid": user_id,
+                        "act": "ocr_completed",
+                        "det": json.dumps({
+                            "book_id": book_id,
+                            "total_pages": total_pages,
+                            "processed_pages": processed_pages,
+                            "pipeline_mode": True,
+                        }),
+                    },
+                )
+            except Exception:
+                pass
+
+    try:
+        asyncio.get_event_loop().run_until_complete(_run())
+    except Exception as e:
+        print(f"[OCR] Task failed with error: {e}")
+        import traceback
+        traceback.print_exc()
+        # 更新状态为失败
+        import asyncio as _asyncio
+        async def _mark_failed():
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+        _asyncio.get_event_loop().run_until_complete(_mark_failed())
 
 
 @shared_task(name="tasks.deep_analyze_book")

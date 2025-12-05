@@ -1,3 +1,10 @@
+/**
+ * 注册页面
+ *
+ * 说明：
+ * - 邮箱验证码注册；成功后保存 access/refresh token 并进入应用
+ * - 文案来自 `auth` 命名空间
+ */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'

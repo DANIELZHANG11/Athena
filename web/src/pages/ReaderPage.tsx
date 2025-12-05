@@ -33,7 +33,7 @@ import { useOcrData, clearOcrMemoryCache } from '@/hooks/useOcrData'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// Configure PDF worker - 使用 unpkg CDN (比 cdnjs 更快更新)
+// 配置 PDF worker —— 使用 unpkg CDN（比 cdnjs 更新更快）
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 type PdfPageMetrics = {
@@ -105,7 +105,7 @@ export default function ReaderPage() {
     
     // OCR 文字叠加层状态
     const [ocrLayerEnabled, setOcrLayerEnabled] = useState(false)
-    const [, /* setOcrDebugMode */] = useState(false)  // Reserved for debug toggle
+    const [, /* setOcrDebugMode */] = useState(false)  // 保留用于调试开关
     const [isImageBasedPdf, setIsImageBasedPdf] = useState(false)
     
     // 判断格式
@@ -118,6 +118,7 @@ export default function ReaderPage() {
         info: ocrInfo,
         download: downloadOcrData,
         getPageRegionsSync,
+        getPageSizeSync,
     } = useOcrData({
         bookId: bookId || '',
         autoDownload: false,  // 手动触发下载
@@ -179,7 +180,7 @@ export default function ReaderPage() {
             const conflicts = results.filter(r => r.status === 'conflict_copy')
             if (conflicts.length > 0) {
                 console.log('[Reader] Smart sync: Note conflicts detected:', conflicts.length)
-                // TODO: 显示冲突解决对话框
+                // 待办：显示冲突解决对话框
             }
         },
         onError: (err) => console.warn('[Reader] Smart sync error:', err),
@@ -265,6 +266,12 @@ export default function ReaderPage() {
     
     // OCR 数据加载：当检测到图片式 PDF 且有可用 OCR 数据时自动下载
     useEffect(() => {
+        console.log('[Reader] OCR useEffect triggered:', { 
+            bookId, 
+            isImageBasedPdf, 
+            ocrStatus: { ...ocrStatus } 
+        })
+        
         if (!bookId || !isImageBasedPdf) return
         
         // 如果已经有本地缓存，启用 OCR 层
@@ -281,6 +288,8 @@ export default function ReaderPage() {
                 if (success) {
                     setOcrLayerEnabled(true)
                     console.log('[Reader] OCR data downloaded and enabled')
+                } else {
+                    console.error('[Reader] OCR data download failed')
                 }
             })
         }
@@ -657,6 +666,10 @@ export default function ReaderPage() {
                                         const pageRegions = ocrLayerEnabled && isImageBasedPdf 
                                             ? getPageRegionsSync(pageIndex)
                                             : []
+                                        // 获取当前页的 OCR 图片尺寸（每页可能不同）
+                                        const pageSize = ocrLayerEnabled && isImageBasedPdf
+                                            ? getPageSizeSync(pageIndex)
+                                            : null
                                         return (
                                             <div
                                                 key={`page-${pageIndex}`}
@@ -668,8 +681,8 @@ export default function ReaderPage() {
                                                     width={renderWidth}
                                                     enableOcrLayer={ocrLayerEnabled && isImageBasedPdf}
                                                     ocrRegions={pageRegions}
-                                                    ocrImageWidth={ocrInfo?.imageWidth || 1240}
-                                                    ocrImageHeight={ocrInfo?.imageHeight || 1754}
+                                                    ocrImageWidth={pageSize?.width || ocrInfo?.imageWidth || 1240}
+                                                    ocrImageHeight={pageSize?.height || ocrInfo?.imageHeight || 1754}
                                                     debugOcr={false}
                                                     onRenderSuccess={(page) => handlePageRenderSuccess(page, renderWidth)}
                                                 />

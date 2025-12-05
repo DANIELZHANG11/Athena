@@ -1,3 +1,11 @@
+"""
+嵌入向量引擎
+
+说明：
+- `LocalEmbedder` 使用 BGE-M3 本地模型（优先 GPU，失败回退 CPU）
+- `MockEmbedder` 在 CI/测试环境返回固定向量
+- `get_embedder` 根据环境选择实现
+"""
 import os
 import logging
 

@@ -1,3 +1,8 @@
+/**
+ * 通用按钮组件（Shadcn 风格）
+ * - 使用 `class-variance-authority` 管理 `variant`/`size`
+ * - 通过 `asChild` 支持将样式透传到自定义元素
+ */
 import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'

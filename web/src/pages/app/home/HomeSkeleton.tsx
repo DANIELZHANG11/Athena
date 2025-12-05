@@ -1,3 +1,7 @@
+/**
+ * 阅读中页面骨架屏
+ * - 通过 framer-motion 实现脉冲占位动效
+ */
 import { motion } from 'framer-motion'
 
 export default function HomeSkeleton() {
@@ -13,4 +17,3 @@ export default function HomeSkeleton() {
     </div>
   )
 }
-

@@ -2,6 +2,14 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Home, Library, Bot, Search, User } from 'lucide-react'
 
+/**
+ * 应用区布局（登录后）
+ *
+ * 说明：
+ * - 顶部固定 Header，底部固定导航栏
+ * - 使用 `Outlet` 承载子路由页面
+ * - `NavItem` 支持选中状态的椭圆背景与加粗图标
+ */
 export default function AppLayout() {
   const { t } = useTranslation('common')
   const loc = useLocation()

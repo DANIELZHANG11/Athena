@@ -1,3 +1,10 @@
+"""
+书籍服务（内部）
+
+功能：
+- 生成上传 URL（预签名 PUT）与对象键
+- 创建书籍记录，复用 ETag 去重
+"""
 import os
 import uuid
 from sqlalchemy import text

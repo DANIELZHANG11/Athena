@@ -1,3 +1,11 @@
+/**
+ * 应用启动入口
+ *
+ * 说明：
+ * - 初始化国际化与全局样式
+ * - 可选注册 PWA 服务工作线程（Service Worker，测试环境/Cypress 禁用）
+ * - 使用 React 18 `createRoot` 挂载应用
+ */
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './i18n'

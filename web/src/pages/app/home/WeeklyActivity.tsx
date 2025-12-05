@@ -1,3 +1,10 @@
+/**
+ * 本周阅读活动卡片
+ *
+ * 说明：
+ * - 展示周一至周日的阅读分钟与目标达成情况
+ * - 今日显示蓝色进度环，过去显示已读进度或缺失态，未来灰色占位
+ */
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 

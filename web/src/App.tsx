@@ -19,6 +19,15 @@ import AppHome from './pages/app/Home'
 import ReaderPage from './pages/ReaderPage'
 import { useTokenRefresh } from './hooks/useTokenRefresh'
 
+/**
+ * 应用路由入口
+ *
+ * 说明：
+ * - 使用 `react-router-dom` 管理三层路由：Landing、Auth、App
+ * - `AuthGuard` 保护应用内页，未登录将重定向至登录页
+ * - `useTokenRefresh` 启用后台 Token 定时刷新，降低 401 风险
+ * - 所有页面组件仅通过路由装载，避免在入口处做业务逻辑
+ */
 export default function App() {
   // 启用后台自动 token 刷新
   useTokenRefresh()

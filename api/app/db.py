@@ -1,3 +1,13 @@
+"""
+数据库引擎与会话变量
+
+职责：
+- 初始化全局异步数据库引擎与会话工厂
+- 提供 `set_session_vars` 设置本地会话变量：`app.user_id` 与 `app.role`
+
+说明：
+- 仅新增注释，不改动连接与配置
+"""
 import os
 
 from sqlalchemy import text

@@ -1,3 +1,12 @@
+"""
+Athena API 入口
+
+说明：
+- 注册各业务子路由（认证、书籍、阅读、OCR、AI、搜索、定价、账单等）
+- 接入 Sentry、Prometheus 指标与链路追踪中间件
+- 全局异常处理：返回统一结构的 JSON 错误
+- 提供健康检查与 RLS 测试端点
+"""
 import os
 
 import sentry_sdk

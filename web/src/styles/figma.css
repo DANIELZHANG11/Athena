@@ -1,3 +1,9 @@
+/*
+ * 设计系统样式（Figma 导出映射）
+ * - 定义 Apple 风格 Design Tokens 与 Tailwind v4 utilities
+ * - 支持亮/暗主题与毛玻璃效果
+ * - 提供骨架屏、菜单展开等动效
+ */
 @custom-variant dark (&:is(.dark *));
 
 :root {

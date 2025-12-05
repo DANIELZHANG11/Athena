@@ -1,3 +1,14 @@
+"""
+TTS 文本转语音接口
+
+职责：
+- `/api/v1/tts`：根据定价规则扣费后生成示例 WAV（占位实现）并返回下载链接
+- `/api/v1/tts/heartbeat`：累计本次合成时长（毫秒），用于计费统计
+
+说明：
+- 仅新增注释，不改动接口与业务逻辑
+- 真正的在线合成由 services/tts 提供（Edge TTS），此处为占位 API
+"""
 import math
 import os
 import struct

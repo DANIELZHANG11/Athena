@@ -4,6 +4,14 @@ import { Upload, FileText, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SUPPORTED_FORMATS, MAX_FILE_SIZE } from '@/hooks/useBookUpload'
 
+/**
+ * 上传拖拽选择组件
+ *
+ * 功能：
+ * - 支持点击/拖拽选择单个文件，预览后确认上传
+ * - 校验扩展名与大小，文案来源 `common` 命名空间
+ * - 外部通过 `onFileSelect` 接收文件并发起上传
+ */
 export interface UploadDropzoneProps {
   onFileSelect: (file: File) => void
   disabled?: boolean

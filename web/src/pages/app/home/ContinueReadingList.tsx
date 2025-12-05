@@ -1,3 +1,11 @@
+/**
+ * 继续阅读列表（横向滚动）
+ *
+ * 说明：
+ * - 当无项目时显示导入提示卡片
+ * - 使用 `BookCard` list 变体呈现多个继续阅读项
+ * - 支持删除与已读完事件回调
+ */
 import { useTranslation } from 'react-i18next'
 import { BookOpen } from 'lucide-react'
 import BookCard from '@/components/BookCard'
@@ -55,4 +63,3 @@ export default function ContinueReadingList({ items, onItemDeleted, onItemFinish
     </div>
   )
 }
-

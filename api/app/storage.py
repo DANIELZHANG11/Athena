@@ -1,3 +1,11 @@
+"""
+对象存储封装（MinIO/S3）
+
+功能：
+- 生成预签名上传/下载 URL
+- 读写对象（全量/头部）、查询 ETag、删除对象
+- 公网域名重写，兼容前端访问与代理
+"""
 import os
 import uuid
 from datetime import timedelta
@@ -105,6 +113,17 @@ def stat_etag(bucket: str, key: str) -> str | None:
         return None
     except Exception:
         return None
+
+
+def delete_object(bucket: str, key: str) -> bool:
+    """删除 MinIO 对象，返回是否成功"""
+    try:
+        client = get_s3()
+        client.delete_object(Bucket=bucket, Key=key)
+        return True
+    except Exception as e:
+        print(f"[Storage] Failed to delete {bucket}/{key}: {e}")
+        return False
 
 
 def _rewrite_public(url: str) -> str:

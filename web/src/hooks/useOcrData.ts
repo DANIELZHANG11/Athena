@@ -15,10 +15,11 @@ import {
   saveOcrData, 
   getOcrPageRegions,
   type OcrDataRecord,
-  type OcrRegion 
+  type OcrRegion,
+  type OcrPageSize
 } from '@/lib/bookStorage'
 
-export type { OcrRegion }
+export type { OcrRegion, OcrPageSize }
 
 export interface OcrDataStatus {
   /** OCR 数据是否可用（服务端已完成 OCR） */
@@ -58,6 +59,8 @@ interface UseOcrDataResult {
   getPageRegions: (page: number) => Promise<OcrRegion[]>
   /** 同步获取指定页的 OCR 区域（从内存缓存） */
   getPageRegionsSync: (page: number) => OcrRegion[]
+  /** 同步获取指定页的 OCR 图片尺寸（从内存缓存） */
+  getPageSizeSync: (page: number) => OcrPageSize | null
   /** 刷新状态 */
   refresh: () => Promise<void>
 }
@@ -79,6 +82,7 @@ export function useOcrData({
   const [info, setInfo] = useState<OcrDataInfo | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const isMountedRef = useRef(true)
+  const downloadingRef = useRef(false)  // 用于稳定的下载状态检查
   const accessToken = useAuthStore((s) => s.accessToken)
 
   // 检查本地缓存状态
@@ -89,6 +93,12 @@ export function useOcrData({
       // 先检查内存缓存
       if (memoryCache.has(bookId)) {
         const cached = memoryCache.get(bookId)!
+        // 检查是否有 pageSizes（新版数据），如果没有则需要重新下载
+        if (!cached.pageSizes) {
+          console.log('[useOcrData] Local cache missing pageSizes, needs re-download')
+          memoryCache.delete(bookId)
+          return false
+        }
         if (isMountedRef.current) {
           setInfo({
             isImageBased: cached.isImageBased,
@@ -107,6 +117,11 @@ export function useOcrData({
       // 检查 IndexedDB
       const ocrData = await getOcrData(bookId)
       if (ocrData) {
+        // 检查是否有 pageSizes（新版数据），如果没有则需要重新下载
+        if (!ocrData.pageSizes) {
+          console.log('[useOcrData] IndexedDB cache missing pageSizes, needs re-download')
+          return false
+        }
         memoryCache.set(bookId, ocrData)
         if (isMountedRef.current) {
           setInfo({
@@ -131,19 +146,27 @@ export function useOcrData({
 
   // 检查服务端是否有 OCR 数据
   const checkServerAvailability = useCallback(async () => {
-    if (!bookId || !accessToken) return false
+    if (!bookId || !accessToken) {
+      console.log('[useOcrData] checkServerAvailability skipped: no bookId or accessToken')
+      return false
+    }
     
     try {
+      console.log(`[useOcrData] Checking server availability for ${bookId}...`)
       const resp = await fetch(`/api/v1/books/${bookId}/ocr`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       })
       
-      if (!resp.ok) return false
+      if (!resp.ok) {
+        console.log(`[useOcrData] Server returned ${resp.status}`)
+        return false
+      }
       
       const result = await resp.json()
       const available = result.data?.available && result.data?.is_image_based
+      console.log(`[useOcrData] Server availability: ${available}`, result.data)
       
       if (isMountedRef.current) {
         setStatus(prev => ({ ...prev, available }))
@@ -159,14 +182,15 @@ export function useOcrData({
   const download = useCallback(async (): Promise<boolean> => {
     if (!bookId || !accessToken) return false
     
-    // 如果已经在下载，不重复下载
-    if (status.downloading) return false
-    
-    // 取消之前的请求
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
+    // 使用 ref 检查下载状态，避免 useCallback 依赖 status.downloading
+    if (downloadingRef.current) {
+      console.log('[useOcrData] Download already in progress, skipping')
+      return false
     }
+    
+    // 不要取消之前的请求，只有在确实需要新下载时才创建新的 controller
     abortControllerRef.current = new AbortController()
+    downloadingRef.current = true
     
     setStatus(prev => ({ ...prev, downloading: true, progress: 0, error: null }))
     
@@ -196,6 +220,26 @@ export function useOcrData({
       
       setStatus(prev => ({ ...prev, progress: 75 }))
       
+      // 转换 page_sizes 格式 (API: snake_case -> Frontend: camelCase)
+      const pageSizes: Record<string, { width: number; height: number; pdfWidth?: number; pdfHeight?: number; dpi?: number }> = {}
+      if (data.page_sizes) {
+        for (const [pageNum, size] of Object.entries(data.page_sizes)) {
+          const s = size as { width: number; height: number; pdf_width?: number; pdf_height?: number; dpi?: number }
+          pageSizes[pageNum] = {
+            width: s.width,
+            height: s.height,
+            pdfWidth: s.pdf_width,
+            pdfHeight: s.pdf_height,
+            dpi: s.dpi,
+          }
+        }
+      }
+      
+      // 从 page_sizes 提取第一页尺寸作为默认值（向后兼容）
+      const firstPageSize = pageSizes['1'] || { width: 1240, height: 1754 }
+      const defaultWidth = data.image_width || firstPageSize.width
+      const defaultHeight = data.image_height || firstPageSize.height
+      
       // 保存到 IndexedDB
       await saveOcrData(bookId, {
         isImageBased: data.is_image_based,
@@ -203,8 +247,9 @@ export function useOcrData({
         totalPages: data.total_pages,
         totalChars: data.total_chars,
         totalRegions: data.total_regions,
-        imageWidth: data.image_width,
-        imageHeight: data.image_height,
+        imageWidth: defaultWidth,
+        imageHeight: defaultHeight,
+        pageSizes: Object.keys(pageSizes).length > 0 ? pageSizes : undefined,
         regions: data.regions,
       })
       
@@ -216,8 +261,9 @@ export function useOcrData({
         totalPages: data.total_pages,
         totalChars: data.total_chars,
         totalRegions: data.total_regions,
-        imageWidth: data.image_width,
-        imageHeight: data.image_height,
+        imageWidth: defaultWidth,
+        imageHeight: defaultHeight,
+        pageSizes: Object.keys(pageSizes).length > 0 ? pageSizes : undefined,
         regions: data.regions,
         downloadedAt: Date.now(),
       }
@@ -230,8 +276,8 @@ export function useOcrData({
           totalPages: data.total_pages,
           totalChars: data.total_chars,
           totalRegions: data.total_regions,
-          imageWidth: data.image_width,
-          imageHeight: data.image_height,
+          imageWidth: defaultWidth,
+          imageHeight: defaultHeight,
         })
         setStatus({
           available: true,
@@ -242,9 +288,12 @@ export function useOcrData({
         })
       }
       
-      console.log(`[useOcrData] OCR data saved: ${data.total_regions} regions, ${data.total_chars} chars`)
+      downloadingRef.current = false
+      console.log(`[useOcrData] OCR data saved: ${data.total_regions} regions, ${data.total_chars} chars, ${Object.keys(pageSizes).length} page sizes`)
       return true
     } catch (e) {
+      downloadingRef.current = false
+      
       if ((e as Error).name === 'AbortError') {
         console.log('[useOcrData] Download aborted')
         return false
@@ -263,7 +312,7 @@ export function useOcrData({
       }
       return false
     }
-  }, [bookId, accessToken, status.downloading])
+  }, [bookId, accessToken])  // 移除 status.downloading 依赖
 
   // 获取指定页的 OCR 区域（异步）
   const getPageRegions = useCallback(async (page: number): Promise<OcrRegion[]> => {
@@ -287,6 +336,26 @@ export function useOcrData({
     if (!cached) return []
     
     return cached.regions.filter(r => r.page === page)
+  }, [bookId])
+
+  // 获取指定页的 OCR 图片尺寸（同步，从内存缓存）
+  const getPageSizeSync = useCallback((page: number): OcrPageSize | null => {
+    if (!bookId) return null
+    
+    const cached = memoryCache.get(bookId)
+    if (!cached) return null
+    
+    // 如果有每页尺寸，优先使用
+    if (cached.pageSizes) {
+      const pageSize = cached.pageSizes[String(page)]
+      if (pageSize) return pageSize
+    }
+    
+    // 回退到全局默认尺寸
+    return {
+      width: cached.imageWidth,
+      height: cached.imageHeight,
+    }
   }, [bookId])
 
   // 刷新状态
@@ -313,13 +382,19 @@ export function useOcrData({
     
     init()
     
+    // 注意：不在这里 abort，只在组件卸载时 abort
+  }, [bookId, checkLocalCache, checkServerAvailability, autoDownload, download])
+
+  // 组件卸载时的清理
+  useEffect(() => {
     return () => {
       isMountedRef.current = false
+      // 只在组件真正卸载时才 abort 下载
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
     }
-  }, [bookId, checkLocalCache, checkServerAvailability, autoDownload, download])
+  }, [])  // 空依赖，只在卸载时执行
 
   return {
     status,
@@ -327,6 +402,7 @@ export function useOcrData({
     download,
     getPageRegions,
     getPageRegionsSync,
+    getPageSizeSync,
     refresh,
   }
 }

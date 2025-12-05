@@ -1,3 +1,15 @@
+"""
+阅读会话与进度同步接口
+
+职责：
+- `/start`：创建阅读会话，记录设备与初始状态
+- `/heartbeat`：累计时长、更新每日阅读统计、保存书籍进度与最后位置、维护 streak
+- `/sessions`：列出当前用户的阅读会话
+- `/progress`：列出用户各书籍的阅读进度
+- `/mark-finished`：标记/取消书籍读完状态
+- `/stop`：结束阅读会话
+- 兼容契约别名 `/api/v1/reading-sessions/*` 路由
+"""
 import uuid
 from datetime import datetime, timezone
 

@@ -104,7 +104,7 @@ async def smart_heartbeat(body: dict = Body(...), auth=Depends(require_user)):
         book_res = await conn.execute(
             text("""
                 SELECT b.id, b.title, b.author, b.is_digitalized, 
-                       b.digitalize_report_key, b.ocr_status, b.vector_indexed_at,
+                       b.digitalize_report_key, b.ocr_result_key, b.ocr_status, b.vector_indexed_at,
                        rp.ocr_version, rp.metadata_version, rp.vector_index_version,
                        rp.progress, rp.last_location, rp.last_sync_at
                 FROM books b
@@ -118,9 +118,12 @@ async def smart_heartbeat(body: dict = Body(...), auth=Depends(require_user)):
         if not book_row:
             raise HTTPException(status_code=404, detail="book_not_found")
         
-        (book_id_db, title, author, is_digitalized, report_key, ocr_status, 
+        (book_id_db, title, author, is_digitalized, old_report_key, new_ocr_key, ocr_status, 
          vector_indexed_at, db_ocr_ver, db_meta_ver, db_vec_ver,
          db_progress, db_last_location, db_last_sync) = book_row
+        
+        # 优先使用新版 OCR 结果
+        report_key = new_ocr_key or old_report_key
         
         # 2. 计算服务端版本指纹
         # OCR 版本：基于 report_key 的哈希

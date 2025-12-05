@@ -1,16 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2 } from 'lucide-react'
+import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { cn } from '@/lib/utils'
+import BookMetadataDialog from './BookMetadataDialog'
+import OcrTriggerDialog from './OcrTriggerDialog'
 
 type Props = {
   bookId: string
   bookTitle: string
+  bookAuthor?: string
   isFinished?: boolean
+  /** OCR 状态: 'pending' | 'processing' | 'completed' | 'failed' | null */
+  ocrStatus?: string | null
+  /** 是否为图片型 PDF（需要 OCR） */
+  isImageBased?: boolean
   onDeleted?: () => void
   onFinishedChange?: (finished: boolean) => void
+  /** 元数据更新后的回调 */
+  onMetadataChange?: (metadata: { title?: string; author?: string }) => void
+  /** OCR 触发成功后的回调 */
+  onOcrTrigger?: () => void
   /** 按钮颜色类名 (用于智能反色) */
   buttonClassName?: string
   /** 菜单位置 */
@@ -20,15 +31,22 @@ type Props = {
 export default function BookCardMenu({
   bookId,
   bookTitle,
+  bookAuthor,
   isFinished = false,
+  ocrStatus,
+  isImageBased = false,
   onDeleted,
   onFinishedChange,
+  onMetadataChange,
+  onOcrTrigger,
   buttonClassName = 'text-white',
   position = 'right',
 }: Props) {
   const { t } = useTranslation('common')
   const [open, setOpen] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showMetadataDialog, setShowMetadataDialog] = useState(false)
+  const [showOcrDialog, setShowOcrDialog] = useState(false)
   const [loading, setLoading] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
@@ -180,6 +198,63 @@ export default function BookCardMenu({
             transformOrigin: position === 'right' ? 'top right' : 'top left'
           }}
         >
+          {/* 编辑书籍信息 */}
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setShowMetadataDialog(true)
+              setOpen(false)
+            }}
+            className={cn(
+              'w-full flex items-center gap-3 px-4 py-3',
+              'text-left text-sm font-medium',
+              'text-label hover:bg-secondary-background',
+              'transition-colors duration-150'
+            )}
+          >
+            <FileText className="w-4 h-4 text-system-blue" />
+            <span>{t('book_menu.edit_info')}</span>
+          </button>
+
+          {/* OCR 本书 - 仅对图片型 PDF 且未完成 OCR 显示 */}
+          {isImageBased && ocrStatus !== 'completed' && ocrStatus !== 'processing' && ocrStatus !== 'pending' && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setShowOcrDialog(true)
+                setOpen(false)
+              }}
+              className={cn(
+                'w-full flex items-center gap-3 px-4 py-3',
+                'text-left text-sm font-medium',
+                'text-label hover:bg-secondary-background',
+                'transition-colors duration-150'
+              )}
+            >
+              <Scan className="w-4 h-4 text-system-orange" />
+              <span>{t('book_menu.ocr_book')}</span>
+            </button>
+          )}
+          
+          {/* OCR 进行中 - 显示进度状态 */}
+          {isImageBased && (ocrStatus === 'processing' || ocrStatus === 'pending') && (
+            <div
+              className={cn(
+                'w-full flex items-center gap-3 px-4 py-3',
+                'text-left text-sm font-medium',
+                'text-secondary-label'
+              )}
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-system-orange" />
+              <span>{t('book_menu.ocr_processing')}</span>
+            </div>
+          )}
+
+          {/* 分隔线 */}
+          <div className="h-px bg-separator mx-2" />
+          
           {/* 标记为已读完 / 继续阅读 */}
           <button
             onClick={(e) => {
@@ -316,6 +391,29 @@ export default function BookCardMenu({
         </div>,
         document.body
       )}
+
+      {/* 元数据编辑对话框 */}
+      <BookMetadataDialog
+        bookId={bookId}
+        initialTitle={bookTitle}
+        initialAuthor={bookAuthor}
+        open={showMetadataDialog}
+        onClose={() => setShowMetadataDialog(false)}
+        onSuccess={(metadata) => {
+          onMetadataChange?.(metadata)
+        }}
+      />
+
+      {/* OCR 触发对话框 */}
+      <OcrTriggerDialog
+        bookId={bookId}
+        bookTitle={bookTitle}
+        open={showOcrDialog}
+        onClose={() => setShowOcrDialog(false)}
+        onSuccess={() => {
+          onOcrTrigger?.()
+        }}
+      />
     </>
   )
 }

@@ -1,3 +1,15 @@
+"""
+搜索接口（ES 优先，回退 PostgreSQL）
+
+职责：
+- `/search`：按 kind（note/highlight/book）与标签筛选进行全文搜索，优先调用 Elasticsearch，失败回退到数据库模糊查询
+- `/reindex`：按用户重建 notes/highlights 索引
+- `/reindex_all`：管理员范围重建全量索引
+- `/reindex_books`：重建书籍基本信息索引
+
+说明：
+- 仅新增注释，不改动查询与回退逻辑
+"""
 import json
 import os
 from urllib import request

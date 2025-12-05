@@ -1,3 +1,11 @@
+/**
+ * Tolgee 语言列表 Hook
+ *
+ * 说明：
+ * - 优先从 Tolgee API 获取语言；缺失时回退到本地 i18n 资源
+ * - 规范化语言标签（如 zh → zh-CN）
+ * - 定期轮询语言列表并在当前语言不在集合时回退
+ */
 import { useEffect, useState } from 'react'
 import i18n from '../i18n'
 

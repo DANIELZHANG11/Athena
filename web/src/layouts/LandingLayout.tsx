@@ -6,6 +6,14 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/dialog'
 import Login from '../pages/auth/Login'
 
+/**
+ * 着陆页布局（公共区域）
+ *
+ * 说明：
+ * - 顶部具备语言切换与登录弹窗入口
+ * - 语言来源优先 Tolgee，其次回退到预设列表
+ * - 子页面通过 `Outlet` 渲染
+ */
 export default function LandingLayout() {
   const { t, i18n } = useTranslation('landing')
   const [showAuthDialog, setShowAuthDialog] = useState(false)

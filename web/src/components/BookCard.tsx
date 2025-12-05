@@ -1,4 +1,12 @@
-import { Cloud, Check, MoreHorizontal, BookOpen, Loader2 } from 'lucide-react'
+/**
+ * 书籍卡片组件
+ *
+ * 说明：
+ * - 支持 `default`/`hero`/`grid`/`list` 四种变体
+ * - 动态显示下载/阅读/处理中/OCR 状态
+ * - 提供更多菜单以执行删除、元数据确认、OCR 触发等操作
+ */
+import { Cloud, Check, MoreHorizontal, BookOpen, Loader2, Scan } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import BookCardMenu from './BookCardMenu'
 import { useState, useEffect } from 'react'
@@ -24,6 +32,10 @@ export interface BookCardProps {
   status?: BookStatus
   /** 是否已读完（手动标记） */
   isFinished?: boolean
+  /** OCR 状态: 'pending' | 'processing' | 'completed' | 'failed' | null */
+  ocrStatus?: string | null
+  /** 是否为图片型 PDF（需要 OCR） */
+  isImageBased?: boolean
   /** 处理中提示文本 */
   processingText?: string
   /** 下载 URL（兼容旧版） */
@@ -36,6 +48,10 @@ export interface BookCardProps {
   onDeleted?: (bookId: string) => void
   /** 已读完状态变更回调 - 接收 bookId 和 finished 参数 */
   onFinishedChange?: (bookId: string, finished: boolean) => void
+  /** 元数据更新后的回调 */
+  onMetadataChange?: (bookId: string, metadata: { title?: string; author?: string }) => void
+  /** OCR 触发成功后的回调 */
+  onOcrTrigger?: (bookId: string) => void
   /** 卡片变体 */
   variant?: 'default' | 'hero' | 'grid' | 'list'
   /** 自定义类名 */
@@ -127,6 +143,10 @@ export default function BookCard({
   onMoreClick,
   onDeleted,
   onFinishedChange,
+  onMetadataChange,
+  onOcrTrigger,
+  ocrStatus,
+  isImageBased = false,
   variant = 'default',
   className,
 }: BookCardProps) {
@@ -148,6 +168,8 @@ export default function BookCard({
   const showProgress = !isCompleted && progress > 0 && status === 'reading'
   const showCloudIcon = status === 'cloud' || status === 'downloading'
   const isProcessing = status === 'processing' || status === 'converting' || status === 'ocr'
+  // OCR 正在处理中
+  const isOcrProcessing = ocrStatus === 'pending' || ocrStatus === 'processing'
   
   // 根据状态获取处理中文本
   const getProcessingText = () => {
@@ -294,13 +316,28 @@ export default function BookCard({
               <BookCardMenu
                 bookId={id}
                 bookTitle={title}
+                bookAuthor={author}
                 isFinished={isFinished}
+                ocrStatus={ocrStatus}
+                isImageBased={isImageBased}
                 onDeleted={() => onDeleted?.(id)}
                 onFinishedChange={(finished) => onFinishedChange?.(id, finished)}
+                onMetadataChange={(metadata) => onMetadataChange?.(id, metadata)}
+                onOcrTrigger={() => onOcrTrigger?.(id)}
                 buttonClassName="text-white"
               />
             )}
           </div>
+
+          {/* OCR 处理中图标 - 显示在卡片中央 */}
+          {isOcrProcessing && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
+              <div className="flex flex-col items-center gap-2">
+                <Scan className="w-6 h-6 text-white animate-pulse" />
+                <span className="text-xs text-white font-medium">OCR 处理中</span>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* 取消标题显示 - 根据 UIUX 规范 */}
@@ -406,15 +443,28 @@ export default function BookCard({
           </div>
         )}
 
+        {/* OCR 处理中图标 - 显示在卡片左下角 */}
+        {isOcrProcessing && (
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm">
+            <Scan className="w-3 h-3 text-white animate-pulse" />
+            <span className="text-xs text-white font-medium">OCR</span>
+          </div>
+        )}
+
         {/* 更多菜单 */}
         <div className="absolute top-2 right-2 z-10">
           {id ? (
             <BookCardMenu
               bookId={id}
               bookTitle={title}
+              bookAuthor={author}
               isFinished={isFinished}
+              ocrStatus={ocrStatus}
+              isImageBased={isImageBased}
               onDeleted={() => onDeleted?.(id)}
               onFinishedChange={(finished) => onFinishedChange?.(id, finished)}
+              onMetadataChange={(metadata) => onMetadataChange?.(id, metadata)}
+              onOcrTrigger={() => onOcrTrigger?.(id)}
               buttonClassName={textClass}
             />
           ) : onMoreClick && (

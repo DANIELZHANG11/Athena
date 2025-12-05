@@ -1,3 +1,11 @@
+/**
+ * 年度阅读目标卡片
+ *
+ * 说明：
+ * - 展示已读/目标书籍数量与剩余提示
+ * - 显示封面栈视觉效果
+ * - 支持轮盘选择器调整年度目标并调用 API 更新
+ */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'

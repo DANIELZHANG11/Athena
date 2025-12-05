@@ -1,3 +1,11 @@
+/**
+ * 公共首页（营销着陆页）
+ *
+ * 说明：
+ * - 组合 Hero、功能卡片、设备支持、精选书籍等区块
+ * - 文案通过 `landing` 命名空间的 i18n 文本提供
+ * - CTA 按钮跳转到应用区 `/app/read-now`
+ */
 
 import { Button } from '../components/ui/button'
 import Hero from '../landing/Hero'

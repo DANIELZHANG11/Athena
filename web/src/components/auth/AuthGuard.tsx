@@ -1,3 +1,11 @@
+/**
+ * 路由守卫组件
+ *
+ * 说明：
+ * - 检查登录状态与 Token 过期
+ * - Token 过期时尝试刷新，失败则重定向登录
+ * - 加载期间显示轻量提示，避免闪屏
+ */
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'

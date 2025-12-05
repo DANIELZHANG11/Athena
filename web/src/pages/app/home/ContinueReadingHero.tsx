@@ -1,3 +1,11 @@
+/**
+ * 继续阅读 Hero 卡片
+ *
+ * 说明：
+ * - 显示封面、标题、作者与进度，点击跳转阅读
+ * - 提取封面主色用于 Ambient Blur 背景，自动适配文字颜色
+ * - 集成 `BookCardMenu` 提供删除/已读完等操作
+ */
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Play, Check } from 'lucide-react'

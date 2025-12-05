@@ -1,3 +1,11 @@
+/**
+ * 轻量级全局 Toast 管理
+ *
+ * 说明：
+ * - 内存状态 + 订阅模型，无外部依赖
+ * - 支持新增、更新、关闭、延迟移除
+ * - 通过 `useToast()` 在组件中使用
+ */
 import { useState, useEffect } from "react"
 
 const TOAST_LIMIT = 1

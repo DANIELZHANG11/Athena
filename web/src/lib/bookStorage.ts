@@ -54,6 +54,15 @@ export interface OcrRegion {
   page: number
 }
 
+/** 每页的尺寸信息 */
+export interface OcrPageSize {
+  width: number       // OCR 图片宽度
+  height: number      // OCR 图片高度
+  pdfWidth?: number   // PDF 原始宽度 (points)
+  pdfHeight?: number  // PDF 原始高度 (points)
+  dpi?: number        // 渲染时使用的 DPI
+}
+
 /** OCR 数据记录 */
 export interface OcrDataRecord {
   bookId: string
@@ -62,8 +71,9 @@ export interface OcrDataRecord {
   totalPages: number
   totalChars: number
   totalRegions: number
-  imageWidth: number
-  imageHeight: number
+  imageWidth: number      // 默认/第一页的宽度（向后兼容）
+  imageHeight: number     // 默认/第一页的高度（向后兼容）
+  pageSizes?: Record<string, OcrPageSize>  // 每页的独立尺寸 {"1": {...}, "2": {...}}
   regions: OcrRegion[]
   downloadedAt: number
 }

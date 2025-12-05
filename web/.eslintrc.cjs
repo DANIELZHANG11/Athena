@@ -1,3 +1,8 @@
+/**
+ * ESLint 配置
+ * - TypeScript/React 推荐规则
+ * - 关闭部分规则以适配项目风格
+ */
 module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',

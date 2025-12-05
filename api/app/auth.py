@@ -1,3 +1,15 @@
+"""
+认证模块
+
+功能：
+- 邮箱验证码登录/注册（发送与校验）
+- 颁发/刷新/注销 Token（JWT + Redis refresh）
+- 会话列表、当前用户信息获取
+
+说明：
+- `issue_tokens` 生成 HS256 JWT 与 refresh token；refresh 存储于 Redis
+- `require_user` 解析 `Authorization: Bearer <token>` 获取用户信息
+"""
 import os
 import threading
 import time

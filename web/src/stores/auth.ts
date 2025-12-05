@@ -1,3 +1,14 @@
+/**
+ * 认证状态管理（Zustand 持久化）
+ *
+ * 内容：
+ * - 保存 access/refresh token、过期时间与用户信息
+ * - 支持并发安全的 Token 刷新（通过单例 `refreshPromise`）
+ * - 本地持久化键：`athena-auth`
+ *
+ * 约定：
+ * - 刷新失败后使用 `clear()` 清空并进入未登录态
+ */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 

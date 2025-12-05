@@ -1,3 +1,12 @@
+"""
+翻译接口（OpenRouter 优先，Mock 回退）
+
+职责：
+- `/api/v1/translate`：扣费后调用 OpenRouter 模型进行翻译，若不可用则返回本地 Mock 结果
+
+说明：
+- 仅新增注释，不改动计费与存储逻辑
+"""
 import os
 import uuid
 

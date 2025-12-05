@@ -69,17 +69,23 @@
     4.  **Resolve**: Client 收到 409 后，应重新拉取最新数据，合并冲突后重试。
 
 ### 3.3 文件上传协议 (Direct Upload)
-采用 S3 Presigned URL 模式，文件流不经过 API Server。
+采用 S3 Presigned URL 模式，文件流不经过 API Server。支持 **SHA256 全局去重**（ADR-007）。
 
 *   **流程**:
     1.  **Init**: `POST /api/v1/books/upload_init`
-        *   Body: `{ "filename": "book.pdf", "content_type": "application/pdf" }`
-        *   Resp: `{ "upload_url": "https://s3...", "key": "raw/..." }`
-    2.  **Upload**: Client `PUT` 文件流至 `upload_url`。
-    3.  **Complete**: `POST /api/v1/books/upload_complete`
+        *   Body: `{ "filename": "book.pdf", "content_type": "application/pdf", "content_sha256": "6f4c24abd60a55d3..." }`
+        *   Resp (正常上传): `{ "upload_url": "https://s3...", "key": "raw/...", "dedup_available": false }`
+        *   Resp (全局去重命中): `{ "dedup_available": true, "canonical_id": "uuid", "has_ocr": true }`
+    2.  **Upload** (仅当 `dedup_available=false`):
+        *   Client `PUT` 文件流至 `upload_url`
+    3.  **Complete** (正常上传): `POST /api/v1/books/upload_complete`
         *   Body: `{ "key": "raw/...", "title": "..." }`
         *   Resp: `{ "id": "book_uuid", "status": "processing" }`
-*   **关键字段**: `file_fingerprint` (SHA256) 用于秒传检测（部分实现）。
+    4.  **Dedup Reference** (秒传): `POST /api/v1/books/dedup_reference`
+        *   Body: `{ "filename": "book.pdf", "content_sha256": "6f4c24abd60a55d3...", "size": 12345678 }`
+        *   Resp: `{ "id": "new_book_uuid", "dedup_type": "global", "canonical_book_id": "original_uuid", "has_ocr": true }`
+*   **SHA256 全局去重**: 相同文件只存储一份，通过 `content_sha256` 实现全局去重和秒传。
+*   **服务端备用计算**: 若客户端未提供 `content_sha256`（移动端可能失败），服务端在 `upload_complete` 时从 S3 读取文件计算。
 
 ### 3.4 AI 流式响应 (SSE)
 基于 Server-Sent Events 标准。
@@ -117,10 +123,12 @@
 
 ### 4.2 Books (`books.yaml`)
 *   `GET /api/v1/books`: 书籍列表 (Cursor Pagination)
-*   `POST /api/v1/books/upload_init`: 上传初始化
-*   `POST /api/v1/books/upload_complete`: 上传完成
+*   `POST /api/v1/books/upload_init`: 上传初始化 (支持 SHA256 去重检查)
+*   `POST /api/v1/books/upload_complete`: 上传完成 (服务端备用 SHA256 计算)
+*   `POST /api/v1/books/dedup_reference`: **秒传接口** (SHA256 全局去重)
 *   `GET /api/v1/books/{id}`: 书籍详情
 *   `PATCH /api/v1/books/{id}`: 更新书籍元数据 (支持 `If-Match`)
+*   `DELETE /api/v1/books/{id}`: 删除书籍 (软删除/硬删除分层策略)
 
 ### 4.3 Notes & Highlights (`notes.yaml`, `highlights.yaml`, `tags.yaml`)
 *   `GET /api/v1/notes`: 笔记列表
@@ -407,7 +415,7 @@ export function useHeartbeat(bookId: string) {
 
 #### `POST /api/v1/books/{book_id}/ocr`
 
-用户主动请求对图片型 PDF 进行 OCR 处理。
+用户主动请求对图片型 PDF 进行 OCR 处理。支持 **OCR 复用（假 OCR）**（ADR-007）。
 
 **Request Headers**:
 ```
@@ -419,7 +427,22 @@ Authorization: Bearer <access_token>
 |-----|------|------|
 | `book_id` | UUID | 书籍 ID |
 
-**Response 200** (成功加入队列):
+**处理逻辑**:
+1. 正常配额检查和扣费（阶梯计费）
+2. 检查是否可复用（相同 SHA256 已有 OCR 结果）
+   - 可复用 → 假 OCR，秒级完成
+   - 不可复用 → 真实 OCR，提交 Celery 任务
+
+**Response 200** (OCR 复用 - 假 OCR):
+```typescript
+{
+  "status": "instant_completed",
+  "ocrResultKey": "ocr-result-xxx.json",
+  "message": "OCR 结果已复用，处理完成。"
+}
+```
+
+**Response 200** (成功加入队列 - 真实 OCR):
 ```typescript
 {
   "status": "queued",
@@ -434,6 +457,14 @@ Authorization: Bearer <access_token>
 {
   "error": "already_digitalized",
   "message": "该书籍已经是文字型，无需进行 OCR 处理。"
+}
+```
+
+**Response 400** (超过页数限制):
+```typescript
+{
+  "error": "ocr_max_pages_exceeded",
+  "message": "该书籍页数超过 2000 页，暂不支持 OCR 处理。"
 }
 ```
 
@@ -459,6 +490,11 @@ Authorization: Bearer <access_token>
   "estimatedMinutes": 10
 }
 ```
+
+> **商业逻辑（⚠️ 重要）**:
+> - 用户**必须**点击 OCR 按钮才能看到 OCR 结果（商业闭环）
+> - 即使是复用（假 OCR），也**必须**扣除配额（维护商业公平性）
+> - 但不消耗 GPU 算力（降低运营成本）
 
 ### 6.2 查询 OCR 状态
 
@@ -739,3 +775,123 @@ BOOK_CONTEXT_PROMPT = """
 - 用户上传的可能不是书籍，而是个人文档、笔记、资料等
 - 此时用户可跳过元数据确认
 - AI 对话仍可正常使用，仅基于文档内容本身回答
+
+---
+
+## 9. SHA256 全局去重接口 (ADR-007)
+
+### 9.1 秒传接口
+
+#### `POST /api/v1/books/dedup_reference`
+
+当 `upload_init` 返回 `dedup_available: true` 时，客户端调用此接口创建引用书籍，无需实际上传文件。
+
+**Request Headers**:
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```typescript
+{
+  "filename": string,           // 文件名
+  "content_sha256": string,     // SHA256 哈希
+  "size": number                // 文件大小 (bytes)
+}
+```
+
+**Response 201** (成功创建引用书籍):
+```typescript
+{
+  "id": string,                 // 新书籍 UUID
+  "title": string,              // 继承自原书
+  "author": string | null,
+  "dedupType": "global",        // 去重类型
+  "canonicalBookId": string,    // 原始书籍 ID
+  "hasOcr": boolean,            // 原书是否已完成 OCR
+  "coverImageKey": string | null,
+  "downloadUrl": string         // 预签名下载 URL
+}
+```
+
+**Response 404** (原书不存在):
+```typescript
+{
+  "error": "canonical_not_found",
+  "message": "去重引用的原始书籍不存在或已被删除"
+}
+```
+
+**Response 403** (配额不足):
+```typescript
+{
+  "error": "quota_exceeded",
+  "message": "书籍配额已满，请升级会员或删除部分书籍"
+}
+```
+
+### 9.2 书籍删除接口
+
+#### `DELETE /api/v1/books/{book_id}`
+
+删除书籍，采用**软删除/硬删除分层策略**（ADR-007）。
+
+**Request Headers**:
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters**:
+| 参数 | 类型 | 说明 |
+|-----|------|------|
+| `book_id` | UUID | 书籍 ID |
+
+**处理逻辑**:
+1. **私人数据**：始终立即删除（笔记、高亮、阅读进度、书架关联）
+2. **引用书**（`canonical_book_id IS NOT NULL`）：
+   - 物理删除书籍记录
+   - 减少原书 `storage_ref_count`
+   - 检查原书是否需要清理
+3. **原书**（`canonical_book_id IS NULL`）：
+   - 有引用（`ref_count > 1`）→ 软删除（设置 `deleted_at`）
+   - 无引用（`ref_count <= 1`）→ 硬删除（清理所有公共数据）
+
+**Response 200** (删除成功):
+```typescript
+{
+  "message": "书籍已删除",
+  "deleteType": "soft" | "hard",  // 删除类型
+  "cleanedResources"?: {          // 仅硬删除时返回
+    "file": boolean,
+    "cover": boolean,
+    "ocrResult": boolean,
+    "vectorIndex": boolean
+  }
+}
+```
+
+**Response 404** (书籍不存在):
+```typescript
+{
+  "error": "book_not_found",
+  "message": "书籍不存在或已被删除"
+}
+```
+
+### 9.3 公共数据 vs 私人数据
+
+| 数据类型 | 所有者 | 软删除时 | 硬删除时 |
+|---------|-------|---------|---------|
+| S3 文件 (PDF/EPUB) | 共享 | ✅ 保留 | ❌ 删除 |
+| 封面图片 | 共享 | ✅ 保留 | ❌ 删除 |
+| OCR 结果 JSON | 共享 | ✅ 保留 | ❌ 删除 |
+| 向量索引 (OpenSearch) | 共享 | ✅ 保留 | ❌ 删除 |
+| 笔记/高亮 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
+| 阅读进度 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
+| 书架关联 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
+
+> **设计原理**：
+> - 当多个用户共享同一文件时，删除不应影响其他用户
+> - 只有最后一个用户删除时，才物理清理公共数据
+> - 私人数据始终立即删除，保护用户隐私

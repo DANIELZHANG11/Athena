@@ -1,3 +1,8 @@
+/**
+ * 通用对话框组件（Radix Dialog）
+ * - 封装 Overlay/Content/Title/Description 等子组件
+ * - 提供毛玻璃样式与进出场动效
+ */
 "use client"
 
 import * as React from 'react'

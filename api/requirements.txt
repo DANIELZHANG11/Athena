@@ -21,3 +21,4 @@ y-py==0.6.2
 ypy-websocket==0.8.4
 pymupdf
 Pillow>=10.0.0
+psutil>=5.9.0

@@ -1,32 +1,357 @@
 # PROJECT_STATUS.md
 
-> **最后更新**: 2025-12-03 07:00
-> **当前阶段**: Phase 4 - 离线阅读与数据同步架构 ✅ 已完成
+> **最后更新**: 2025-12-05 23:30
+> **当前阶段**: Phase 5 - SHA256 全局去重与 OCR 复用机制 ✅ 已完成
 
 ## 1. 总体进度 (Overall)
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**全局 SHA256 去重 + OCR 配额查询已实现** |
-| Frontend Web | ✅ 98% | Auth ✅, Upload ✅, **封面缓存 + AI 对话缓存 + OCR 触发 UI ✅** |
+| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**SHA256 去重 + OCR 复用 + 软删除/硬删除机制已完成** |
+| Frontend Web | ✅ 99% | Auth ✅, Upload ✅, **秒传 + 假 OCR + 书籍删除流程已完成** |
 | Infrastructure | ✅ 100% | Docker/CI/SRE 手册就绪, OpenSearch 中文插件已安装, Worker GPU 加速已配置 |
 | Data Sync | ✅ 100% | **智能心跳同步 ADR-006 前后端均已完成并集成** |
+| i18n | 🔧 本地模式 | **Tolgee 暂时禁用，使用本地 JSON 翻译文件** |
 
 ---
 
-## 🔥 最新更新 (2025-12-03 07:00)
+## 🔥 最新更新 (2025-12-05 23:30)
 
-### 用户需求审查修复 ✅ 完成 4 项优化
+### ADR-007: SHA256 全局去重与 OCR 复用机制 ✅ 已完成
 
-根据用户提出的 9 项需求审查结果，完成以下修复：
+完整实现了基于 SHA256 的全局去重、OCR 复用（假 OCR）、软删除/硬删除分层策略。
 
-#### 1. SHA256 全局文件去重 ✅
+#### 1. SHA256 全局去重 ✅
 
-**问题**：之前仅同用户去重（使用 `source_etag + user_id`），不同用户上传相同文件会重复存储。
+**功能描述**：相同文件只存储一份，后续用户上传时秒传。
+
+**实现要点**：
+- 前端计算 SHA256（移动端可能失败）
+- 服务端在 `upload_complete` 时从 S3 读取文件作为备用计算
+- `upload_init` 检查全局是否存在相同 SHA256
+- 命中时返回 `dedup_available=true`，客户端调用 `dedup_reference`
+
+**代码修改**：
+- `api/app/books.py`: `upload_init` 添加去重检查，`upload_complete` 添加服务端 SHA256 计算
+- `web/src/hooks/useBookUpload.ts`: `computeSha256` 增强错误处理
+
+#### 2. OCR 复用机制（假 OCR）✅
+
+**功能描述**：相同文件只需一次真实 OCR，后续用户点击 OCR 时秒级完成。
+
+**商业逻辑**：
+- 用户仍需点击 OCR 按钮（触发配额扣除）
+- 但后端不实际执行 OCR，复用已有结果
+- Worker 无工作量，节省 GPU 算力
+
+**实现要点**：
+```python
+# 查找相同 SHA256 中已完成 OCR 的书籍
+existing = SELECT id FROM books 
+           WHERE content_sha256 = :sha256 
+           AND ocr_status = 'completed' 
+           LIMIT 1
+
+if existing:
+    # 假 OCR：复用结果，秒完成
+    return {"status": "instant_completed"}
+else:
+    # 真 OCR：提交 Celery 任务
+    celery_task.delay(book_id)
+```
+
+**代码修改**：
+- `api/app/books.py`: `trigger_book_ocr` 添加 OCR 复用逻辑
+- `api/app/tasks.py`: OCR 完成后不覆盖 `initial_digitalization_confidence`
+
+#### 3. 软删除/硬删除分层策略 ✅
+
+**功能描述**：区分公共数据（S3 文件、OCR 结果）和私人数据（笔记、进度），实现智能删除。
+
+**删除策略**：
+| 场景 | 删除类型 | 行为 |
+|-----|---------|------|
+| 原书有引用 (`ref_count > 1`) | 软删除 | 设置 `deleted_at`，保留公共数据 |
+| 原书无引用 (`ref_count <= 1`) | 硬删除 | 物理删除所有数据 |
+| 引用书删除 | 硬删除 | 删除记录，减少原书引用计数 |
+
+**关键修复**：
+1. `storage_ref_count` 判断：`> 1` 表示有引用（原为 `> 0`），因为初始值 1 代表原书自身
+2. 软删除书籍清理条件：`<= 1` 触发清理（原为 `== 0`）
+
+**代码修改**：
+- `api/app/books.py`: `delete_book` 实现分层删除策略
+
+#### 4. is_image_based 判断修复 ✅
+
+**问题**：秒传书籍的 `is_image_based` 误判为 `False`，导致 OCR 按钮不显示。
+
+**根因**：`dedup_reference` 设置 `is_digitalized=False`，导致 `is_image_based=(False AND True)=False`。
+
+**修复**：
+```python
+if canonical_has_ocr:
+    # 原书已 OCR：新书设为"图片型 PDF 但未 OCR"状态
+    new_is_digitalized = True  # 改为 True（原为 False）
+    new_confidence = 0.1       # 低置信度，确保 is_image_based=True
+```
+
+#### 5. etag 软删除恢复逻辑 ✅
+
+**问题**：用户删除书籍后重新上传相同文件，etag 查询返回软删除的书籍记录。
+
+**修复**：
+- etag 查询添加 `deleted_at IS NULL` 条件
+- 如果找到软删除的书籍，自动恢复（清除 `deleted_at`）
+
+#### 6. 完整流程测试验证 ✅
+
+| 步骤 | 操作 | 结果 |
+|------|------|------|
+| 1 | WEBMASTER 上传"小说的艺术" | ✅ 创建书籍，服务端计算 SHA256 |
+| 2 | WEBMASTER 点击 OCR | ✅ 真实 OCR 处理 (213 页，~45秒) |
+| 3 | 126690699 上传同书 | ✅ 全局去重命中，秒传 |
+| 4 | 126690699 点击 OCR | ✅ 假 OCR，秒完成（Worker 无工作） |
+| 5 | WEBMASTER 删除 | ✅ 软删除（`storage_ref_count=2 > 1`） |
+| 6 | 126690699 正常访问 | ✅ 公共数据保留，正常阅读 |
+| 7 | 126690699 删除 | ✅ 物理删除所有公共数据 |
+| 8 | 数据库验证 | ✅ 所有记录已物理删除 |
+| 9 | S3 验证 | ✅ 所有文件已清理 |
+
+#### 📚 技术文档更新
+
+- **03 - 系统架构与ADR**: 新增 ADR-007 完整设计文档
+- **04 - 数据库全景**: 更新 `books` 表字段说明和删除策略
+- **01 - 商业模型**: 新增 OCR 复用机制商业逻辑说明
+
+---
+
+## 🔥 更早更新 (2025-12-05 10:30)
+
+### OCR 功能 Bug 修复 ✅
+
+用户测试发现的问题：
+
+#### 1. OCR 触发 400 错误修复 ✅
+
+**问题**：点击 OCR 按钮返回 `POST /books/{id}/ocr 400 (Bad Request)`
+
+**根因**：`trigger_book_ocr` API 错误地检查 `if is_digitalized`（表示"已检测"），而应该检查 `confidence >= 0.8`（表示"已数字化，不需要 OCR"）。
+
+**修复 (`api/app/books.py`)**：
+```python
+# 修复前
+if is_digitalized:
+    raise HTTPException(status_code=400, detail="already_digitalized")
+
+# 修复后
+if is_digitalized and (confidence is not None and confidence >= 0.8):
+    raise HTTPException(status_code=400, detail="already_digitalized")
+```
+
+#### 2. OCR 完成后前端自动刷新 ✅
+
+**问题**：OCR 处理完成后，书籍卡片上的「正在处理」状态不会自动消失，需要手动刷新浏览器。
+
+**根因**：前端没有轮询机制检测 OCR 状态变化。
+
+**修复 (`web/src/pages/LibraryPage.tsx`)**：
+```typescript
+// 检查是否有书籍正在 OCR 处理中
+const hasOcrProcessing = useMemo(() => 
+  items.some(item => item.ocrStatus === 'pending' || item.ocrStatus === 'processing'),
+  [items]
+)
+
+// OCR 处理中时，每 5 秒轮询一次刷新列表
+useEffect(() => {
+  if (!hasOcrProcessing) return
+  
+  const pollInterval = setInterval(() => {
+    console.log('[LibraryPage] Polling for OCR status update...')
+    fetchList()
+  }, 5000)
+  
+  return () => clearInterval(pollInterval)
+}, [hasOcrProcessing, fetchList])
+```
+
+#### 3. 后处理完成后刷新列表 ✅
+
+**问题**：用户上传书籍后点击"稍后"关闭对话框，LibraryPage 数据没有刷新，导致 `isImageBased` 为旧值。
+
+**修复**：
+- `UploadManager.tsx`：后处理完成后广播 `book_data_updated` 事件
+- `LibraryPage.tsx`：监听该事件并刷新书籍列表
+
+#### 4. OCR 首次执行延迟说明 ⚠️ 已知问题
+
+**现象**：首次触发 OCR 时，从提交到开始处理约有 2 分钟延迟。
+
+**原因**：PaddleOCR 模型（PP-OCRv5_mobile_det + PP-OCRv5_mobile_rec）首次执行时需要从网络下载，约 2 分钟。
+
+**解决**：这是一次性的冷启动行为，模型下载后会缓存到 `/root/.paddlex/official_models/`，后续 OCR 任务将直接使用缓存，无延迟。
+
+#### 5. OCR 文字对齐问题 ⚠️ 已知限制
+
+**现象**：OCR 识别的文字层与 PDF 原始图像有轻微偏移。
+
+**原因**：
+- OCR 坐标基于渲染图片的像素坐标（如 1018×1425）
+- PDF 阅读器显示尺寸基于 PDF 页面尺寸（如 595×842 点）
+- 两者的比例和坐标系映射存在差异
+
+**当前状态**：用户确认此问题不需要紧急修复，作为已知限制记录。
+
+---
+
+## 🔥 更早更新 (2025-12-04 14:30)
+
+### 书籍卡片菜单功能增强 ✅
+
+用户需求：在书籍卡片的三点下拉菜单中添加：
+1. 书籍元数据编辑（标题、作者）
+2. OCR 触发（仅图片型 PDF 显示）
+
+#### 1. 后端 API 增强 ✅
+
+修改 `GET /books` 列表 API 返回更多字段：
+```python
+# api/app/books.py
+{
+    "ocr_status": r[16],  # OCR 状态: pending/processing/completed/failed/null
+    "is_image_based": bool(r[10]) and float(r[11]) < 0.8,  # 图片型 PDF 判断
+}
+```
+
+#### 2. 前端组件更新 ✅
+
+**BookCardMenu.tsx 重构**：
+- 新增 `ocrStatus`、`isImageBased`、`bookAuthor` 属性
+- 新增「编辑信息」菜单项（所有书籍显示）
+- 新增「OCR 本书」菜单项（仅图片型 PDF 且未完成 OCR）
+- 新增「OCR 处理中」状态显示（带加载图标）
+- 集成 `BookMetadataDialog` 和 `OcrTriggerDialog` 组件
+
+**BookCard.tsx 更新**：
+- 新增 `ocrStatus`、`isImageBased`、`onMetadataChange`、`onOcrTrigger` 属性
+- OCR 处理中时，卡片中央显示 OCR 图标和"OCR 处理中"文字
+- Grid 变体：覆盖层居中显示
+- List 变体：左下角小标签显示
+
+**BookMetadataDialog.tsx (新建)**：
+- 元数据编辑对话框，支持修改书籍标题和作者
+- 调用 `PATCH /books/{id}/metadata` API
+- 毛玻璃设计风格，符合 UIUX 规范
+
+#### 3. LibraryPage 数据传递 ✅
+
+更新 `LibraryPage.tsx`：
+- `BookItem` 接口新增 `ocrStatus`、`isImageBased` 字段
+- 解析后端返回的新字段
+- 新增 `handleMetadataChange` 回调（更新本地状态）
+- 新增 `handleOcrTrigger` 回调（更新 OCR 状态为 pending）
+
+#### 4. 翻译更新 ✅
+
+新增 9 个翻译键（中英文）：
+- `book_menu.edit_info` - "编辑信息" / "Edit Info"
+- `book_menu.ocr_book` - "OCR 本书" / "OCR This Book"
+- `book_menu.ocr_processing` - "OCR 处理中..." / "OCR Processing..."
+- `metadata.edit_title` - "编辑书籍信息"
+- `metadata.edit_subtitle` - "修改书籍标题和作者"
+- `metadata.field_title` - "书籍标题"
+- `metadata.field_author` - "作者"
+- `metadata.title_placeholder` - "请输入书籍标题"
+- `metadata.author_placeholder` - "请输入作者（可选）"
+- `metadata.title_required` - "书籍标题不能为空"
+
+---
+
+## 🔥 更早更新 (2025-12-04 11:55)
+
+### 上传后处理流程完善 ✅
+
+用户反馈上传图片型 PDF 后缺少以下提示：
+1. 元数据未解析时应提醒用户填写书名和作者
+2. 图片型 PDF 应提示需要 OCR
+
+#### 1. 上传后处理 Hook (`useUploadPostProcessing.ts`) ✅
+
+新增 Hook，上传成功后监控后台任务状态：
+
+```typescript
+const { status, startMonitoring, stopMonitoring } = useUploadPostProcessing({
+  pollInterval: 2000,     // 每 2 秒轮询一次
+  maxPollCount: 30,       // 最多轮询 60 秒
+  onMetadataReady: (status) => { /* 元数据提取完成 */ },
+  onImagePdfDetected: (status) => { /* 检测到图片型 PDF */ },
+  onCoverReady: (status) => { /* 封面就绪 */ },
+})
+```
+
+#### 2. 上传后处理对话框 (`UploadPostProcessDialog.tsx`) ✅
+
+统一的后处理对话框，分步引导用户：
+- **步骤 1 - 元数据确认**：若后端未提取到作者信息，弹出对话框让用户填写
+- **步骤 2 - OCR 提示**：若是图片型 PDF，提示用户触发 OCR
+
+#### 3. UploadManager 集成 ✅
+
+修改 `UploadManager.tsx`：
+- 上传成功后调用 `startMonitoring()` 开始轮询
+- 根据状态回调自动弹出后处理对话框
+- 后处理完成后才导航到书库页面
+
+#### 4. 后端 API 增强 ✅
+
+修改 `GET /books/{book_id}` 返回更多状态字段：
+- `metadata_confirmed`: 用户是否已确认元数据
+- `ocr_status`: OCR 状态 (pending/processing/completed/failed)
+- `page_count`: 页数
+- `is_image_based`: 是否是图片型 PDF
+- `cover_image_key`: 封面图片存储键
+
+#### 5. 翻译更新 ✅
+
+新增 18 个翻译键（中英文）：
+- `ocr.dialog.*` - OCR 对话框文案
+- `ocr.action.*` - OCR 操作按钮
+- `upload.post_process.*` - 后处理流程文案
+
+---
+
+## 🔥 更早更新 (2025-12-04 11:30)
+
+### 运行时问题修复 ✅
+
+#### 1. PDF 上传 500 错误修复 ✅
+
+**问题**：用户上传 PDF 时收到 500 错误 `column "content_sha256" does not exist`
+
+**原因**：迁移脚本 0122 未应用到开发环境数据库，导致 `books` 表缺少 `content_sha256`, `storage_ref_count`, `canonical_book_id` 字段。
 
 **解决方案**：
+```bash
+docker-compose exec api alembic upgrade head
+# 已从 0121 升级到 0122 (head)
+```
 
-**迁移 0122 (`0122_add_content_sha256_dedup.py`)**：
+#### 2. Tolgee 禁用 ✅
+
+**问题**：Tolgee 服务未运行导致大量 `socket hang up` 代理错误。
+
+**解决方案**：暂时禁用 Tolgee，使用本地 JSON 翻译文件。
+
+**修改文件**：
+- `web/.env.local`: 注释掉 `VITE_APP_TOLGEE_API_KEY` 和 `VITE_APP_TOLGEE_API_URL`
+- `web/vite.config.ts`: 注释掉 `/tolgee-api` 代理配置
+
+**恢复方法**：开发完成后取消上述注释即可恢复 Tolgee 功能。
+
+---
+
+## 🔥 更早更新 (2025-12-03 07:00)
 ```sql
 -- books 表新增字段
 content_sha256 VARCHAR(64)    -- 文件内容 SHA256 哈希

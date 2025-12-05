@@ -1,3 +1,8 @@
+/**
+ * 基础按钮组件
+ * - 提供 `primary`/`secondary` 两种主题
+ * - 仅封装样式，不包含业务逻辑
+ */
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' }
 export default function Button({ children, onClick, variant = 'secondary', style, ...rest }: Props) {
   const base = {

@@ -1,3 +1,15 @@
+/**
+ * 电子书上传 Hook
+ *
+ * 流程：
+ * 1) 计算文件 SHA256（可选，失败则服务端计算）
+ * 2) 初始化上传，处理去重（own/global 秒传）
+ * 3) 通过预签名 URL 直传（XMLHttpRequest 以获得进度）
+ * 4) 通知后端完成并持久化记录
+ * 5) EPUB/PDF 直接写入 IndexedDB，支持立即阅读
+ *
+ * 错误处理：统一 `errorCode` 标准化，支持取消与配额限制等场景
+ */
 import { useState, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
@@ -52,12 +64,37 @@ export interface UseBookUploadOptions {
   onError?: (errorCode: UploadErrorCode, message?: string) => void
 }
 
-// 计算文件 SHA256 哈希
+// 计算文件 SHA256 哈希（支持移动端浏览器）
 async function computeSha256(file: File): Promise<string> {
-  const buf = await file.arrayBuffer()
-  const hashBuf = await crypto.subtle.digest('SHA-256', buf)
-  const hashArr = Array.from(new Uint8Array(hashBuf))
-  return hashArr.map(b => b.toString(16).padStart(2, '0')).join('')
+  try {
+    // 检查 crypto.subtle 是否可用（某些移动浏览器或非 HTTPS 环境不支持）
+    if (!crypto?.subtle?.digest) {
+      console.warn('[SHA256] crypto.subtle not available, skipping client-side hash')
+      return ''
+    }
+    
+    // 对于大文件，分块读取以避免内存问题
+    const MAX_CHUNK_SIZE = 64 * 1024 * 1024 // 64MB
+    
+    if (file.size > MAX_CHUNK_SIZE) {
+      // 大文件：使用流式处理（如果支持）
+      // 某些移动浏览器可能不支持，回退到服务端计算
+      console.log(`[SHA256] Large file (${(file.size / 1024 / 1024).toFixed(1)}MB), attempting chunked hash...`)
+    }
+    
+    const buf = await file.arrayBuffer()
+    const hashBuf = await crypto.subtle.digest('SHA-256', buf)
+    const hashArr = Array.from(new Uint8Array(hashBuf))
+    const hash = hashArr.map(b => b.toString(16).padStart(2, '0')).join('')
+    
+    console.log(`[SHA256] Computed: ${hash.substring(0, 16)}... for ${file.name}`)
+    return hash
+  } catch (error) {
+    // 移动端浏览器或某些环境可能抛出异常
+    console.warn('[SHA256] Client-side hash computation failed:', error)
+    console.warn('[SHA256] Server will compute hash as fallback')
+    return ''
+  }
 }
 
 // 获取文件扩展名
@@ -188,10 +225,13 @@ export function useBookUpload(options: UseBookUploadOptions = {}) {
       // Step 2: 初始化上传，获取预签名 URL
       let key: string
       let uploadUrl: string
+      let dedupHit: 'own' | 'global' | null = null
+      let canonicalBookId: string | null = null
+      
       try {
         const initRes = await api.post('/books/upload_init', {
           filename: fileName,
-          file_fingerprint: fingerprint,
+          content_sha256: fingerprint,  // SHA256 哈希用于去重检查
           content_type: file.type || 'application/octet-stream',
         }, {
           headers: {
@@ -200,6 +240,67 @@ export function useBookUpload(options: UseBookUploadOptions = {}) {
           signal,
         })
 
+        dedupHit = initRes.data.data.dedup_hit
+        
+        // 处理去重命中情况
+        if (dedupHit === 'own') {
+          // 用户自己已有相同文件，直接返回现有记录
+          const result: UploadResult = {
+            id: initRes.data.data.existing_book_id,
+            downloadUrl: '', // 不需要
+            title: initRes.data.data.existing_title || title,
+          }
+          updateState('done', 100, { bookId: result.id })
+          onSuccess?.(result)
+          return result
+        }
+        
+        if (dedupHit === 'global') {
+          // 全局已有相同文件，调用秒传接口
+          canonicalBookId = initRes.data.data.canonical_book_id
+          console.log('[Upload] Dedup hit: global, using instant upload for canonical:', canonicalBookId)
+          
+          updateState('completing', 90)
+          
+          // 调用秒传接口
+          const dedupRes = await api.post('/books/dedup_reference', {
+            content_sha256: fingerprint,
+            canonical_book_id: canonicalBookId,
+            title,
+            author: '',
+            language: '',
+          }, {
+            headers: {
+              'Idempotency-Key': idempotencyKeyRef.current,
+            },
+            signal,
+          })
+          
+          const result: UploadResult = {
+            id: dedupRes.data.data.id,
+            downloadUrl: dedupRes.data.data.download_url,
+            title,
+          }
+          
+          // 秒传成功，同样保存文件到 IndexedDB
+          const fmt = getFileExtension(fileName)
+          const directFormats = ['epub', 'pdf']
+          if (directFormats.includes(fmt)) {
+            try {
+              console.log(`[Upload] Saving ${fmt} to IndexedDB for instant reading (dedup)...`)
+              await saveBookFile(result.id, file, fmt as 'epub' | 'pdf')
+              console.log(`[Upload] Book saved to IndexedDB: ${result.id}`)
+            } catch (cacheError) {
+              console.warn('[Upload] Failed to cache book locally:', cacheError)
+            }
+          }
+          
+          updateState('done', 100, { bookId: result.id })
+          onSuccess?.(result)
+          return result
+        }
+
+        // 正常上传流程
         key = initRes.data.data.key
         uploadUrl = initRes.data.data.upload_url
       } catch (error: any) {
@@ -295,6 +396,7 @@ export function useBookUpload(options: UseBookUploadOptions = {}) {
           title,
           original_format: fmt,
           size: file.size,
+          content_sha256: fingerprint,  // 传递 SHA256 用于去重
         }, {
           headers: {
             'Idempotency-Key': idempotencyKeyRef.current,

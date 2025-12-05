@@ -1,3 +1,14 @@
+"""
+首页仪表盘服务模型与计算
+
+职责：
+- 定义 Dashboard/Goals/Streak/Today/Weekly/YearlyFinished 模型
+- 计算今日、周、年阅读统计与 streak，生成仪表盘数据
+- 提供更新用户目标的服务方法
+
+说明：
+- 仅新增注释，不改动统计与查询逻辑
+"""
 import uuid
 from datetime import date, datetime
 from typing import Literal

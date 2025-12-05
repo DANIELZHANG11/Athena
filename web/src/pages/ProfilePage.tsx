@@ -1,3 +1,12 @@
+/**
+ * ProfilePage - 个人资料页面
+ *
+ * 用途：
+ * - 获取并展示当前用户资料（昵称）
+ * - 通过 `ETag` 并发控制更新昵称后刷新展示
+ *
+ * 说明：仅新增注释，不改动页面逻辑与接口调用
+ */
 import { useState } from 'react'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'

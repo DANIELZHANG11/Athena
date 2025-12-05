@@ -1,3 +1,7 @@
+/**
+ * 侧边栏组件
+ * - 提供侧栏基础结构与菜单样式
+ */
 import * as React from 'react'
 import { cn } from './utils'
 

@@ -1,3 +1,7 @@
+/**
+ * 表格组件
+ * - 轻量封装语义化 `<table>` 结构与样式
+ */
 import * as React from 'react'
 import { cn } from './utils'
 

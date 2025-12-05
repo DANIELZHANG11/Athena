@@ -1,3 +1,11 @@
+"""
+定时任务（每日）
+
+职责：
+- 过期会员降级到 FREE 并清理过期字段
+- 基于 `monthly_gift_reset_at` 重置每月赠礼（重置免费 OCR 次数、发放积分并记账）
+- 清理已送达的同步事件（保留 7 天）与陈旧未送达事件（30 天）
+"""
 import asyncio
 import os
 import logging
@@ -9,6 +17,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("scheduler")
 
 async def run_daily_tasks():
+    """
+    执行每日定时任务并记录日志
+    - 会员过期处理
+    - 每月赠礼重置与积分入账
+    - 同步事件清理
+    """
     logger.info("Running daily tasks...")
     async with engine.begin() as conn:
         # 1. Expire Memberships

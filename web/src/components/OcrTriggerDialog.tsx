@@ -33,6 +33,14 @@ interface OcrTriggerDialogProps {
   onSuccess?: () => void
 }
 
+interface OcrTriggerResult {
+  status: 'queued' | 'instant_completed'
+  queuePosition?: number
+  estimatedMinutes?: number
+  estimatedSeconds?: number  // 用于 instant_completed
+  pageCount?: number
+}
+
 /** 获取配额信息 */
 async function fetchOcrQuotaInfo(bookId: string): Promise<OcrQuotaInfo> {
   const token = useAuthStore.getState().accessToken
@@ -47,7 +55,7 @@ async function fetchOcrQuotaInfo(bookId: string): Promise<OcrQuotaInfo> {
 }
 
 /** 触发 OCR */
-async function triggerOcr(bookId: string): Promise<{ jobId: string }> {
+async function triggerOcr(bookId: string): Promise<OcrTriggerResult> {
   const token = useAuthStore.getState().accessToken
   const res = await fetch(`/api/v1/books/${bookId}/ocr`, {
     method: 'POST',
@@ -75,12 +83,16 @@ export default function OcrTriggerDialog({
   const [triggering, setTriggering] = useState(false)
   const [quotaInfo, setQuotaInfo] = useState<OcrQuotaInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [fakeProcessing, setFakeProcessing] = useState(false)
+  const [fakeProgress, setFakeProgress] = useState(0)
 
   // 加载配额信息
   useEffect(() => {
     if (open && bookId) {
       setLoading(true)
       setError(null)
+      setFakeProcessing(false)
+      setFakeProgress(0)
       fetchOcrQuotaInfo(bookId)
         .then(setQuotaInfo)
         .catch((e) => setError(e.message))
@@ -94,7 +106,37 @@ export default function OcrTriggerDialog({
     setTriggering(true)
     setError(null)
     try {
-      await triggerOcr(bookId)
+      const result = await triggerOcr(bookId)
+      
+      // 如果是 instant_completed，显示假处理动画
+      if (result.status === 'instant_completed' && result.estimatedSeconds) {
+        setTriggering(false)
+        setFakeProcessing(true)
+        
+        const totalMs = result.estimatedSeconds * 1000
+        const interval = 100  // 每 100ms 更新一次进度
+        const steps = totalMs / interval
+        let currentStep = 0
+        
+        const progressInterval = setInterval(() => {
+          currentStep++
+          // 使用缓动函数让进度更自然
+          const progress = Math.min(100, Math.pow(currentStep / steps, 0.8) * 100)
+          setFakeProgress(progress)
+          
+          if (currentStep >= steps) {
+            clearInterval(progressInterval)
+            setFakeProcessing(false)
+            setFakeProgress(100)
+            onSuccess?.()
+            onClose()
+          }
+        }, interval)
+        
+        return
+      }
+      
+      // 正常 queued 状态
       onSuccess?.()
       onClose()
     } catch (e: any) {
@@ -121,10 +163,10 @@ export default function OcrTriggerDialog({
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 遮罩层 */}
+      {/* 遮罩层 - 假处理时禁止关闭 */}
       <div
         className="absolute inset-0 bg-black/20 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={fakeProcessing ? undefined : onClose}
       />
 
       {/* 对话框 */}
@@ -150,7 +192,8 @@ export default function OcrTriggerDialog({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-secondary-background transition-colors"
+            disabled={fakeProcessing}
+            className="p-2 rounded-full hover:bg-secondary-background transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X className="w-5 h-5 text-secondary-label" />
           </button>
@@ -158,7 +201,49 @@ export default function OcrTriggerDialog({
 
         {/* 内容 */}
         <div className="px-6 py-5">
-          {loading ? (
+          {fakeProcessing ? (
+            /* 假处理动画 - 复用原书 OCR 时显示 */
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="relative w-20 h-20 mb-4">
+                <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 80 80">
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r="36"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="6"
+                    className="text-gray-200 dark:text-gray-700"
+                  />
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r="36"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    className="text-system-blue transition-all duration-100"
+                    style={{
+                      strokeDasharray: `${2 * Math.PI * 36}`,
+                      strokeDashoffset: `${2 * Math.PI * 36 * (1 - fakeProgress / 100)}`,
+                    }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-lg font-bold text-system-blue">
+                    {Math.round(fakeProgress)}%
+                  </span>
+                </div>
+              </div>
+              <span className="text-base font-medium text-label mb-1">
+                {t('ocr.processing_title', { defaultValue: 'OCR 处理中' })}
+              </span>
+              <span className="text-sm text-secondary-label">
+                {t('ocr.processing_hint', { defaultValue: '正在识别文字，请稍候...' })}
+              </span>
+            </div>
+          ) : loading ? (
             <div className="flex flex-col items-center justify-center py-8">
               <Loader2 className="w-8 h-8 text-system-blue animate-spin mb-3" />
               <span className="text-sm text-secondary-label">加载中...</span>
@@ -244,38 +329,40 @@ export default function OcrTriggerDialog({
           ) : null}
         </div>
 
-        {/* 底部按钮 */}
-        <div className="px-6 py-4 border-t border-separator flex gap-3">
-          <button
-            onClick={onClose}
-            disabled={triggering}
-            className={cn(
-              'flex-1 py-3 px-4 rounded-full',
-              'bg-secondary-background text-label',
-              'border border-separator',
-              'font-medium text-sm',
-              'hover:bg-tertiary-background transition-colors',
-              'disabled:opacity-50'
-            )}
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleTrigger}
-            disabled={loading || triggering || !quotaInfo?.canTrigger}
-            className={cn(
-              'flex-1 py-3 px-4 rounded-full',
-              'bg-system-blue text-white',
-              'font-medium text-sm',
-              'hover:opacity-90 transition-opacity',
-              'disabled:opacity-50',
-              'flex items-center justify-center gap-2'
-            )}
-          >
-            {triggering && <Loader2 className="w-4 h-4 animate-spin" />}
-            {t('ocr.confirm_button')}
-          </button>
-        </div>
+        {/* 底部按钮 - 假处理时隐藏 */}
+        {!fakeProcessing && (
+          <div className="px-6 py-4 border-t border-separator flex gap-3">
+            <button
+              onClick={onClose}
+              disabled={triggering}
+              className={cn(
+                'flex-1 py-3 px-4 rounded-full',
+                'bg-secondary-background text-label',
+                'border border-separator',
+                'font-medium text-sm',
+                'hover:bg-tertiary-background transition-colors',
+                'disabled:opacity-50'
+              )}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={handleTrigger}
+              disabled={loading || triggering || !quotaInfo?.canTrigger}
+              className={cn(
+                'flex-1 py-3 px-4 rounded-full',
+                'bg-system-blue text-white',
+                'font-medium text-sm',
+                'hover:opacity-90 transition-opacity',
+                'disabled:opacity-50',
+                'flex items-center justify-center gap-2'
+              )}
+            >
+              {triggering && <Loader2 className="w-4 h-4 animate-spin" />}
+              {t('ocr.confirm_button')}
+            </button>
+          </div>
+        )}
       </div>
     </div>,
     document.body

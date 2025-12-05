@@ -1,3 +1,9 @@
+/**
+ * Vite 构建配置
+ * - React 插件与 PWA 集成
+ * - `@` 别名指向 `src`
+ * - 本地开发代理 `/api` 与 `/s3`
+ */
 import { defineConfig } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
@@ -33,11 +39,12 @@ export default defineConfig({
         changeOrigin: true,
         ws: true
       },
-      '/tolgee-api': {
-        target: 'http://localhost:8085',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/tolgee-api/, '')
-      },
+      // Tolgee 代理暂时禁用 - 待开发完成后恢复
+      // '/tolgee-api': {
+      //   target: 'http://localhost:8085',
+      //   changeOrigin: true,
+      //   rewrite: (path) => path.replace(/^\/tolgee-api/, '')
+      // },
       '/s3': {
         target: 'http://localhost:8333',
         changeOrigin: true,

@@ -85,6 +85,54 @@
     *   **失败**：更新状态为 `Failed`，并**回滚扣费**（退还 Credits）。
 6.  **提交事务**。
 
+#### OCR 复用机制（假 OCR / Instant OCR）
+
+> **设计目的**：当多个用户上传相同书籍时，只需执行一次真实 OCR，后续用户可直接复用结果。
+> 这是 **ADR-007 SHA256 全局去重** 的核心商业价值之一。
+
+**触发条件**：
+1. 用户点击 OCR 按钮，触发 `POST /books/{id}/ocr`
+2. 系统检测到该书籍的 `content_sha256` 与其他已完成 OCR 的书籍相同
+3. 直接复用现有 OCR 结果，秒级完成
+
+**商业逻辑（AI 必须严格执行）**：
+| 场景 | 扣费 | OCR 执行 | 用户体验 |
+|-----|------|---------|---------|
+| 首次 OCR | ✅ 正常扣费 | ✅ 真实执行 | 等待 Worker 处理 |
+| 复用 OCR | ✅ **正常扣费** | ❌ 不执行 | 秒级完成 |
+
+> **关键约束**：
+> - 用户**必须**点击 OCR 按钮才能看到 OCR 结果（商业闭环）
+> - 即使是复用，也**必须**扣除配额（维护商业公平性）
+> - 但不消耗 GPU 算力（降低运营成本）
+
+**实现要点**：
+```python
+def trigger_book_ocr(book_id, user_id):
+    # 1. 正常配额检查和扣费
+    check_and_deduct_ocr_quota(user_id, page_count)
+    
+    # 2. 检查是否可复用
+    existing_ocr = find_existing_ocr_by_sha256(book.content_sha256)
+    
+    if existing_ocr:
+        # 3. 假 OCR：复用现有结果
+        update_book(book_id, 
+            ocr_status='completed',
+            ocr_result_key=existing_ocr.ocr_result_key
+        )
+        return {"status": "instant_completed"}  # 秒级完成
+    else:
+        # 4. 真 OCR：提交 Celery 任务
+        celery_task.delay(book_id)
+        return {"status": "processing"}
+```
+
+**监控指标**：
+- `athena_ocr_instant_completed_total`：OCR 复用次数
+- `athena_ocr_real_processed_total`：真实 OCR 执行次数
+- `athena_ocr_cost_saved_estimate`：估算节省的 GPU 成本
+
 ---
 
 ## 4. 会员权益体系 (Membership Tiers)

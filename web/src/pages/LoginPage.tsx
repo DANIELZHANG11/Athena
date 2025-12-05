@@ -1,3 +1,12 @@
+/**
+ * LoginPage - 登录页面
+ *
+ * 用途：
+ * - 发送邮箱验证码并校验登录
+ * - 成功后写入本地令牌（LocalStorage + IndexedDB）并跳转首页
+ *
+ * 说明：仅新增注释，不改动页面逻辑与接口调用
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'

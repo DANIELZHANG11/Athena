@@ -1,3 +1,15 @@
+/**
+ * 国际化与 Tolgee 集成
+ *
+ * 结构：
+ * - 通过 `import.meta.glob` 预加载本地 JSON 作为离线回退资源
+ * - 可选启用 Tolgee：从远端拉取翻译并与本地资源合并
+ * - 自动构建 key→namespace 映射，确保资源归属正确
+ *
+ * 注意：
+ * - 开发环境使用 Vite 代理 `/tolgee-api`，生产从环境变量读取 URL
+ * - 为避免页面阻塞，远端翻译加载采用异步串行方式
+ */
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { Tolgee, DevTools } from '@tolgee/web'

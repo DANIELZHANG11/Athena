@@ -1,3 +1,15 @@
+"""
+OCR 引擎封装
+
+职责：
+- 在生产环境使用 PaddleOCR 3.x（PP-OCRv5 系列）进行文本检测与识别
+- 在 CI/测试环境使用 `MockOCR` 返回空结果以保证稳定性
+
+实现要点：
+- 通过预签名 URL 下载原文件到带正确后缀的临时路径，避免 `predict()` 因查询参数无法识别类型
+- 统一返回结构：`{"regions": [{text, confidence, bbox?, polygon?}], "text": "..."}`
+- 兼容不同版本返回的结果结构（属性或字典）
+"""
 import io
 import os
 from typing import Any

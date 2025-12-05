@@ -116,11 +116,16 @@ erDiagram
 *   `initial_digitalization_confidence` (NUMERIC, Nullable)
 *   `converted_epub_key` (TEXT, Nullable)
 *   `digitalize_report_key` (TEXT, Nullable)
-*   `ocr_status` (VARCHAR(20), Nullable) - **[待迁移]** OCR 处理状态，枚举值见下表
-*   `ocr_requested_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 用户请求 OCR 的时间
-*   `vector_indexed_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 向量索引完成时间
-*   `metadata_confirmed` (BOOLEAN, Default: FALSE) - **[待迁移]** 用户是否已确认元数据
-*   `metadata_confirmed_at` (TIMESTAMPTZ, Nullable) - **[待迁移]** 元数据确认时间
+*   `ocr_status` (VARCHAR(20), Nullable) - OCR 处理状态，枚举值见下表
+*   `ocr_requested_at` (TIMESTAMPTZ, Nullable) - 用户请求 OCR 的时间
+*   `ocr_result_key` (TEXT, Nullable) - OCR 结果 JSON 文件的 S3 Key
+*   `vector_indexed_at` (TIMESTAMPTZ, Nullable) - 向量索引完成时间
+*   `metadata_confirmed` (BOOLEAN, Default: FALSE) - 用户是否已确认元数据
+*   `metadata_confirmed_at` (TIMESTAMPTZ, Nullable) - 元数据确认时间
+*   `content_sha256` (VARCHAR(64), Nullable) - **文件内容 SHA256 哈希**，用于全局去重
+*   `storage_ref_count` (INTEGER, Default: 1) - **存储引用计数**，表示有多少书籍共享此存储
+*   `canonical_book_id` (UUID, Nullable, FK `books.id`) - **去重引用指向的原始书籍 ID**
+*   `deleted_at` (TIMESTAMPTZ, Nullable) - **软删除时间戳**
 *   `meta` (JSONB, Default: '{}')
     *   `page_count` (int): 书籍页数
     *   `needs_manual` (bool): 是否需要人工介入
@@ -135,6 +140,10 @@ erDiagram
 *   `created_at` (TIMESTAMPTZ)
 *   `updated_at` (TIMESTAMPTZ)
 
+**索引**：
+- `idx_books_content_sha256` (部分索引): `WHERE content_sha256 IS NOT NULL`
+- `idx_books_canonical_book_id`: 用于查询引用书籍
+
 **`ocr_status` 枚举值**：
 | 值 | 说明 |
 |---|---|
@@ -148,6 +157,79 @@ erDiagram
 > - `metadata_confirmed = false`：用户尚未确认元数据，上传后应弹出确认对话框
 > - `metadata_confirmed = true`：用户已确认（或跳过），不再提示
 > - `title` 和 `author` 字段会作为 AI 对话上下文发送给上游模型
+
+> **SHA256 去重机制说明**：
+> - `content_sha256`: 用于全局去重判断，相同哈希表示相同文件内容
+> - `storage_ref_count`: 初始值为 1（代表原书自己），秒传引用时 +1，引用书删除时 -1
+> - `canonical_book_id`: 非空时表示这是一个去重引用书，指向原始书籍
+> - 原书判断：`canonical_book_id IS NULL`
+> - 引用书判断：`canonical_book_id IS NOT NULL`
+
+> **is_image_based 判断逻辑**（前端用于显示 OCR 按钮）：
+> ```python
+> is_image_based = (
+>     (is_digitalized == True AND confidence < 0.8)  # 图片型 PDF
+>     OR ocr_status == 'completed'  # 已完成 OCR 的书籍
+> )
+> ```
+
+#### 书籍删除策略（Soft Delete & Hard Delete）
+
+书籍删除采用**分层策略**，区分私人数据和公共数据：
+
+| 场景 | 删除类型 | 行为 |
+|-----|---------|------|
+| 原书有引用 (`ref_count > 1`) | 软删除 | 设置 `deleted_at`，保留公共数据 |
+| 原书无引用 (`ref_count <= 1`) | 硬删除 | 物理删除所有数据 |
+| 引用书删除 | 硬删除 | 删除记录，减少原书 `ref_count`，检查原书是否需清理 |
+
+**公共数据 vs 私人数据**：
+| 数据类型 | 所有者 | 软删除时 | 硬删除时 |
+|---------|-------|---------|---------|
+| S3 文件 (PDF/EPUB) | 共享 | 保留 | 删除 |
+| 封面图片 | 共享 | 保留 | 删除 |
+| OCR 结果 JSON | 共享 | 保留 | 删除 |
+| 向量索引 (OpenSearch) | 共享 | 保留 | 删除 |
+| 笔记/高亮 | 用户私有 | 立即删除 | 立即删除 |
+| 阅读进度 | 用户私有 | 立即删除 | 立即删除 |
+| 书架关联 | 用户私有 | 立即删除 | 立即删除 |
+
+**删除流程伪代码**：
+```python
+def delete_book(book_id, user_id):
+    book = get_book(book_id)
+    
+    # 1. 始终删除用户私有数据
+    delete_notes(book_id, user_id)
+    delete_highlights(book_id, user_id)
+    delete_reading_progress(book_id, user_id)
+    delete_shelf_items(book_id)
+    
+    # 2. 判断是引用书还是原书
+    if book.canonical_book_id:
+        # 引用书：直接删除，减少原书引用计数
+        canonical = get_book(book.canonical_book_id)
+        canonical.storage_ref_count -= 1
+        delete_book_record(book_id)  # 物理删除
+        
+        # 检查原书是否需要清理
+        if canonical.deleted_at and canonical.storage_ref_count <= 1:
+            hard_delete_canonical(canonical)
+    else:
+        # 原书：检查引用计数
+        has_references = book.storage_ref_count > 1
+        
+        if has_references:
+            # 软删除：保留公共数据
+            book.deleted_at = now()
+        else:
+            # 硬删除：清理所有公共数据
+            delete_s3_file(book.minio_key)
+            delete_s3_file(book.cover_image_key)
+            delete_s3_file(book.ocr_result_key)
+            delete_search_index(book_id)
+            delete_book_record(book_id)
+```
 
 #### `shelves`
 书架。

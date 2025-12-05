@@ -1,3 +1,8 @@
+/**
+ * 提示气泡组件（Radix Tooltip）
+ * - Provider 包装以控制延迟
+ * - 封装 Trigger/Content/Arrow
+ */
 "use client"
 
 import * as React from 'react'

@@ -1,3 +1,11 @@
+/**
+ * 登录页面
+ *
+ * 说明：
+ * - 邮箱验证码登录：发送验证码、输入验证码、校验后写入 tokens
+ * - 登录成功后跳转至来源页面或 `/app/home`
+ * - 文案来自 `auth` 命名空间
+ */
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'

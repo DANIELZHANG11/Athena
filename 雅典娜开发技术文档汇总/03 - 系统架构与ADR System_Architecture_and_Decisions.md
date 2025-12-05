@@ -556,5 +556,252 @@ CREATE TABLE sync_events (
 - [Local-First Software](https://www.inkandswitch.com/local-first/)
 - [CouchDB 复制协议](https://docs.couchdb.org/en/stable/replication/protocol.html)
 
+---
+
+## ADR-007: SHA256 全局去重与 OCR 复用机制
+
+### 状态
+- **状态**：IMPLEMENTED ✅
+- **提出日期**：2025-12-05
+- **决策者**：架构组
+- **相关 ADR**：ADR-001（对象存储选用 SeaweedFS）
+
+### 背景与问题陈述
+
+用户上传相同书籍文件时存在以下问题：
+1. **存储浪费**：相同文件被多次存储到 S3，占用大量空间
+2. **OCR 重复**：相同 PDF 被多次 OCR 处理，浪费 GPU 算力
+3. **向量重复**：相同内容被多次向量化，浪费 Embedding 资源
+4. **用户体验差**：秒传功能缺失，用户需要等待完整上传
+
+### 决策
+
+采用 **SHA256 全局去重 + OCR/向量数据复用** 的双层优化架构。
+
+#### 核心原则
+
+##### 1. SHA256 内容指纹（Content Fingerprinting）
+
+```
+用户上传书籍文件
+      ↓
+前端计算 SHA256（移动端可能失败）
+      ↓
+POST /books/upload_init
+      ├── 传入 content_sha256（可选）
+      ├── 服务端检查全局去重
+      │     └── SELECT id FROM books 
+      │         WHERE content_sha256 = :sha256 
+      │         AND deleted_at IS NULL LIMIT 1
+      └── 返回去重状态
+          ├── dedup_available: true  → 调用 dedup_reference
+          └── dedup_available: false → 正常上传流程
+```
+
+##### 2. 存储引用计数（Storage Reference Count）
+
+| 字段 | 类型 | 说明 |
+|-----|------|------|
+| `content_sha256` | VARCHAR(64) | 文件内容 SHA256 哈希 |
+| `storage_ref_count` | INTEGER | 存储引用计数（初始值 1） |
+| `canonical_book_id` | UUID | 去重引用指向的原始书籍 ID |
+
+**引用计数规则**：
+- **原书上传时**：`storage_ref_count = 1`（代表自己）
+- **秒传创建时**：原书 `storage_ref_count += 1`
+- **引用书删除时**：原书 `storage_ref_count -= 1`
+- **判断有引用**：`storage_ref_count > 1`
+
+##### 3. 秒传接口（Dedup Reference）
+
+```python
+POST /books/dedup_reference
+{
+    "filename": "小说的艺术.pdf",
+    "content_sha256": "6f4c24abd60a55d3...",
+    "size": 12345678
+}
+
+# 返回
+{
+    "id": "new-book-uuid",
+    "dedup_type": "global",
+    "canonical_book_id": "original-book-uuid",
+    "has_ocr": true  # 是否可立即复用 OCR
+}
+```
+
+**秒传书籍属性设置**：
+```python
+if canonical_has_ocr:
+    # 原书已 OCR：新书设为"图片型 PDF 但未 OCR"状态
+    # 这样 is_image_based=True，用户可以点击 OCR 按钮
+    new_is_digitalized = True
+    new_confidence = 0.1  # 低置信度，确保 is_image_based=True
+else:
+    # 原书未 OCR：继承原书的数字化属性
+    new_is_digitalized = canonical_is_digitalized
+    new_confidence = canonical_confidence
+```
+
+##### 4. OCR 复用机制（假 OCR）
+
+当用户对秒传书籍触发 OCR 时，系统执行"假 OCR"：
+
+```python
+# 1. 查找相同 SHA256 中已完成 OCR 的书籍
+existing = SELECT id, ocr_result_key 
+           FROM books 
+           WHERE content_sha256 = :sha256 
+           AND ocr_status = 'completed' 
+           LIMIT 1
+
+# 2. 如果找到，直接复用 OCR 结果
+if existing:
+    UPDATE books SET 
+        ocr_status = 'completed',
+        ocr_result_key = existing.ocr_result_key,
+        is_digitalized = True,
+        initial_digitalization_confidence = 1.0
+    WHERE id = :book_id
+    
+    # 返回 instant_completed，不发送 Celery 任务
+    return {"ocr_status": "instant_completed"}
+```
+
+**商业逻辑**：
+- 用户仍需"点击" OCR 按钮（触发配额扣除）
+- 但后端不实际执行 OCR，秒级完成
+- Worker 无工作量，节省算力
+
+##### 5. 删除策略（软删除 + 物理删除）
+
+```
+用户删除书籍
+      ↓
+判断是否为去重引用书
+      ├── 是引用书 → 直接物理删除
+      │     ├── 减少原书 storage_ref_count
+      │     └── 检查原书是否需要清理
+      │
+      └── 是原书 → 检查引用计数
+            ├── storage_ref_count > 1 → 软删除
+            │     └── 设置 deleted_at，保留公共数据
+            │
+            └── storage_ref_count <= 1 → 物理删除
+                  ├── 删除 S3 文件（PDF/封面）
+                  ├── 删除 OCR 结果 JSON
+                  ├── 删除向量索引
+                  └── 删除数据库记录
+```
+
+**公共数据 vs 私人数据**：
+| 数据类型 | 存储位置 | 删除时机 |
+|---------|---------|---------|
+| PDF 文件 | S3 `minio_key` | 最后用户删除时 |
+| 封面图片 | S3 `covers/` | 最后用户删除时 |
+| OCR 结果 | S3 `ocr-result-*.json` | 最后用户删除时 |
+| 向量索引 | OpenSearch | 最后用户删除时 |
+| 笔记/高亮 | PostgreSQL | 立即删除（用户私有） |
+| 阅读进度 | PostgreSQL | 立即删除（用户私有） |
+
+##### 6. is_image_based 判断逻辑
+
+```python
+# 前端判断是否显示 OCR 按钮
+is_image_based = (
+    (is_digitalized == True AND confidence < 0.8)  # 图片型 PDF
+    OR ocr_status == 'completed'  # 已完成 OCR 的书籍
+)
+```
+
+**字段含义**：
+- `is_digitalized = True`：已执行数字化检测
+- `confidence < 0.8`：低置信度，说明是扫描版/图片型
+- `ocr_status = 'completed'`：OCR 已完成
+
+#### 流程图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    A 用户首次上传                                │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. upload_init → 无去重命中 → 返回 presigned URL                 │
+│ 2. PUT 上传文件到 S3                                            │
+│ 3. upload_complete → 创建书籍，storage_ref_count=1              │
+│ 4. 用户点击 OCR → 真实 OCR 处理 → 生成 ocr-result-*.json        │
+│ 5. 触发向量索引 → 存入 OpenSearch                               │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    B 用户上传相同文件                            │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. upload_init → 全局去重命中 → 返回 dedup_available=true       │
+│ 2. dedup_reference → 创建引用书，原书 ref_count=2               │
+│ 3. 用户点击 OCR → 假 OCR → 复用 A 的 OCR 结果（秒完成）         │
+│ 4. 跳过向量索引（已存在）                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    A 用户删除书籍                                │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. ref_count=2 > 1 → 软删除（设置 deleted_at）                  │
+│ 2. 保留：S3 文件、封面、OCR 结果、向量索引                       │
+│ 3. B 用户正常使用，无感知                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    B 用户删除书籍                                │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. 是引用书 → 物理删除引用书记录                                 │
+│ 2. 减少原书 ref_count → ref_count=1                             │
+│ 3. 检查原书：已软删除 + ref_count≤1 → 物理删除原书              │
+│ 4. 清理所有公共数据：S3 文件、封面、OCR 结果、向量索引           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 代码影响范围
+
+**后端**：
+- `api/app/books.py`:
+  - `upload_init`: 添加 SHA256 去重检查
+  - `upload_complete`: 保存 SHA256，服务端备用计算
+  - `dedup_reference`: 新增秒传接口
+  - `trigger_book_ocr`: 添加假 OCR 逻辑
+  - `delete_book`: 实现软删除/物理删除分层策略
+- `api/app/tasks.py`:
+  - OCR 完成后不覆盖 `initial_digitalization_confidence`
+
+**前端**：
+- `web/src/hooks/useBookUpload.ts`:
+  - `computeSha256`: 增强错误处理（移动端兼容）
+  - 处理 `dedup_available` 响应
+
+**数据库**：
+- `books` 表新增字段：`content_sha256`, `storage_ref_count`, `canonical_book_id`
+- 部分索引：`idx_books_content_sha256`
+
+#### 风险与缓解
+
+| 风险 | 概率 | 影响 | 缓解措施 |
+|-----|------|------|---------|
+| SHA256 碰撞 | 极低 | 高 | 理论碰撞概率 1/2^256，实际无需担心 |
+| 前端 SHA256 计算失败 | 中 | 低 | 服务端在 upload_complete 时从 S3 读取文件计算 |
+| 引用计数不一致 | 低 | 中 | 所有引用计数操作在数据库事务中执行 |
+| 软删除数据堆积 | 低 | 低 | 定期清理任务检查孤儿软删除记录 |
+
+#### 测试验证
+
+**完整流程测试（2025-12-05）**：
+1. ✅ WEBMASTER 上传"小说的艺术" → 创建书籍，服务端计算 SHA256
+2. ✅ WEBMASTER 点击 OCR → 真实 OCR 处理 (213 页，~45秒)
+3. ✅ 126690699 上传同书 → 全局去重命中，秒传
+4. ✅ 126690699 点击 OCR → 假 OCR，秒完成（Worker 无工作）
+5. ✅ WEBMASTER 删除 → 软删除（storage_ref_count=2 > 1）
+6. ✅ 126690699 正常访问 → 公共数据保留
+7. ✅ 126690699 删除 → 物理删除所有公共数据
+8. ✅ 数据库验证：所有记录已物理删除
+9. ✅ S3 验证：所有文件已清理
+
 
 

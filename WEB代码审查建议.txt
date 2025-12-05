@@ -1,0 +1,84 @@
+Athena Web 代码审查建议（仅文档，不改动代码）
+
+一、路由与认证
+- api 拦截器在刷新失败时使用 `window.location.href` 跳转登录，简单可靠但会丢失 SPA 内部状态。可考虑在应用层提供轻量导航工具（如事件总线或 history 单例）以便无侵入地重定向。
+- `AuthGuard` 放置在路由层，职责清晰；建议统一 401 处理与刷新逻辑的日志级别，减少生产环境噪音。
+
+二、国际化与 Tolgee
+- i18n 初始化包含较多 `console.log`，生产环境建议通过环境变量控制日志开关，避免泄露 `apiUrl` 与关键配置。
+- 远端翻译拉取采用一次性分页（size=1000），对于大型项目需考虑分页迭代或按命名空间拉取以降低冷启动时延。
+- `key→namespace` 映射构建合理；建议将映射缓存到 `localStorage` 并做版本校验，进一步减少重复计算。
+
+三、PDF Worker 与离线
+- `pdfjs-dist` Worker 使用 unpkg CDN，离线或受限网络环境会失败。建议改为本地打包 Worker（`import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'`）并由 Vite 静态资源托管，提升可靠性。
+- 若仍需 CDN，建议增加兜底重试与网络错误提示文案。
+
+四、上传流程与性能
+- 客户端 SHA256 使用 `arrayBuffer` 读取整文件，超大文件有内存压力。可在支持时采用分块/流式 Hash（如 Web Streams + SubtleCrypto），不支持时直接回退服务端计算。
+- 直传采用 XMLHttpRequest 获取进度，现实可行；如后续改为分块上传，应在后端支持断点与合并。
+- SeaweedFS/本地 S3 代理重写逻辑健壮；建议对 `URL` 解析错误增加更详细的日志。
+
+五、IndexedDB 封装
+- 目前仅一个 `kv` 对象仓库，简单易用；建议按功能模块（书籍、OCR、设置）拆分对象仓库，并在 `onupgradeneeded` 中进行迁移版本管理（记录 `schemaVersion`）。
+- 大对象存储建议采用 `Blob` 或分块策略，避免单条记录过大导致事务失败。
+
+六、Token 刷新策略
+- 定时器每 5 分钟检查，控制逻辑清晰；建议结合页面可见性（`document.visibilityState`）暂停后台刷新，减少无效请求。
+- 刷新与拦截器均有刷新路径，易重复；可统一由拦截器触发刷新，Hook 只在前台长会话场景兜底。
+
+七、构建与编译
+- PWA 注册受 `VITE_DISABLE_PWA` 控制，合理；建议在 `vite.config.ts` 中启用更严格的 chunk 分割与缓存策略，改善首屏加载。
+- ESLint/Prettier 已配置；建议开启 TypeScript 更严格选项（`noUncheckedIndexedAccess`、`exactOptionalPropertyTypes`）以减少潜在空值错误。
+
+八、页面与阅读器逻辑
+- ReaderPage EPUB 进度计算包含多重回退，鲁棒性好；建议将日志分级（info/warn）并在生产减少详细定位日志。
+- PDF 页尺寸依赖渲染结果与 OCR 图片尺寸，若后端页尺寸不一致时已做回退；建议在 `useOcrData` 提供页级尺寸的版本号校验，防止缓存与新数据不匹配。
+
+九、其他建议
+- 对全局 `console` 使用统一封装（如 `logger.ts`），支持环境开关与采样率，便于排障与降噪。
+- 对外部依赖的环境变量（Tolgee、S3 等）建议统一校验并在启动时给出明确错误提示。
+
+以上建议仅供参考，均不涉及代码改动。如需我进一步落地实现，请告知优先级。
+
+十、UI 组件库与样式
+- Shadcn/Radix 组件封装统一良好；建议在常用组件顶部补充简短 JSDoc（已补充）并在复杂交互处添加可访问性说明（键盘/ARIA）。
+- Tailwind 与 Design Tokens 映射集中在 `styles/figma.css`，建议抽取关键 token 到 TypeScript 常量用于运行时校验或主题切换。
+
+十一、Reader 模块
+- `PdfPageWithOcr` 与 `OcrTextLayer` 已实现本地 OCR 叠加；建议为 bbox/polygon 坐标增加版本字段与单位说明（px/pt），避免后端数据格式变动导致渲染偏移。
+- 图片式 PDF 的字体大小估算基于 bbox 高度，可考虑引入最小/最大字体阈值的配置项，以适应不同 DPI。
+
+十二、Hooks 设计
+- `useSmartHeartbeat` 的 pending 队列限额合理；建议在前端对 `MAX_NOTES_PER_HEARTBEAT` 等阈值暴露配置入口，同时增加退避重试策略以缓解服务端压力。
+- `useTolgeeLanguages` 轮询 15 秒拉取语言列表，建议在语言稳定后停用轮询，或在 `visibilitychange` 为隐藏时暂停。
+
+十三、上传与后处理 UX
+- 上传完成后延迟关闭 Modal 的体验良好；建议在秒传场景明确提示“已秒传”，并在 OCR 触发后以全局通知显示进度入口。
+- `useUploadPostProcessing` 轮询策略上限 60 秒，建议结合服务端推送（WebSocket/Server-Sent Events）优化时延与降低请求数。
+
+十四、测试与质量
+- Cypress 基座 `baseUrl` 固定为 4173；建议从环境变量读取并在 CI 中自动化启动预览服务器。
+- Vitest 覆盖率阈值较低（20%）；建议提升到 50% 并对工具函数与存储模块添加单测。
+
+十五、脚本与守护
+- `i18n-sync.cjs` 依赖 `ADMIN_TOKEN` 与后端地址，建议防止意外覆盖本地 JSON：增加备份与变更对比输出。
+- `no-hardcode.cjs` 检测中文硬编码正则较为宽泛；建议支持忽略列表与注释内文本过滤，减少误报。
+
+十六、配置与构建
+- Vite 代理已开启 `/api` 与 `/s3`；建议根据 `VITE_ENV` 自动切换目标地址，并为 PWA Workbox 设置更细粒度的缓存策略（如忽略 API 响应）。
+- PostCSS/ESLint 已基础配置；建议引入 `eslint-plugin-security`、`eslint-plugin-react-hooks` 强化安全与 Hook 规则。
+
+十七、可观测性
+- 统一日志封装为 `logger` 并根据环境控制输出级别与采样率，可选集成 Sentry 以捕获关键错误与性能指标。
+
+以上扩展建议已覆盖 UI、Reader、Hooks、上传、测试、脚本、构建与可观测性维度。如需按模块推进实施，我可分批次提交修改建议与验证用例。
+
+十八、后端 API 进一步建议
+- 认证与会话：`auth.py` 的 refresh token 存储在 Redis，建议为刷新接口添加刷新次数字段与速率限制，降低撞库风险；对 dev_code 暴露接口仅在 DEV_MODE 下开放并加 Header 限制。
+- 书籍上传与去重：`books.upload_complete` 中 server-side SHA256 读取整文件；建议引入 Range 读+流式哈希以降低内存峰值；对 idempotency 使用结构化 JSON，不用 `eval` 解析。
+- OCR 报告格式：新版/旧版兼容路径较多，建议统一标准格式并提供版本号；为 `page_sizes` 明确单位（像素/DPI）并校验页号连续性。
+- 删除策略：复杂多表删除流程建议改为存储过程或事务脚本，并按资源类型记录审计日志；避免在异常时部分删除导致数据不一致。
+- 存储公共引用计数：`storage_ref_count` 更新需防并发，建议使用单条 SQL with row lock 或基于事件的最终一致性；软删除的清理流程加入定时任务。
+- 代理下载：`get_book_content` 返回整文件；建议支持 Range 分片与 StreamingResponse 直通，以减少内存开销；并设置合适的 Cache-Control。
+- Embedder：本地模型加载失败回退逻辑已覆盖；建议通过环境变量控制批大小与最大长度，并在异常时采集指标。
+- Alembic 迁移：版本较多，建议维护 ADR 与 `system_settings` 的默认值填充迁移脚本，保证新环境可一键运行。

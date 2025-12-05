@@ -1,3 +1,8 @@
+/**
+ * 基础模态容器
+ * - 居中弹层与遮罩
+ * - 不含关闭逻辑，由父组件控制显示与关闭
+ */
 type Props = { children: React.ReactNode }
 export default function Modal({ children }: Props) {
   return (

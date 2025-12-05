@@ -1,3 +1,14 @@
+"""
+数据库迁移脚本：应用 V9.1 相关表结构与默认配置
+
+变更概要：
+- 新增 `user_stats` 表（存储容量/书籍数/邀请等统计）
+- 新增 `invites` 表与索引（邀请关系与奖励发放）
+- 修改 `pricing_rules` 表（增加平台与 SKU 字段，幂等检查）
+- 修改 `users` 表（会员过期时间、每月赠礼重置时间、免费 OCR 计数）
+- 修改 `ocr_jobs` 表（页数、扣费策略与额度）
+- 初始化 `system_settings` 默认键值（幂等插入）
+"""
 import asyncio
 import os
 from sqlalchemy import text
@@ -9,6 +20,11 @@ DATABASE_URL = os.getenv(
 )
 
 async def apply_schema():
+    """
+    应用数据库结构变更（可重复执行，内置幂等检查）
+    - 使用环境变量 `DATABASE_URL` 连接目标数据库
+    - 逐步创建/修改相关表与列，并打印进度
+    """
     engine = create_async_engine(DATABASE_URL, echo=True)
     async with engine.begin() as conn:
         print("Applying V9.1 Schema Changes...")

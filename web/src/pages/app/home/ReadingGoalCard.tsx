@@ -1,3 +1,11 @@
+/**
+ * 每日阅读目标卡片
+ *
+ * 说明：
+ * - 展示今日阅读分钟与目标进度环
+ * - 支持打开模态使用轮盘选择器调整目标
+ * - 通过 API `PATCH /api/v1/home/goals` 更新目标
+ */
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'

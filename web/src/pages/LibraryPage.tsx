@@ -1,3 +1,11 @@
+/**
+ * 书库页面
+ *
+ * 说明：
+ * - 列出用户书籍，支持网格/列表视图与排序
+ * - 监听上传成功、封面就绪、数据更新等事件以刷新
+ * - 检测 OCR 处理状态并轮询，确保 UI 实时反馈
+ */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BookCard from '../components/BookCard'
@@ -18,6 +26,8 @@ interface BookItem {
   downloadUrl?: string
   updatedAt?: string
   createdAt?: string
+  ocrStatus?: string | null  // 'pending' | 'processing' | 'completed' | 'failed' | null
+  isImageBased?: boolean     // 是否为图片型 PDF
 }
 
 type ViewMode = 'grid' | 'list'
@@ -78,36 +88,51 @@ export default function LibraryPage() {
   const bookIds = useMemo(() => items.map(item => item.id), [items])
   const { getBookCacheStatus } = useLocalBookCache(bookIds)
 
-  useEffect(() => {
-    const fetchList = async () => {
-      try {
-        setIsLoading(true)
-        console.log('[LibraryPage] Fetching books list...')
-        const response = await api.get('/books')
-        console.log('[LibraryPage] Books response:', response.data)
-        const token = accessToken || localStorage.getItem('access_token') || ''
-        const list = (response.data?.data?.items || []).map((x: any) => ({
-          id: x.id,
-          title: x.title || t('common.untitled'),
-          author: x.author || undefined,
-          // 使用 API 代理封面 URL，兼容移动端，通过 token 参数认证
-          coverUrl: x.id && token ? `/api/v1/books/${x.id}/cover?token=${encodeURIComponent(token)}` : undefined,
-          // 进度从小数 (0-1) 转换为百分比 (0-100)
-          progress: Math.round((x.progress || 0) * 100),
-          isFinished: !!x.finished_at,
-          downloadUrl: undefined,
-          updatedAt: x.updated_at,
-          createdAt: x.created_at,
-        }))
-        setItems(list)
-        console.log('[LibraryPage] Loaded', list.length, 'books')
-      } catch (error) {
-        console.error('[LibraryPage] Failed to fetch books:', error)
-      } finally {
-        setIsLoading(false)
-      }
+  // 检查是否有书籍正在 OCR 处理中
+  const hasOcrProcessing = useMemo(() => 
+    items.some(item => item.ocrStatus === 'pending' || item.ocrStatus === 'processing'),
+    [items]
+  )
+
+  // fetchList 函数提取出来以便复用
+  const fetchList = useCallback(async () => {
+    try {
+      console.log('[LibraryPage] Fetching books list...')
+      const response = await api.get('/books')
+      console.log('[LibraryPage] Books response:', response.data)
+      const token = accessToken || localStorage.getItem('access_token') || ''
+      const list = (response.data?.data?.items || []).map((x: any) => ({
+        id: x.id,
+        title: x.title || t('common.untitled'),
+        author: x.author || undefined,
+        // 使用 API 代理封面 URL，兼容移动端，通过 token 参数认证
+        coverUrl: x.id && token ? `/api/v1/books/${x.id}/cover?token=${encodeURIComponent(token)}` : undefined,
+        // 进度从小数 (0-1) 转换为百分比 (0-100)
+        progress: Math.round((x.progress || 0) * 100),
+        isFinished: !!x.finished_at,
+        downloadUrl: undefined,
+        updatedAt: x.updated_at,
+        createdAt: x.created_at,
+        ocrStatus: x.ocr_status || null,
+        isImageBased: x.is_image_based || false,
+      }))
+      setItems(list)
+      console.log('[LibraryPage] Loaded', list.length, 'books')
+      return list
+    } catch (error) {
+      console.error('[LibraryPage] Failed to fetch books:', error)
+      return []
     }
-    fetchList()
+  }, [accessToken, t])
+
+  // 初始加载
+  useEffect(() => {
+    const init = async () => {
+      setIsLoading(true)
+      await fetchList()
+      setIsLoading(false)
+    }
+    init()
     
     // 监听上传成功事件
     const onUploaded = (e: CustomEvent) => {
@@ -123,8 +148,43 @@ export default function LibraryPage() {
       }
     }
     window.addEventListener('book_uploaded', onUploaded as any)
-    return () => { window.removeEventListener('book_uploaded', onUploaded as any) }
-  }, [t, accessToken])
+    
+    // 监听封面就绪事件，刷新书籍列表以显示新封面
+    const onCoverReady = () => {
+      console.log('[LibraryPage] Cover ready, refreshing list...')
+      fetchList()
+    }
+    window.addEventListener('book_cover_ready', onCoverReady as any)
+    
+    // 监听书籍数据更新事件（后处理完成后），刷新列表以获取 isImageBased 等更新字段
+    const onDataUpdated = () => {
+      console.log('[LibraryPage] Book data updated, refreshing list...')
+      fetchList()
+    }
+    window.addEventListener('book_data_updated', onDataUpdated as any)
+    
+    return () => {
+      window.removeEventListener('book_uploaded', onUploaded as any)
+      window.removeEventListener('book_cover_ready', onCoverReady as any)
+      window.removeEventListener('book_data_updated', onDataUpdated as any)
+    }
+  }, [t, accessToken, fetchList])
+
+  // OCR 处理中时，每 5 秒轮询一次刷新列表
+  useEffect(() => {
+    if (!hasOcrProcessing) return
+
+    console.log('[LibraryPage] OCR processing detected, starting polling...')
+    const pollInterval = setInterval(() => {
+      console.log('[LibraryPage] Polling for OCR status update...')
+      fetchList()
+    }, 5000) // 每 5 秒轮询
+
+    return () => {
+      console.log('[LibraryPage] Stopping OCR polling')
+      clearInterval(pollInterval)
+    }
+  }, [hasOcrProcessing, fetchList])
 
   // 处理书籍删除
   const handleBookDeleted = useCallback((bookId: string) => {
@@ -135,6 +195,23 @@ export default function LibraryPage() {
   const handleFinishedChange = useCallback((bookId: string, finished: boolean) => {
     setItems(prev => prev.map(item => 
       item.id === bookId ? { ...item, isFinished: finished } : item
+    ))
+  }, [])
+
+  // 处理元数据更新
+  const handleMetadataChange = useCallback((bookId: string, metadata: { title?: string; author?: string }) => {
+    setItems(prev => prev.map(item => 
+      item.id === bookId 
+        ? { ...item, title: metadata.title || item.title, author: metadata.author } 
+        : item
+    ))
+  }, [])
+
+  // 处理 OCR 触发成功
+  const handleOcrTrigger = useCallback((bookId: string) => {
+    // 更新 OCR 状态为 pending
+    setItems(prev => prev.map(item => 
+      item.id === bookId ? { ...item, ocrStatus: 'pending' } : item
     ))
   }, [])
 
@@ -296,8 +373,12 @@ export default function LibraryPage() {
                     progress={item.progress}
                     status={displayStatus}
                     isFinished={item.isFinished}
+                    ocrStatus={item.ocrStatus}
+                    isImageBased={item.isImageBased}
                     onDeleted={handleBookDeleted}
                     onFinishedChange={handleFinishedChange}
+                    onMetadataChange={handleMetadataChange}
+                    onOcrTrigger={handleOcrTrigger}
                     onClick={() => navigate(`/app/read/${item.id}`)}
                   />
                 )
@@ -324,8 +405,12 @@ export default function LibraryPage() {
                     progress={item.progress}
                     status={displayStatus}
                     isFinished={item.isFinished}
+                    ocrStatus={item.ocrStatus}
+                    isImageBased={item.isImageBased}
                     onDeleted={handleBookDeleted}
                     onFinishedChange={handleFinishedChange}
+                    onMetadataChange={handleMetadataChange}
+                    onOcrTrigger={handleOcrTrigger}
                     onClick={() => navigate(`/app/read/${item.id}`)}
                   />
                 )

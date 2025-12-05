@@ -1,3 +1,8 @@
+/**
+ * 侧边抽屉组件（Radix Dialog 实现）
+ * - 支持 left/right/top/bottom 四个方向
+ * - 封装 Overlay/Content/Header/Footer 等结构
+ */
 "use client"
 
 import * as React from 'react'

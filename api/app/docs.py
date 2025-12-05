@@ -1,3 +1,14 @@
+"""
+文档快照与冲突管理接口
+
+职责：
+- 获取最新快照：返回快照内容与时间戳
+- 列出冲突：返回版本冲突记录（base/actual 版本）
+- 草稿恢复：恢复未解决的草稿并标记为已解决
+
+说明：
+- 仅新增注释，不改动查询逻辑
+"""
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 

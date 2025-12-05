@@ -1,3 +1,7 @@
+/**
+ * 阅读中页头
+ * - Framer Motion 根据滚动渐隐主标题，显示顶栏小标题
+ */
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 

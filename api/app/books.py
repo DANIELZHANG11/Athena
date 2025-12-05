@@ -1,3 +1,18 @@
+"""
+书籍模块
+
+功能：
+- 上传初始化/完成（含全局 SHA256 去重与软删除恢复）
+- 秒传引用 `dedup_reference`（共享存储但独立计费与 OCR）
+- 书籍详情/列表、封面与内容代理、转换作业管理
+- OCR 结果查询、完整数据下载、配额评估与触发任务
+- 书架 CRUD 与项目管理
+- 删除策略：区分私人信息与公共信息，按引用计数与软删除清理
+
+说明：
+- MinIO 作为对象存储，`presigned_get/put` 提供外链
+- OCR 报告兼容旧版与新版数据结构
+"""
 import os
 import uuid
 
@@ -22,12 +37,14 @@ from .dependencies import require_upload_permission, require_write_permission
 from .search_sync import delete_book as delete_book_from_index
 from .search_sync import index_book
 from .storage import (
+    delete_object,
     ensure_bucket,
     get_s3,
     make_object_key,
     presigned_get,
     presigned_put,
     read_head,
+    read_full,
     stat_etag,
     upload_bytes,
 )
@@ -111,10 +128,10 @@ async def upload_init(
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
-            # 1. 先检查当前用户是否已有相同文件
+            # 1. 先检查当前用户是否已有相同文件（排除软删除的）
             res = await conn.execute(
                 text(
-                    "SELECT id::text, title FROM books WHERE user_id = cast(:uid as uuid) AND content_sha256 = :sha"
+                    "SELECT id::text, title FROM books WHERE user_id = cast(:uid as uuid) AND content_sha256 = :sha AND deleted_at IS NULL"
                 ),
                 {"uid": user_id, "sha": content_sha256},
             )
@@ -131,22 +148,30 @@ async def upload_init(
                     }
                 }
             
-            # 2. 检查全局是否有相同文件（其他用户上传过）
+            # 2. 检查全局是否有相同文件（任何用户上传过，包括软删除的）
+            # 存储去重不排除软删除的书籍，因为文件仍然存在于 MinIO
+            # 优先选择未删除的书作为 canonical，否则选择已删除的（文件仍在）
             res = await conn.execute(
                 text(
-                    "SELECT id::text, minio_key, cover_key FROM books WHERE content_sha256 = :sha LIMIT 1"
+                    """SELECT id::text, minio_key, cover_image_key, deleted_at
+                       FROM books WHERE content_sha256 = :sha 
+                       ORDER BY deleted_at IS NULL DESC, created_at ASC
+                       LIMIT 1"""
                 ),
                 {"sha": content_sha256},
             )
             global_row = res.fetchone()
             if global_row:
                 # 全局已存在，告知客户端可以秒传
+                canonical_id = global_row[0]
+                is_soft_deleted = global_row[3] is not None
+                print(f"[Upload Init] Global dedup hit for SHA256 {content_sha256[:16]}..., canonical={canonical_id}, soft_deleted={is_soft_deleted}")
                 return {
                     "status": "success",
                     "data": {
                         "dedup_hit": "global",
                         "dedup_available": True,
-                        "canonical_book_id": global_row[0],
+                        "canonical_book_id": canonical_id,
                         "canonical_minio_key": global_row[1],
                         "canonical_cover_key": global_row[2],
                         "message": "文件已存在，可快速添加到书库"
@@ -154,6 +179,7 @@ async def upload_init(
                 }
     
     # 没有去重命中，返回上传 URL
+    print(f"[Upload Init] No dedup hit, creating new upload for {filename}")
     data = await svc_get_upload_url(user_id, filename, content_type)
     data["dedup_hit"] = None
     return {"status": "success", "data": data}
@@ -175,6 +201,23 @@ async def upload_complete(
     original_format = body.get("original_format") or ""
     size = body.get("size") or None
     content_sha256 = body.get("content_sha256")  # 客户端计算的 SHA256
+    
+    # 【关键】如果客户端没有提供 SHA256（移动端浏览器可能不支持），服务器自己计算
+    if not content_sha256 or len(content_sha256) != 64:
+        print(f"[Upload] Client did not provide SHA256, computing server-side for {key}...")
+        try:
+            import hashlib
+            file_data = read_full(BOOKS_BUCKET, key)  # 读取完整文件
+            if file_data:
+                content_sha256 = hashlib.sha256(file_data).hexdigest()
+                print(f"[Upload] Server computed SHA256: {content_sha256[:16]}...")
+            else:
+                print(f"[Upload] Warning: Could not read file for SHA256 computation")
+                content_sha256 = None
+        except Exception as e:
+            print(f"[Upload] Warning: Server-side SHA256 computation failed: {e}")
+            content_sha256 = None
+    
     if idempotency_key:
         idem_key = f"idem:books:upload_complete:{user_id}:{idempotency_key}"
         cached = r.get(idem_key)
@@ -190,23 +233,34 @@ async def upload_complete(
         if etag:
             res = await conn.execute(
                 text(
-                    "SELECT id::text FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
+                    "SELECT id::text, deleted_at FROM books WHERE user_id = current_setting('app.user_id')::uuid AND source_etag = :e"
                 ),
                 {"e": etag},
             )
             row = res.fetchone()
             if row:
+                existing_book_id = row[0]
+                was_deleted = row[1] is not None
+                
+                # 如果书籍之前被软删除，需要恢复它
+                if was_deleted:
+                    await conn.execute(
+                        text("UPDATE books SET deleted_at = NULL, updated_at = now() WHERE id = cast(:id as uuid)"),
+                        {"id": existing_book_id},
+                    )
+                    print(f"[Upload] Restored soft-deleted book {existing_book_id} with same etag")
+                
                 download_url = presigned_get(BOOKS_BUCKET, key)
-                index_book(row[0], user_id, title, author)
-                data = {"id": row[0], "download_url": download_url}
+                index_book(existing_book_id, user_id, title, author)
+                data = {"id": existing_book_id, "download_url": download_url}
                 if idempotency_key:
                     r.setex(idem_key, 24 * 3600, str(data))
                 try:
                     celery_app.send_task(
-                        "tasks.analyze_book_type", args=[row[0], user_id]
+                        "tasks.analyze_book_type", args=[existing_book_id, user_id]
                     )
                     celery_app.send_task(
-                        "tasks.deep_analyze_book", args=[row[0], user_id]
+                        "tasks.deep_analyze_book", args=[existing_book_id, user_id]
                     )
                 except Exception:
                     pass
@@ -242,6 +296,11 @@ async def upload_complete(
             ),
             {"id": book_id},
         )
+    
+    # 记录上传完成日志
+    sha_log = content_sha256[:16] if content_sha256 else 'None'
+    print(f"[Upload] Created book {book_id} for user {user_id}, SHA256={sha_log}..., title={title}")
+    
     download_url = presigned_get(BOOKS_BUCKET, key)
     index_book(book_id, user_id, title, author)
     data = {"id": book_id, "download_url": download_url}
@@ -254,11 +313,11 @@ async def upload_complete(
         celery_app.send_task("tasks.analyze_book_type", args=[book_id, user_id])
         
         if fmt_lower in ('epub', 'pdf'):
-            # EPUB/PDF 直接提取封面和元数据
-            celery_app.send_task("tasks.extract_book_cover", args=[book_id, user_id])
-            celery_app.send_task("tasks.extract_book_metadata", args=[book_id, user_id])
-            # 触发深度分析（OCR + 向量索引）
-            celery_app.send_task("tasks.deep_analyze_book", args=[book_id, user_id])
+            # EPUB/PDF: 使用合并任务一次性提取封面和元数据（只下载一次文件）
+            celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
+            # 注意：不自动触发 deep_analyze_book (OCR)
+            # OCR 是收费服务，需要用户在前端主动触发
+            # 图片型 PDF 上传后，前端会检测 is_image_based 并弹窗提示用户选择
         else:
             # 其他格式（AZW3, MOBI 等）先转换为 EPUB，转换完成后会自动触发封面和元数据提取
             celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
@@ -302,12 +361,13 @@ async def dedup_reference(
             text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
         )
         
-        # 获取原始书籍信息
+        # 获取原始书籍信息（包括 OCR 状态和结果）
+        # 存储去重不排除软删除的书籍，因为文件仍然存在于 MinIO
         res = await conn.execute(
             text(
                 """
-                SELECT minio_key, cover_key, size, original_format, is_digitalized, 
-                       initial_digitalization_confidence, meta, ocr_fingerprint, ocr_data_key
+                SELECT minio_key, cover_image_key, size, original_format, is_digitalized, 
+                       initial_digitalization_confidence, meta, ocr_status, ocr_result_key
                 FROM books WHERE id = cast(:cid as uuid) AND content_sha256 = :sha
                 """
             ),
@@ -317,7 +377,8 @@ async def dedup_reference(
         if not canonical:
             raise HTTPException(status_code=404, detail="canonical_book_not_found")
         
-        (c_minio_key, c_cover_key, c_size, c_fmt, c_dig, c_conf, c_meta, c_ocr_fp, c_ocr_key) = canonical
+        (c_minio_key, c_cover_key, c_size, c_fmt, c_dig, c_conf, c_meta,
+         c_ocr_status, c_ocr_result_key) = canonical
         
         # 增加原始存储的引用计数
         await conn.execute(
@@ -327,17 +388,34 @@ async def dedup_reference(
             {"cid": canonical_book_id},
         )
         
-        # 创建新的书籍记录，共享存储
+        # 创建新的书籍记录，共享存储但【不复制 OCR 状态】
+        # 商业逻辑：每个用户都需要单独为 OCR 付费，不能"白嫖"其他用户的 OCR
+        # 用户点击 OCR 按钮时，会检查 canonical_book_id 对应的原书是否已 OCR，
+        # 如果已 OCR 则扣费后直接复制数据（假 OCR）
+        
+        # 关键：如果原书已经完成 OCR，说明它原本是图片型 PDF
+        # 新用户的书籍应该标记为 is_image_based=True，以便显示 OCR 按钮
+        # is_image_based 判断逻辑：(is_digitalized AND confidence < 0.8) OR ocr_status == 'completed'
+        canonical_has_ocr = c_ocr_status == 'completed' and c_ocr_result_key is not None
+        if canonical_has_ocr:
+            # 原书已 OCR：新书设为"图片型 PDF 但未 OCR"，等待用户付费 OCR
+            # 设置 is_digitalized=True + 低 confidence，使 is_image_based=True
+            new_is_digitalized = True
+            new_confidence = c_conf if c_conf and c_conf < 0.5 else 0.1  # 低置信度表示图片型
+        else:
+            # 原书未 OCR：继承原书状态
+            new_is_digitalized = c_dig
+            new_confidence = c_conf
+        
+        import json
         await conn.execute(
             text(
                 """
                 INSERT INTO books(id, user_id, title, author, language, original_format, 
-                                  minio_key, cover_key, size, is_digitalized, initial_digitalization_confidence,
-                                  content_sha256, canonical_book_id, storage_ref_count, meta,
-                                  ocr_fingerprint, ocr_data_key)
+                                  minio_key, cover_image_key, size, is_digitalized, initial_digitalization_confidence,
+                                  content_sha256, canonical_book_id, storage_ref_count, meta)
                 VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt,
-                        :key, :cover, :size, :dig, :conf, :sha256, cast(:cid as uuid), 0, :meta,
-                        :ocr_fp, :ocr_key)
+                        :key, :cover, :size, :dig, :conf, :sha256, cast(:cid as uuid), 0, cast(:meta as jsonb))
                 """
             ),
             {
@@ -350,15 +428,15 @@ async def dedup_reference(
                 "key": c_minio_key,
                 "cover": c_cover_key,
                 "size": c_size,
-                "dig": c_dig,
-                "conf": c_conf,
+                "dig": new_is_digitalized,
+                "conf": new_confidence,
                 "sha256": content_sha256,
                 "cid": canonical_book_id,
-                "meta": c_meta,
-                "ocr_fp": c_ocr_fp,
-                "ocr_key": c_ocr_key,
+                "meta": json.dumps(c_meta) if c_meta else None,
             },
         )
+    
+    print(f"[Dedup Reference] Created book {book_id} for user {user_id}, canonical={canonical_book_id}, has_ocr={canonical_has_ocr}")
     
     download_url = presigned_get(BOOKS_BUCKET, c_minio_key)
     index_book(book_id, user_id, title, author)
@@ -367,7 +445,7 @@ async def dedup_reference(
         "id": book_id,
         "download_url": download_url,
         "dedup_hit": "global",
-        "inherited_ocr": c_ocr_fp is not None,
+        "canonical_has_ocr": canonical_has_ocr,  # 原书是否已 OCR（仅供参考，不影响用户付费）
     }
     
     if idempotency_key:
@@ -652,6 +730,10 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
     """
     获取书籍的 OCR 识别结果
     返回按页组织的文本内容，用于前端显示和搜索
+    
+    支持两种数据源：
+    1. ocr_result_key - 新版 OCR 结果（含每页尺寸）
+    2. digitalize_report_key - 旧版数字化报告
     """
     user_id, _ = auth
     async with engine.begin() as conn:
@@ -660,7 +742,7 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
         )
         res = await conn.execute(
             text(
-                "SELECT digitalize_report_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"
+                "SELECT digitalize_report_key, ocr_result_key, is_digitalized, ocr_status FROM books WHERE id = cast(:id as uuid)"
             ),
             {"id": book_id},
         )
@@ -668,8 +750,10 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
         if not row:
             raise HTTPException(status_code=404, detail="not_found")
         
-        report_key = row[0]
-        is_digitalized = row[1]
+        old_report_key, new_ocr_key, is_digitalized, ocr_status = row
+        
+        # 优先使用新版 OCR 结果
+        report_key = new_ocr_key or old_report_key
         
         if not report_key:
             return {
@@ -677,6 +761,7 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
                 "data": {
                     "available": False,
                     "is_digitalized": bool(is_digitalized),
+                    "ocr_status": ocr_status,
                     "pages": {},
                     "total_pages": 0,
                     "total_chars": 0,
@@ -692,39 +777,70 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
             
             import json
             report = json.loads(report_data)
-            ocr_result = report.get("ocr", {})
-            ocr_pages = ocr_result.get("pages", [])
             
-            # 按页组织文本
-            pages_dict = {}
-            for item in ocr_pages:
-                page_num = item.get("page", 1)
-                item_text = item.get("text", "")
-                if item_text:
-                    if page_num not in pages_dict:
-                        pages_dict[page_num] = []
-                    pages_dict[page_num].append(item_text)
-            
-            # 转换为前端友好格式
-            pages_formatted = {}
-            total_chars = 0
-            for page_num, texts in pages_dict.items():
-                page_text = "\n".join(texts)
-                pages_formatted[str(page_num)] = page_text
-                total_chars += len(page_text)
-            
-            return {
-                "status": "success",
-                "data": {
-                    "available": True,
-                    "is_digitalized": bool(is_digitalized),
-                    "is_image_based": report.get("is_image_based", False),
-                    "confidence": report.get("confidence", 0),
-                    "pages": pages_formatted,
-                    "total_pages": len(pages_formatted),
-                    "total_chars": total_chars,
+            # 判断是新版还是旧版格式
+            if "pages" in report and isinstance(report["pages"], list):
+                # 新版格式: {"pages": [{page_num, width, height, regions, text}, ...]}
+                ocr_pages = report.get("pages", [])
+                pages_formatted = {}
+                total_chars = 0
+                
+                for page_data in ocr_pages:
+                    page_num = page_data.get("page_num", 1)
+                    page_text = page_data.get("text", "")
+                    if page_text:
+                        pages_formatted[str(page_num)] = page_text
+                        total_chars += len(page_text)
+                
+                return {
+                    "status": "success",
+                    "data": {
+                        "available": True,
+                        "is_digitalized": bool(is_digitalized),
+                        "ocr_status": ocr_status,
+                        "is_image_based": True,  # 新版 OCR 结果肯定是图片型
+                        "confidence": 1.0,
+                        "pages": pages_formatted,
+                        "total_pages": report.get("total_pages", len(pages_formatted)),
+                        "total_chars": total_chars,
+                    }
                 }
-            }
+            else:
+                # 旧版格式: {"ocr": {"pages": [...], "regions": [...]}}
+                ocr_result = report.get("ocr", {})
+                ocr_pages = ocr_result.get("pages", [])
+                
+                # 按页组织文本
+                pages_dict = {}
+                for item in ocr_pages:
+                    page_num = item.get("page", 1)
+                    item_text = item.get("text", "")
+                    if item_text:
+                        if page_num not in pages_dict:
+                            pages_dict[page_num] = []
+                        pages_dict[page_num].append(item_text)
+                
+                # 转换为前端友好格式
+                pages_formatted = {}
+                total_chars = 0
+                for page_num, texts in pages_dict.items():
+                    page_text = "\n".join(texts)
+                    pages_formatted[str(page_num)] = page_text
+                    total_chars += len(page_text)
+                
+                return {
+                    "status": "success",
+                    "data": {
+                        "available": True,
+                        "is_digitalized": bool(is_digitalized),
+                        "ocr_status": ocr_status,
+                        "is_image_based": report.get("is_image_based", False),
+                        "confidence": report.get("confidence", 0),
+                        "pages": pages_formatted,
+                        "total_pages": len(pages_formatted),
+                        "total_chars": total_chars,
+                    }
+                }
         except Exception as e:
             print(f"[OCR] Failed to read report: {e}")
             return {
@@ -732,6 +848,7 @@ async def get_book_ocr(book_id: str, auth=Depends(require_user)):
                 "data": {
                     "available": False,
                     "is_digitalized": bool(is_digitalized),
+                    "ocr_status": ocr_status,
                     "pages": {},
                     "total_pages": 0,
                     "total_chars": 0,
@@ -750,6 +867,10 @@ async def get_book_ocr_full(
     用于前端一次性下载并缓存到 IndexedDB
     
     注意：PDF 每一页的尺寸可能不同，page_sizes 字典包含每页的实际尺寸
+    
+    支持两种数据源：
+    1. ocr_result_key - 新版 OCR 结果（含每页尺寸）
+    2. digitalize_report_key - 旧版数字化报告
     
     返回格式（支持 gzip 压缩）:
     {
@@ -785,7 +906,7 @@ async def get_book_ocr_full(
         )
         res = await conn.execute(
             text(
-                "SELECT digitalize_report_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"
+                "SELECT digitalize_report_key, ocr_result_key, is_digitalized FROM books WHERE id = cast(:id as uuid)"
             ),
             {"id": book_id},
         )
@@ -793,7 +914,11 @@ async def get_book_ocr_full(
         if not row:
             raise HTTPException(status_code=404, detail="book_not_found")
         
-        report_key, is_digitalized = row
+        old_report_key, new_ocr_key, is_digitalized = row
+        
+        # 优先使用新版 OCR 结果
+        report_key = new_ocr_key or old_report_key
+        
         if not report_key:
             raise HTTPException(status_code=404, detail="ocr_not_available")
         
@@ -804,55 +929,92 @@ async def get_book_ocr_full(
                 raise Exception("Report not found")
             
             report = json.loads(report_data)
-            ocr_result = report.get("ocr", {})
-            all_regions = ocr_result.get("regions", [])
             
-            # 计算统计信息
-            total_chars = sum(len(r.get("text", "")) for r in all_regions)
-            page_numbers = set(r.get("page", 1) for r in all_regions)
-            total_pages = max(page_numbers) if page_numbers else 0
-            
-            # 获取每页的尺寸信息
-            # PDF 每一页的尺寸可能不同，需要从报告中读取或推断
-            page_sizes = report.get("page_sizes", {})  # {"1": {"width": w, "height": h}, ...}
-            
-            # 如果报告中没有 page_sizes，则从每页的 region 坐标推断
-            if not page_sizes:
-                page_sizes = {}
-                # 按页分组 regions
-                page_regions_map = {}
-                for r in all_regions:
-                    p = r.get("page", 1)
-                    if p not in page_regions_map:
-                        page_regions_map[p] = []
-                    page_regions_map[p].append(r)
+            # 判断是新版还是旧版格式
+            if "pages" in report and isinstance(report["pages"], list):
+                # 新版格式: {"pages": [{page_num, width, height, regions, text}, ...]}
+                ocr_pages = report.get("pages", [])
                 
-                # 为每页推断尺寸
-                for page_num, regions in page_regions_map.items():
-                    max_x, max_y = 0.0, 0.0
-                    for r in regions:
-                        bbox = r.get("bbox", [])
-                        if len(bbox) >= 4:
-                            max_x = max(max_x, bbox[2])
-                            max_y = max(max_y, bbox[3])
+                # 构建 page_sizes 和 regions
+                page_sizes = {}
+                all_regions = []
+                total_chars = 0
+                
+                for page_data in ocr_pages:
+                    page_num = page_data.get("page_num", 1)
                     
-                    if max_x > 0 and max_y > 0:
-                        # 添加约 8% 边距估算完整页面尺寸
-                        page_sizes[str(page_num)] = {
-                            "width": int(max_x * 1.08),
-                            "height": int(max_y * 1.08)
-                        }
-            
-            # 构建响应数据
-            response_data = {
-                "is_image_based": report.get("is_image_based", False),
-                "confidence": report.get("confidence", 0),
-                "total_pages": total_pages,
-                "total_chars": total_chars,
-                "total_regions": len(all_regions),
-                "page_sizes": page_sizes,
-                "regions": all_regions,
-            }
+                    # 记录每页尺寸
+                    page_sizes[str(page_num)] = {
+                        "width": page_data.get("width", 0),
+                        "height": page_data.get("height", 0),
+                        "pdf_width": page_data.get("pdf_width", 0),
+                        "pdf_height": page_data.get("pdf_height", 0),
+                        "dpi": page_data.get("dpi", 150),
+                    }
+                    
+                    # 收集 regions，添加 page 信息
+                    for region in page_data.get("regions", []):
+                        region_with_page = region.copy()
+                        region_with_page["page"] = page_num
+                        all_regions.append(region_with_page)
+                    
+                    total_chars += len(page_data.get("text", ""))
+                
+                response_data = {
+                    "is_image_based": True,
+                    "confidence": 1.0,
+                    "total_pages": report.get("total_pages", len(ocr_pages)),
+                    "total_chars": total_chars,
+                    "total_regions": len(all_regions),
+                    "page_sizes": page_sizes,
+                    "regions": all_regions,
+                }
+            else:
+                # 旧版格式: {"ocr": {"pages": [...], "regions": [...]}}
+                ocr_result = report.get("ocr", {})
+                all_regions = ocr_result.get("regions", [])
+                
+                # 计算统计信息
+                total_chars = sum(len(r.get("text", "")) for r in all_regions)
+                page_numbers = set(r.get("page", 1) for r in all_regions)
+                total_pages = max(page_numbers) if page_numbers else 0
+                
+                # 获取每页的尺寸信息
+                page_sizes = report.get("page_sizes", {})
+                
+                # 如果报告中没有 page_sizes，则从每页的 region 坐标推断
+                if not page_sizes:
+                    page_sizes = {}
+                    page_regions_map = {}
+                    for r in all_regions:
+                        p = r.get("page", 1)
+                        if p not in page_regions_map:
+                            page_regions_map[p] = []
+                        page_regions_map[p].append(r)
+                    
+                    for page_num, regions in page_regions_map.items():
+                        max_x, max_y = 0.0, 0.0
+                        for r in regions:
+                            bbox = r.get("bbox", [])
+                            if len(bbox) >= 4:
+                                max_x = max(max_x, bbox[2])
+                                max_y = max(max_y, bbox[3])
+                        
+                        if max_x > 0 and max_y > 0:
+                            page_sizes[str(page_num)] = {
+                                "width": int(max_x * 1.08),
+                                "height": int(max_y * 1.08)
+                            }
+                
+                response_data = {
+                    "is_image_based": report.get("is_image_based", False),
+                    "confidence": report.get("confidence", 0),
+                    "total_pages": total_pages,
+                    "total_chars": total_chars,
+                    "total_regions": len(all_regions),
+                    "page_sizes": page_sizes,
+                    "regions": all_regions,
+                }
             
             # 使用 gzip 压缩
             json_bytes = json.dumps(response_data, ensure_ascii=False).encode("utf-8")
@@ -903,7 +1065,7 @@ async def get_ocr_quota_info(book_id: str, auth=Depends(require_user)):
         # 获取书籍信息
         res = await conn.execute(
             text("""
-                SELECT id, is_digitalized, ocr_status,
+                SELECT id, is_digitalized, initial_digitalization_confidence, ocr_status,
                        COALESCE((meta->>'page_count')::int, 0) as page_count
                 FROM books 
                 WHERE id = cast(:id as uuid)
@@ -914,7 +1076,7 @@ async def get_ocr_quota_info(book_id: str, auth=Depends(require_user)):
         if not row:
             raise HTTPException(status_code=404, detail="book_not_found")
         
-        _, is_digitalized, ocr_status, page_count = row
+        _, is_digitalized, confidence, ocr_status, page_count = row
         
         # 获取系统配置
         settings_res = await conn.execute(
@@ -976,12 +1138,20 @@ async def get_ocr_quota_info(book_id: str, auth=Depends(require_user)):
         can_trigger = True
         reason = None
         
-        if is_digitalized:
+        # 检查是否已是数字型（confidence >= 0.8 表示有足够可提取文字，不需要 OCR）
+        # 注意：is_digitalized 表示"已检测"，不是"已数字化"
+        # 真正的判断依据是 confidence：低于 0.8 表示图片型，需要 OCR
+        is_already_digital = is_digitalized and (confidence is not None and confidence >= 0.8)
+        
+        if is_already_digital:
             can_trigger = False
             reason = "书籍已是文字型，无需 OCR"
         elif ocr_status in ('pending', 'processing'):
             can_trigger = False
             reason = "OCR 任务正在处理中"
+        elif ocr_status == 'completed':
+            can_trigger = False
+            reason = "书籍已完成 OCR"
         elif not page_count or page_count == 0:
             can_trigger = False
             reason = "无法获取书籍页数"
@@ -1028,9 +1198,10 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
     
     检查:
     1. 书籍是否存在且属于用户
-    2. 书籍是否已是文字型 (is_digitalized=true)
+    2. 书籍是否已是文字型 (confidence >= 0.8 表示数字型，不需要 OCR)
     3. 是否已有 OCR 任务在处理中
     4. 用户 OCR 配额是否充足
+    5. 【新增】如果是去重引用书籍且原书已完成 OCR，直接复用并"假装处理"
     
     成功后更新 books.ocr_status='pending', ocr_requested_at=now()
     并分发 Celery 任务进行 OCR 处理
@@ -1043,11 +1214,13 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
             text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
         )
         
-        # 1. 获取书籍信息
+        # 1. 获取书籍信息（包括 canonical_book_id、ocr_result_key 和 content_sha256）
         res = await conn.execute(
             text("""
-                SELECT id, is_digitalized, ocr_status, ocr_requested_at, minio_key, 
-                       COALESCE((meta->>'page_count')::int, 0) as page_count
+                SELECT id, is_digitalized, initial_digitalization_confidence, 
+                       ocr_status, ocr_requested_at, minio_key, 
+                       COALESCE((meta->>'page_count')::int, 0) as page_count,
+                       canonical_book_id, ocr_result_key, content_sha256
                 FROM books 
                 WHERE id = cast(:id as uuid)
             """),
@@ -1057,10 +1230,40 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
         if not row:
             raise HTTPException(status_code=404, detail="book_not_found")
         
-        book_id_db, is_digitalized, ocr_status, ocr_requested_at, minio_key, page_count = row
+        (book_id_db, is_digitalized, confidence, ocr_status, ocr_requested_at, 
+         minio_key, page_count, canonical_book_id, current_ocr_result_key, content_sha256) = row
         
-        # 2. 检查是否已是文字型
-        if is_digitalized:
+        # 【重要】检查是否可以复用已有 OCR 数据（假 OCR）
+        # 通过 content_sha256 查找任何一本已完成 OCR 的书籍
+        # 这比只检查 canonical_book_id 更可靠，因为原书可能被删除
+        can_instant_complete = False
+        reusable_ocr_result_key = None
+        
+        if content_sha256:
+            # 查找同一 SHA256 的任何已完成 OCR 的书籍（包括软删除的）
+            ocr_res = await conn.execute(
+                text("""
+                    SELECT ocr_result_key 
+                    FROM books 
+                    WHERE content_sha256 = :sha 
+                      AND ocr_status = 'completed' 
+                      AND ocr_result_key IS NOT NULL
+                      AND id != cast(:book_id as uuid)
+                    ORDER BY deleted_at IS NULL DESC, ocr_requested_at DESC
+                    LIMIT 1
+                """),
+                {"sha": content_sha256, "book_id": book_id},
+            )
+            ocr_row = ocr_res.fetchone()
+            if ocr_row:
+                can_instant_complete = True
+                reusable_ocr_result_key = ocr_row[0]
+                print(f"[OCR] Found reusable OCR for {book_id} via SHA256 {content_sha256[:16]}...")
+        
+        # 2. 检查是否已是数字型（confidence >= 0.8 表示有足够可提取文字，不需要 OCR）
+        # 注意：is_digitalized 表示"已检测"，不是"已数字化"
+        # 真正的判断依据是 confidence：低于 0.8 表示图片型，需要 OCR
+        if is_digitalized and (confidence is not None and confidence >= 0.8):
             raise HTTPException(status_code=400, detail="already_digitalized")
         
         # 3. 检查是否已有 OCR 任务在处理中
@@ -1235,7 +1438,34 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
                 {"uid": user_id}
             )
         
-        # 7. 更新书籍 OCR 状态
+        # 7. 【重要】如果可以秒完成（复用已有 OCR），直接更新状态为 completed
+        if can_instant_complete and reusable_ocr_result_key:
+            # 直接复用已有的 OCR 结果，标记为 completed
+            await conn.execute(
+                text("""
+                    UPDATE books 
+                    SET ocr_status = 'completed', 
+                        ocr_requested_at = now(),
+                        ocr_result_key = :ocr_key,
+                        updated_at = now()
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": book_id, "ocr_key": reusable_ocr_result_key}
+            )
+            
+            print(f"[OCR] Instant completed for {book_id} using reusable OCR result")
+            
+            # 计算"假装处理"的时间：页数 × 0.5 秒，最少 3 秒，最多 60 秒
+            fake_processing_seconds = min(60, max(3, (page_count or 10) * 0.5))
+            
+            return {
+                "status": "instant_completed",
+                "estimatedSeconds": fake_processing_seconds,
+                "pageCount": page_count,
+                "message": "OCR data inherited from shared source"
+            }
+        
+        # 8. 正常流程：更新书籍 OCR 状态为 pending
         await conn.execute(
             text("""
                 UPDATE books 
@@ -1247,7 +1477,7 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
             {"id": book_id}
         )
         
-        # 8. 计算队列位置
+        # 9. 计算队列位置
         queue_res = await conn.execute(
             text("""
                 SELECT COUNT(*) FROM books 
@@ -1258,7 +1488,7 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
         queue_position = (queue_res.fetchone()[0] or 0) + 1
         estimated_minutes = max(minutes_per_book, queue_position * minutes_per_book + (page_count or 100) // 50)
         
-        # 9. 分发 Celery 任务
+        # 10. 分发 Celery 任务
         try:
             celery_app.send_task(
                 "tasks.process_book_ocr",
@@ -1649,7 +1879,8 @@ async def list_books(
             text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
         )
         await _ensure_books_fields(conn)
-        cond = "WHERE user_id = current_setting('app.user_id')::uuid"
+        # 排除已软删除的书籍
+        cond = "WHERE user_id = current_setting('app.user_id')::uuid AND deleted_at IS NULL"
         order = "ORDER BY updated_at DESC, id DESC"
         params = {"limit": limit + 1}
         if cursor:
@@ -1662,7 +1893,7 @@ async def list_books(
         q = text(
             """
             SELECT b.id::text, b.title, b.author, b.language, b.original_format, b.minio_key, b.size, b.created_at, b.updated_at, b.version, COALESCE(b.is_digitalized,false), COALESCE(b.initial_digitalization_confidence,0), b.cover_image_key,
-                   COALESCE(rp.progress, 0) as progress, rp.finished_at, b.converted_epub_key
+                   COALESCE(rp.progress, 0) as progress, rp.finished_at, b.converted_epub_key, b.ocr_status
             FROM books b
             LEFT JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = current_setting('app.user_id')::uuid
             """
@@ -1717,6 +1948,12 @@ async def list_books(
             cover_url = None
             if r[12]:  # cover_image_key
                 cover_url = presigned_get(BOOKS_BUCKET, r[12])
+            
+            # 判断是否为图片型 PDF
+            # 方式1: is_digitalized=true 且 confidence < 0.8
+            # 方式2: 有完成的 OCR 结果（ocr_status='completed'）也表示是图片型
+            is_image_based = (bool(r[10]) and float(r[11]) < 0.8) or r[16] == 'completed'
+            
             items.append(
                 {
                     "id": r[0],
@@ -1735,6 +1972,8 @@ async def list_books(
                     "initial_digitalization_confidence": float(r[11]),
                     "progress": float(r[13]) if r[13] else 0,  # 添加阅读进度
                     "finished_at": str(r[14]) if r[14] else None,  # 已读完时间
+                    "ocr_status": r[16],  # OCR 状态: pending/processing/completed/failed/null
+                    "is_image_based": is_image_based,
                 }
             )
         next_cursor = None
@@ -1763,7 +2002,8 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
             text(
                 """
             SELECT id::text, title, author, language, original_format, minio_key, size, created_at, updated_at, version,
-                   COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0), converted_epub_key, digitalize_report_key, cover_image_key
+                   COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0), converted_epub_key, digitalize_report_key, cover_image_key,
+                   COALESCE(metadata_confirmed, false), ocr_status, meta, deleted_at, user_id
             FROM books WHERE id = cast(:id as uuid)
             """
             ),
@@ -1772,6 +2012,13 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
         row = res.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="not_found")
+        
+        # 检查软删除状态：如果书籍已软删除且不属于当前用户，返回 404
+        deleted_at = row[18]
+        book_user_id = str(row[19])
+        if deleted_at is not None and book_user_id != user_id:
+            raise HTTPException(status_code=404, detail="not_found")
+        
         if response is not None:
             response.headers["ETag"] = f'W/"{int(row[9])}"'
         # 优先使用转换后的 EPUB，否则使用原始 minio_key
@@ -1804,6 +2051,17 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
         cover_url = None
         if row[14]:  # cover_image_key
             cover_url = presigned_get(BOOKS_BUCKET, row[14])
+        
+        # 解析 meta 获取 page_count 和 metadata_extracted
+        meta = row[17] or {}
+        page_count = meta.get("page_count") if isinstance(meta, dict) else None
+        metadata_extracted = meta.get("metadata_extracted", False) if isinstance(meta, dict) else False
+        
+        # 判断是否是图片型 PDF
+        # 方式1: is_digitalized=true 且 confidence < 0.8
+        # 方式2: 有完成的 OCR 结果（ocr_status='completed'）也表示是图片型
+        is_image_based = (bool(row[10]) and float(row[11]) < 0.8) or row[16] == 'completed'
+        
         return {
             "status": "success",
             "data": {
@@ -1818,14 +2076,19 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                 "etag": f'W/"{int(row[9])}"',
                 "download_url": download,
                 "cover_url": cover_url,
+                "cover_image_key": row[14],
                 "text_hint": hint,
                 "is_digitalized": bool(row[10]),
                 "initial_digitalization_confidence": float(row[11]),
                 "converted_epub_key": row[12],
                 "digitalize_report_key": row[13],
+                "metadata_confirmed": bool(row[15]),
+                "metadata_extracted": bool(metadata_extracted),
+                "ocr_status": row[16],
+                "page_count": page_count,
+                "is_image_based": is_image_based,
             },
         }
-
 
 @router.post("/register")
 async def register_book(body: dict = Body(...), auth=Depends(require_user)):
@@ -1937,16 +2200,30 @@ async def deep_analyze(book_id: str, auth=Depends(require_user)):
 @router.delete("/{book_id}")
 async def delete_book(book_id: str, quota=Depends(require_write_permission), auth=Depends(require_user)):
     """
-    完全删除书籍及其所有关联数据：
-    - 书架关联 (shelf_items)
-    - 笔记 (notes) 和笔记标签关联 (note_tags)
-    - 高亮 (highlights) 和高亮标签关联 (highlight_tags)
-    - AI 对话 (ai_conversations) 和消息 (ai_messages)
+    删除书籍 - 分离公共信息和私人信息
+    
+    【私人信息】- 用户删除时立即物理删除：
+    - 笔记 (notes) 和笔记标签 (note_tags)
+    - 高亮 (highlights) 和高亮标签 (highlight_tags)
+    - AI 对话 (ai_conversations, ai_messages, ai_conversation_contexts)
     - 阅读进度 (reading_progress)
     - 阅读会话 (reading_sessions)
+    - 书架关联 (shelf_items)
     - 转换任务 (conversion_jobs)
     - OCR 任务 (ocr_jobs)
-    - 书籍本身 (books)
+    
+    【公共信息】- 只有最后一位用户删除时才物理删除：
+    - 书籍文件 (MinIO)
+    - 封面图片 (MinIO)
+    - OCR 结果 (MinIO)
+    - 数字化报告 (MinIO)
+    - 向量索引 (OpenSearch)
+    - 书籍记录 (books 表)
+    
+    删除策略：
+    1. 如果是去重引用书籍：删除私人信息 + 删除书籍记录 + 减少原书引用计数
+    2. 如果是原书且有引用：删除私人信息 + 软删除书籍记录（保留公共信息）
+    3. 如果是原书无引用/最后一位用户：删除私人信息 + 物理删除所有公共信息
     """
     user_id, _ = auth
     try:
@@ -1955,13 +2232,39 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             
-            # 1. 删除书架关联
+            # 获取书籍信息
+            res = await conn.execute(
+                text("""
+                    SELECT id, minio_key, cover_image_key, canonical_book_id, storage_ref_count,
+                           ocr_result_key, digitalize_report_key, content_sha256
+                    FROM books 
+                    WHERE id = cast(:id as uuid) AND user_id = cast(:uid as uuid)
+                """),
+                {"id": book_id, "uid": user_id},
+            )
+            book = res.fetchone()
+            if not book:
+                raise HTTPException(status_code=404, detail="not_found")
+            
+            (_, minio_key, cover_key, canonical_book_id, storage_ref_count,
+             ocr_result_key, digitalize_report_key, content_sha256) = book
+            
+            # 判断删除策略
+            is_dedup_reference = canonical_book_id is not None
+            # storage_ref_count 初始值为 1（代表原书自身），> 1 才表示有其他引用
+            has_references = (storage_ref_count or 0) > 1
+            
+            # ========================================
+            # 第一步：删除所有【私人信息】（任何情况都要删除）
+            # ========================================
+            
+            # 1.1 删除书架关联
             await conn.execute(
                 text("DELETE FROM shelf_items WHERE book_id = cast(:id as uuid)"),
                 {"id": book_id},
             )
             
-            # 2. 删除笔记标签关联，然后删除笔记
+            # 1.2 删除笔记标签关联，然后删除笔记
             await conn.execute(
                 text("DELETE FROM note_tags WHERE note_id IN (SELECT id FROM notes WHERE book_id = cast(:id as uuid))"),
                 {"id": book_id},
@@ -1971,7 +2274,7 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 {"id": book_id},
             )
             
-            # 3. 删除高亮标签关联，然后删除高亮
+            # 1.3 删除高亮标签关联，然后删除高亮
             await conn.execute(
                 text("DELETE FROM highlight_tags WHERE highlight_id IN (SELECT id FROM highlights WHERE book_id = cast(:id as uuid))"),
                 {"id": book_id},
@@ -1981,9 +2284,7 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 {"id": book_id},
             )
             
-            # 4. 删除 AI 对话上下文和消息
-            # ai_conversation_contexts.book_ids 是 JSONB 数组，需要用 @> 操作符检查
-            # 先找出包含此 book_id 的对话
+            # 1.4 删除 AI 对话上下文和消息
             await conn.execute(
                 text("""
                     DELETE FROM ai_conversation_contexts 
@@ -1991,7 +2292,6 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 """),
                 {"id": book_id},
             )
-            # 删除没有 context 的孤立对话的消息和对话本身
             await conn.execute(
                 text("""
                     DELETE FROM ai_messages 
@@ -2005,7 +2305,7 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 """),
             )
             
-            # 5. 删除阅读进度和会话
+            # 1.5 删除阅读进度和会话
             await conn.execute(
                 text("DELETE FROM reading_progress WHERE book_id = cast(:id as uuid)"),
                 {"id": book_id},
@@ -2015,7 +2315,7 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 {"id": book_id},
             )
             
-            # 6. 删除转换任务和 OCR 任务
+            # 1.6 删除转换任务和 OCR 任务
             await conn.execute(
                 text("DELETE FROM conversion_jobs WHERE book_id = cast(:id as uuid)"),
                 {"id": book_id},
@@ -2025,15 +2325,143 @@ async def delete_book(book_id: str, quota=Depends(require_write_permission), aut
                 {"id": book_id},
             )
             
-            # 7. 最后删除书籍本身
-            res = await conn.execute(
-                text("DELETE FROM books WHERE id = cast(:id as uuid)"), {"id": book_id}
-            )
-            if res.rowcount == 0:
-                raise HTTPException(status_code=404, detail="not_found")
+            print(f"[Delete Book] Deleted private data for {book_id}")
+            
+            # ========================================
+            # 第二步：处理书籍记录和【公共信息】
+            # ========================================
+            
+            if is_dedup_reference:
+                # 情况1：这是一个去重引用
+                # - 删除当前书籍记录
+                # - 减少原书的引用计数
+                # - 检查原书是否需要清理（软删除且无引用）
+                
+                # 获取原书信息
+                res = await conn.execute(
+                    text("""
+                        SELECT storage_ref_count, deleted_at, minio_key, cover_image_key, 
+                               ocr_result_key, digitalize_report_key, content_sha256
+                        FROM books WHERE id = cast(:cid as uuid)
+                    """),
+                    {"cid": canonical_book_id},
+                )
+                canonical_info = res.fetchone()
+                
+                # 减少引用计数
+                await conn.execute(
+                    text("""
+                        UPDATE books 
+                        SET storage_ref_count = GREATEST(COALESCE(storage_ref_count, 1) - 1, 0)
+                        WHERE id = cast(:cid as uuid)
+                    """),
+                    {"cid": canonical_book_id},
+                )
+                
+                # 删除当前书籍记录
+                await conn.execute(
+                    text("DELETE FROM books WHERE id = cast(:id as uuid)"),
+                    {"id": book_id},
+                )
+                print(f"[Delete Book] Deleted dedup reference {book_id}, decremented ref count of {canonical_book_id}")
+                
+                # 检查原书是否需要清理
+                if canonical_info:
+                    c_ref_count, c_deleted_at, c_minio_key, c_cover_key, c_ocr_key, c_report_key, c_sha256 = canonical_info
+                    # 计算减少后的引用计数（原值 - 1，但不低于 0）
+                    new_ref_count = max((c_ref_count or 1) - 1, 0)
+                    
+                    # 只有当原书已软删除且没有其他引用时才清理
+                    # new_ref_count <= 1 表示只剩原书自己（或完全没有引用）
+                    if c_deleted_at and new_ref_count <= 1:
+                        # 原书已软删除且没有其他引用了，检查是否是最后一个使用此 SHA256 的书籍
+                        other_count = 0
+                        if c_sha256:
+                            res = await conn.execute(
+                                text("""
+                                    SELECT COUNT(*) FROM books 
+                                    WHERE content_sha256 = :sha AND id != cast(:cid as uuid)
+                                """),
+                                {"sha": c_sha256, "cid": canonical_book_id},
+                            )
+                            other_count = res.scalar() or 0
+                        
+                        if other_count == 0:
+                            # 真正的最后一个引用，物理删除原书和所有公共信息
+                            await conn.execute(
+                                text("DELETE FROM books WHERE id = cast(:cid as uuid)"),
+                                {"cid": canonical_book_id},
+                            )
+                            
+                            # 删除 MinIO 文件
+                            files_to_delete = [f for f in [c_minio_key, c_cover_key, c_ocr_key, c_report_key] if f]
+                            for file_key in files_to_delete:
+                                try:
+                                    delete_object(BOOKS_BUCKET, file_key)
+                                    print(f"[Delete Book] Cleaned up canonical MinIO file: {file_key}")
+                                except Exception as e:
+                                    print(f"[Delete Book] Failed to delete canonical file {file_key}: {e}")
+                            
+                            # 删除向量索引
+                            delete_book_from_index(canonical_book_id)
+                            print(f"[Delete Book] Cleaned up soft-deleted canonical {canonical_book_id} (no more references)")
+                
+            elif has_references:
+                # 情况2：这是原书，但有其他用户引用
+                # - 软删除书籍记录（设置 deleted_at）
+                # - 不删除公共信息（MinIO 文件、向量索引）
+                await conn.execute(
+                    text("""
+                        UPDATE books 
+                        SET deleted_at = NOW(), updated_at = NOW()
+                        WHERE id = cast(:id as uuid)
+                    """),
+                    {"id": book_id},
+                )
+                print(f"[Delete Book] Soft deleted {book_id} (has {storage_ref_count} references, public data preserved)")
+                # 不删除向量索引，因为其他用户还在使用
+                
+            else:
+                # 情况3：没有引用（最后一位用户删除）
+                # - 检查是否有其他具有相同 SHA256 的书籍
+                # - 如果没有，物理删除所有公共信息
+                
+                # 检查是否还有其他书籍使用相同的存储
+                other_books_count = 0
+                if content_sha256:
+                    res = await conn.execute(
+                        text("""
+                            SELECT COUNT(*) FROM books 
+                            WHERE content_sha256 = :sha AND id != cast(:id as uuid)
+                        """),
+                        {"sha": content_sha256, "id": book_id},
+                    )
+                    other_books_count = res.scalar() or 0
+                
+                # 删除书籍记录
+                await conn.execute(
+                    text("DELETE FROM books WHERE id = cast(:id as uuid)"),
+                    {"id": book_id},
+                )
+                
+                if other_books_count == 0:
+                    # 真正的最后一位用户，物理删除所有公共信息
+                    
+                    # 删除 MinIO 文件
+                    files_to_delete = [f for f in [minio_key, cover_key, ocr_result_key, digitalize_report_key] if f]
+                    for file_key in files_to_delete:
+                        try:
+                            delete_object(BOOKS_BUCKET, file_key)
+                            print(f"[Delete Book] Deleted MinIO file: {file_key}")
+                        except Exception as e:
+                            print(f"[Delete Book] Failed to delete MinIO file {file_key}: {e}")
+                    
+                    # 删除向量索引
+                    delete_book_from_index(book_id)
+                    print(f"[Delete Book] Fully deleted {book_id} (last user, all public data removed)")
+                else:
+                    print(f"[Delete Book] Deleted {book_id} but preserved public data ({other_books_count} other books share same SHA256)")
         
-        # 从搜索索引中删除
-        delete_book_from_index(book_id)
         return {"status": "success"}
     except HTTPException:
         raise

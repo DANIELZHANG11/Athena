@@ -1,3 +1,7 @@
+/**
+ * 通用输入框组件
+ * - 统一表单输入样式与焦点态
+ */
 import * as React from 'react'
 import { cn } from './utils'
 

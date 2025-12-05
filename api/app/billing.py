@@ -441,8 +441,8 @@ async def verify_iap(payload: dict = Body(...), auth=Depends(require_user)):
     if not receipt or not platform:
         raise HTTPException(status_code=400, detail="missing_receipt_or_platform")
     
-    # TODO: Implement actual verification with Apple/Google APIs
-    # For now, we just log it and return success if it's a sandbox receipt
+    # 待办：与苹果/谷歌官方接口进行真实凭据校验
+    # 目前：仅记录日志，若为沙盒凭据则返回成功（占位实现）
     logging.info(f"[IAP] Verify {platform} receipt for user {user_id}")
     
     valid = False

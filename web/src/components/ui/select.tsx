@@ -1,3 +1,8 @@
+/**
+ * 下拉选择组件（Radix Select）
+ * - 封装 Trigger/Content/Item 等子组件
+ * - 支持 Popper 定位与键盘可访问性
+ */
 "use client"
 
 import * as React from 'react'
