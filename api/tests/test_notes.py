@@ -42,6 +42,8 @@ async def test_notes_highlights_tags_flow(monkeypatch):
             monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
             monkeypatch.setattr("api.app.books.upload_bytes", lambda bucket, key, data, content_type: None)
             monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
+            monkeypatch.setattr("api.app.books.read_full", lambda bucket, key: b"fake-file-content")
+            monkeypatch.setattr("api.app.books.read_head", lambda bucket, key, size=65536: b"fake-head-content")
 
             # Mock S3 in book_service module
             monkeypatch.setattr("api.app.services.book_service.presigned_put", lambda bucket, key, **kwargs: "http://fake-upload-url.com")
