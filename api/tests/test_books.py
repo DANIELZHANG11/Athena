@@ -72,6 +72,9 @@ async def test_books_crud_flow(monkeypatch):
 
             # 4. Get Book Detail
             r = await client.get(f"/api/v1/books/{book_id}", headers=h)
+            if r.status_code != 200:
+                print(f"get_book failed: {r.status_code}")
+                print(f"Response: {r.text}")
             assert r.status_code == 200
             data = r.json()["data"]
             assert data["title"] == "Test Book"
