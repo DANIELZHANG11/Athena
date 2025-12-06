@@ -12,10 +12,12 @@ async def test_books_crud_flow(monkeypatch):
     monkeypatch.setattr("api.app.books.upload_bytes", lambda bucket, key, data, content_type: None)
     monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
     monkeypatch.setattr("api.app.books.read_full", lambda bucket, key: b"fake-file-content")
-    monkeypatch.setattr("api.app.books.read_head", lambda bucket, key, size=65536: b"fake-head-content")
+    monkeypatch.setattr("api.app.books.read_head", lambda bucket, key, length=65536: b"fake-head-content")
+    monkeypatch.setattr("api.app.books.delete_object", lambda bucket, key: None)
     
     # Mock search sync
     monkeypatch.setattr("api.app.books.index_book", lambda *args: None)
+    monkeypatch.setattr("api.app.books.delete_book_from_index", lambda *args: None)
 
     # Mock S3 in book_service module
     monkeypatch.setattr("api.app.services.book_service.presigned_put", lambda bucket, key, **kwargs: "http://fake-upload-url.com")
