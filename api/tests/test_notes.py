@@ -39,16 +39,17 @@ async def test_notes_highlights_tags_flow(monkeypatch):
             # Mock S3 for book creation - mock functions in books module
             monkeypatch.setattr("api.app.books.presigned_put", lambda bucket, key, **kwargs: "http://fake-upload-url.com")
             monkeypatch.setattr("api.app.books.presigned_get", lambda bucket, key, **kwargs: "http://fake-download-url.com")
-            monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: "fake-etag")
+            monkeypatch.setattr("api.app.books.stat_etag", lambda bucket, key: None)  # Return None to avoid etag matching
             monkeypatch.setattr("api.app.books.upload_bytes", lambda bucket, key, data, content_type: None)
             monkeypatch.setattr("api.app.books._quick_confidence", lambda b, k: (False, 0.0))
             monkeypatch.setattr("api.app.books.read_full", lambda bucket, key: b"fake-file-content")
             monkeypatch.setattr("api.app.books.read_head", lambda bucket, key, size=65536: b"fake-head-content")
+            monkeypatch.setattr("api.app.books.index_book", lambda *args: None)
 
             # Mock S3 in book_service module
             monkeypatch.setattr("api.app.services.book_service.presigned_put", lambda bucket, key, **kwargs: "http://fake-upload-url.com")
             monkeypatch.setattr("api.app.services.book_service.presigned_get", lambda bucket, key, **kwargs: "http://fake-download-url.com")
-            monkeypatch.setattr("api.app.services.book_service.stat_etag", lambda bucket, key: "fake-etag")
+            monkeypatch.setattr("api.app.services.book_service.stat_etag", lambda bucket, key: None)
             monkeypatch.setattr("api.app.services.book_service.make_object_key", lambda uid, fname: f"{uid}/{fname}")
 
             r = await client.post("/api/v1/books/upload_init", headers=h, json={"filename": "test.pdf"})
