@@ -40,8 +40,7 @@ async def test_books_crud_flow(monkeypatch):
     app.dependency_overrides[require_write_permission] = lambda: {"is_readonly": False}
     
     try:
-        # Use raise_app_exceptions=True to see actual exception traceback
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=True)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             # 1. Auth
             r = await client.post("/api/v1/auth/email/send-code", json={"email": "user@test.com"})
