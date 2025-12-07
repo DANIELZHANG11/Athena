@@ -1195,7 +1195,6 @@ def _pipeline_ocr_process(
     
     def image_producer():
         """生产者：批量转换 PDF 页面为图片"""
-        nonlocal conversion_done
         
         with ThreadPoolExecutor(max_workers=image_workers) as executor:
             # 分批提交任务
@@ -1224,7 +1223,7 @@ def _pipeline_ocr_process(
     
     def ocr_consumer():
         """消费者：对图片执行 OCR"""
-        nonlocal processed_count, all_text_parts
+        nonlocal processed_count
         
         while True:
             # 检查是否所有图片都已处理完
