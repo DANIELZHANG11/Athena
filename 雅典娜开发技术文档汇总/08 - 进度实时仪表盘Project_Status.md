@@ -1,21 +1,275 @@
 # PROJECT_STATUS.md
 
-> **最后更新**: 2025-12-05 23:30
-> **当前阶段**: Phase 5 - SHA256 全局去重与 OCR 复用机制 ✅ 已完成
+> **最后更新**: 2025-12-06 21:00
+> **当前阶段**: Phase 7.2 - 用户个人中心与账户管理 ✅ 已完成
 
 ## 1. 总体进度 (Overall)
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**SHA256 去重 + OCR 复用 + 软删除/硬删除机制已完成** |
-| Frontend Web | ✅ 99% | Auth ✅, Upload ✅, **秒传 + 假 OCR + 书籍删除流程已完成** |
-| Infrastructure | ✅ 100% | Docker/CI/SRE 手册就绪, OpenSearch 中文插件已安装, Worker GPU 加速已配置 |
+| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**Calibre 格式转换 + 独立事务状态更新已完成** |
+| Frontend Web | ✅ 100% | Auth ✅, Upload ✅, **个人中心 + 账户菜单 + 滚动渐隐效果已完成** |
+| Infrastructure | ✅ 100% | Docker/CI/SRE 手册就绪, **Calibre-watcher 服务已配置** |
 | Data Sync | ✅ 100% | **智能心跳同步 ADR-006 前后端均已完成并集成** |
 | i18n | 🔧 本地模式 | **Tolgee 暂时禁用，使用本地 JSON 翻译文件** |
 
 ---
 
-## 🔥 最新更新 (2025-12-05 23:30)
+## 🔥 最新更新 (2025-12-06 21:00)
+
+### 用户个人中心与账户管理 ✅
+
+根据产品需求重新设计了登录后的用户体验，移除不必要的导航元素，增加了个人信息管理入口。
+
+#### 1. 移除顶部导航栏 Logo ✅
+
+**需求**：登录后用户无需返回官网首页，简化界面。
+
+**修改 (`AppLayout.tsx`)**：
+- 移除整个顶部 header（包含 Logo 和用户图标）
+- 只保留底部 Tab Bar 导航
+- 个人信息入口改由各页面自行处理
+
+```typescript
+// 移除顶部 header，只保留底部导航
+<div className="bg-system-background min-h-screen font-ui">
+  <main className="bg-system-background pb-16">
+    <Outlet />
+  </main>
+  <nav className="fixed bottom-0 ...">
+    {/* Tab Bar */}
+  </nav>
+</div>
+```
+
+#### 2. 首页个人信息按钮（带滚动渐隐效果）✅
+
+**新组件 (`ProfileButton.tsx`)**：
+- 使用 framer-motion 实现滚动渐隐效果
+- 滚动 0-60px 时从 opacity: 1 → 0
+- 同时伴随缩放 (1 → 0.8) 和上移 (0 → -10px) 动画
+- 只在首页 (HomePage) 显示
+
+**集成到 HomeHeader**：
+- 右上角显示阅读目标进度环 + 用户头像按钮
+- 进度环显示今日阅读时长/目标
+- 头像按钮点击打开账户菜单
+
+```typescript
+// HomeHeader.tsx
+<motion.div style={{ opacity: rightOpacity, scale: rightScale, y: rightTranslateY }}>
+  {/* 阅读目标进度环 */}
+  <div className="relative w-10 h-10">
+    <svg className="w-10 h-10 -rotate-90" viewBox="0 0 40 40">
+      <circle ... className="text-gray-200" />  {/* 背景 */}
+      <circle ... className="text-system-blue" strokeDashoffset={progressOffset} /> {/* 进度 */}
+    </svg>
+    <span className="absolute text-xs">{todayMinutes}</span>
+  </div>
+  {/* 用户头像 */}
+  <ProfileButton />
+</motion.div>
+```
+
+#### 3. 底部弹出账户菜单 ✅
+
+**新组件 (`AccountSheet.tsx`)**：
+- 使用 Sheet (Radix Dialog) 实现底部全屏弹出
+- Apple 风格的圆角设计和毛玻璃效果
+
+**菜单内容**：
+1. **用户信息卡片**：圆形头像 + 用户名 + 邮箱
+2. **通知设置**：占位，点击无操作（后续扩展）
+3. **账户设置**：点击展开语言选择列表
+   - 支持中文/英文切换
+   - 选中项显示 ✓ 标记
+4. **退出登录**：清除 token 并跳转到首页
+
+**语言切换实现**：
+```typescript
+const handleLanguageChange = async (langCode: string) => {
+  await i18n.changeLanguage(langCode)
+  setShowLanguageSelect(false)
+}
+```
+
+#### 4. i18n 翻译更新 ✅
+
+**新增翻译键 (common.json)**：
+```json
+{
+  "account.title": "账户",
+  "account.notifications": "通知",
+  "account.settings": "账户设置",
+  "account.logout": "退出登录",
+  "account.unnamed": "未命名用户",
+  "account.language": "语言",
+  "account.avatar_upload": "更换头像"
+}
+```
+
+#### 5. 头像上传（待后续实现）📋
+
+**当前状态**：UI 已预留头像上传功能（点击头像可选择文件）
+
+**后续需要**：
+- 数据库迁移：`users` 表添加 `avatar_key` 字段
+- 后端 API：`POST /api/v1/profile/avatar` 接收图片并压缩为 WebP
+- 前端集成：上传成功后更新头像显示
+
+---
+
+## 🔥 更早更新 (2025-12-06 20:00)
+
+### 多格式电子书转换流程完善 ✅
+
+修复了转换完成后状态未更新、前端无法自动刷新、元数据对话框不弹出等问题。
+
+#### 1. 后端独立事务修复 ✅
+
+**问题根因**：原 `convert_to_epub` 任务使用单一长事务，`time.sleep()` 阻塞导致状态更新不提交。
+
+**修复方案 (`tasks.py`)**：重构为独立事务函数
+```python
+async def _update_status(status: str, extra_sql: str = "", extra_params: dict = None):
+    """独立事务更新状态"""
+    async with engine.begin() as conn:
+        # ... 立即提交状态更新
+        print(f"[Convert] Status updated to '{status}' for book: {book_id}")
+
+async def _get_book_info():
+    """独立事务获取书籍信息"""
+
+async def _update_converted_epub(epub_key: str):
+    """独立事务更新转换后的 EPUB 信息"""
+```
+
+**状态流转**：每个步骤独立提交，不再依赖长事务
+- `pending` → `_update_status('processing')` → 立即可见
+- 转换完成 → `_update_converted_epub()` → `status='completed'` 立即可见
+
+#### 2. 前端自动刷新机制 ✅
+
+**UploadManager.tsx 增强**：新增独立的转换状态轮询机制
+```typescript
+// 开始监控转换状态（用于非 EPUB/PDF 格式）
+const startConversionMonitoring = useCallback((bookId: string, title: string) => {
+  // 每 3 秒轮询 GET /api/books/{bookId} 检查 conversion_status
+  // 当 conversion_status === 'completed' 时:
+  // 1. 广播 book_conversion_complete 事件（通知 LibraryPage 刷新）
+  // 2. 调用 startMonitoring() 开始元数据提取监控
+  // 3. 显示元数据确认对话框
+}, [pollConversionStatus])
+```
+
+#### 3. 格式支持优化 ✅
+
+**移除漫画格式**：CBZ/CBR 转 EPUB 体验差，不适合通用阅读器
+**新增 DJV 格式**：与 DJVU 为同一格式的不同扩展名
+
+**最终支持格式（13种）**：
+```typescript
+export const SUPPORTED_FORMATS = [
+  'epub', 'pdf',           // 直接支持
+  'mobi', 'azw', 'azw3',   // Amazon Kindle
+  'fb2',                   // FictionBook
+  'txt', 'rtf',            // 文本格式
+  'djvu', 'djv',           // DjVu 扫描文档
+  'lit',                   // Microsoft Reader
+  'doc', 'docx',           // Microsoft Word
+]
+```
+
+---
+
+## 🔥 更早更新 (2025-12-06 19:30)
+  - 删除 S3 中的原始文件
+  - 更新 `books.minio_key` 指向新 EPUB
+- 用户后续同步（其他设备登录）直接获取已转换的 EPUB
+
+**技术实现**：
+```python
+# 上传转换后的 EPUB
+epub_key = make_object_key(user_id, f"converted/{book_id}.epub")
+upload_bytes(BUCKET, epub_key, epub_data, "application/epub+zip")
+
+# 删除原始文件
+client.delete_object(Bucket=BUCKET, Key=minio_key)
+
+# 更新数据库
+UPDATE books SET minio_key = :epub_key, 
+                 converted_epub_key = :epub_key,
+                 conversion_status = 'completed'
+WHERE id = :book_id
+```
+
+---
+
+## 🔥 更早更新 (2025-12-06 18:00)
+
+### 书架系统完整实现 ✅
+
+完成了书架（Shelves）功能的前后端开发，支持用户创建、管理和删除书架，以及将书籍添加到书架。
+
+#### 1. 后端 API 完善 ✅
+
+**新增/修复端点**：
+- `DELETE /api/v1/shelves/{shelf_id}` - 删除书架（含 shelf_items 级联清理）
+- 修复 `GET /api/v1/books/{book_id}/shelves` 路由顺序（移至 `/{book_id}` 之前避免被截获）
+
+**代码修改 (`api/app/books.py`)**：
+```python
+@shelves_router.delete("/{shelf_id}")
+async def delete_shelf(shelf_id: str, user: dict = Depends(get_current_user), db = Depends(get_db)):
+    # 1. 验证书架归属当前用户
+    # 2. 删除 shelf_items 关联记录
+    # 3. 删除书架记录
+    # 4. 返回成功消息
+```
+
+#### 2. 前端书架功能完善 ✅
+
+**AddToShelfDialog.tsx 修复**：
+- 修复事件冒泡导致点击按钮跳转阅读页的问题（添加 `e.preventDefault()` 和 `e.stopPropagation()`）
+- 修复创建书架后 `s.name?.toLowerCase()` 空指针崩溃
+- 修复 `createShelf` 返回类型为 `Promise<{ id: string }>`
+
+**ShelfView.tsx 修复**：
+- 修复 DOM 嵌套错误（button 内不能嵌套 button），将外层 button 改为 div
+- 修复 API 响应解析（兼容 `data.data` 数组和 `data.data.items` 两种格式）
+- 添加 `shelf-changed` 事件监听器实现自动刷新
+
+**BookCardMenu.tsx 增强**：
+- 添加菜单位置自动检测（`openUpward` 逻辑）
+- 菜单在页面底部时自动向上展开，避免被视窗截断
+
+#### 3. 视图模式持久化 ✅
+
+**LibraryPage.tsx**：
+- 使用 `localStorage` 保存用户选择的视图模式（`athena_library_view_mode`）
+- 刷新页面后保持之前的视图模式（grid/list/shelf）
+
+#### 4. 云同步功能 ✅
+
+**新增功能**：新设备登录后，书库中显示云端书籍，点击可下载到本地 IndexedDB。
+
+**BookCard.tsx 修改**：
+- 新增 `onSyncClick` 回调 prop
+- `status='cloud'` 时点击卡片触发下载而非打开阅读器
+
+**LibraryPage.tsx 修改**：
+- 新增 `handleSyncBook` 函数：后台下载书籍内容并缓存到 IndexedDB
+- 下载完成后触发 `book_cached` 事件更新 UI 状态
+
+#### 5. 数据库设计验证 ✅
+
+确认当前书架数据库设计完全支持未来 AI 对话功能：
+- `shelf_items` 表通过 `book_id` 和 `shelf_id` 外键关联书籍与书架
+- 可通过 JOIN 查询获取书架内所有书籍，作为 RAG 知识库范围
+
+---
+
+## 🔥 更早更新 (2025-12-05 23:30)
 
 ### ADR-007: SHA256 全局去重与 OCR 复用机制 ✅ 已完成
 

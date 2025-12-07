@@ -235,7 +235,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center relative transition-transform duration-200 hover:scale-[1.02]">
+    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 shadow-lg border border-gray-100 dark:border-gray-700 flex flex-col items-center relative transition-transform duration-fast hover:scale-[1.02]">
       <div className="absolute top-4 right-4">
         <Button variant="ghost" size="icon" onClick={() => { setNewGoal(goalMinutes); setShowAdjust(true) }}>
           <Settings2 className="w-5 h-5 text-secondary-label" />

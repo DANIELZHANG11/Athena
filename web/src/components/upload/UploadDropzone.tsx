@@ -190,7 +190,7 @@ export default function UploadDropzone({
           onDragOver={handleDragOver}
           onDrop={handleDrop}
           className={cn(
-            'rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-200',
+            'rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all duration-fast',
             isDragOver
               ? 'border-system-blue bg-system-blue/5 scale-[1.02]'
               : 'border-gray-300 hover:border-system-blue hover:bg-secondary-background',

@@ -195,7 +195,7 @@ export default function YearlyGoalCard({ count, target, covers, onGoalUpdate }: 
   }
 
   return (
-    <div className="relative mt-8 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[20px] shadow-lg p-6 overflow-hidden transition-transform duration-200 hover:scale-[1.01]">
+    <div className="relative mt-8 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[20px] shadow-lg p-6 overflow-hidden transition-transform duration-fast hover:scale-[1.01]">
       <div className="flex justify-between items-start mb-4 relative z-10">
         <div>
           <div className="text-secondary-label text-sm font-medium uppercase tracking-wide mb-1">{t('home.yearly_goal')}</div>

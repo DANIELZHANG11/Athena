@@ -61,6 +61,12 @@
   --overlay: rgba(255,255,255,0.45);
   --liquid-glass-blur: 24px;
   --separator: rgba(60,60,67,0.29);
+
+  /* Motion Tokens (UIUX 设计规范 2.4) */
+  --duration-fast: 150ms;     /* Hover, Click */
+  --duration-medium: 300ms;   /* Panel Slide, Modal Fade */
+  --duration-slow: 500ms;     /* Sheet Slide, 大面积动画 */
+  --easing-apple: cubic-bezier(0.22, 1, 0.36, 1);  /* Apple 风格自然回弹 */
 }
 
 .dark {
@@ -202,6 +208,20 @@
 @utility animate-menu-expand {
   animation: menu-expand 200ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: top right;
+}
+
+/* Motion Utility Classes (统一动效参数) */
+@utility duration-fast {
+  transition-duration: var(--duration-fast);
+}
+@utility duration-medium {
+  transition-duration: var(--duration-medium);
+}
+@utility duration-slow {
+  transition-duration: var(--duration-slow);
+}
+@utility ease-apple {
+  transition-timing-function: var(--easing-apple);
 }
 
 @layer base {

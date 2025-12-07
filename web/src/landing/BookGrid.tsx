@@ -38,7 +38,7 @@ export default function BookGrid() {
   const { t } = useTranslation('landing')
   const itemsAll = bookCovers
   const Card = ({ book }: { book: Book }) => (
-    <div className="book-card rounded-lg shadow-lg transition-transform duration-300 hover:scale-x-[1.08] hover:scale-y-[1.12] hover:shadow-2xl hover:z-10 relative flex flex-col items-center justify-start p-1 md:p-2 cursor-default" style={{ width: 180, willChange: 'transform', background: '#fff' }}>
+    <div className="book-card rounded-lg shadow-lg transition-transform duration-medium hover:scale-x-[1.08] hover:scale-y-[1.12] hover:shadow-2xl hover:z-10 relative flex flex-col items-center justify-start p-1 md:p-2 cursor-default" style={{ width: 180, willChange: 'transform', background: '#fff' }}>
       <div className="w-full rounded-md overflow-hidden" style={{ aspectRatio: '2 / 3', background: '#f3f4f6' }}>
         <img src={book.image} alt={book.title} className="w-full h-full object-cover" />
       </div>

@@ -12,6 +12,7 @@ import BookCardMenu from './BookCardMenu'
 import { useState, useEffect } from 'react'
 import { extractDominantColor, getLuminance } from '@/lib/color-utils'
 import { ScrollText } from '@/components/ui/ScrollText'
+import { useTranslation } from 'react-i18next'
 
 export type BookStatus = 'cloud' | 'downloading' | 'ready' | 'reading' | 'completed' | 'processing' | 'converting' | 'ocr'
 
@@ -42,6 +43,8 @@ export interface BookCardProps {
   downloadUrl?: string
   /** 点击回调 */
   onClick?: () => void
+  /** 云图标点击回调 - 用于后台同步，不跳转阅读页 */
+  onSyncClick?: () => void
   /** 更多操作回调 - 旧版兼容 */
   onMoreClick?: () => void
   /** 删除回调 - 接收 bookId 参数 */
@@ -140,6 +143,7 @@ export default function BookCard({
   processingText,
   downloadUrl,
   onClick,
+  onSyncClick,
   onMoreClick,
   onDeleted,
   onFinishedChange,
@@ -150,6 +154,7 @@ export default function BookCard({
   variant = 'default',
   className,
 }: BookCardProps) {
+  const { t } = useTranslation('common')
   // 状态用于存储提取的主色调 (仅用于 list/hero 变体)
   const [dominantColor, setDominantColor] = useState(coverColor || '#6B7280')
 
@@ -171,13 +176,26 @@ export default function BookCard({
   // OCR 正在处理中
   const isOcrProcessing = ocrStatus === 'pending' || ocrStatus === 'processing'
   
+  // 处理卡片点击：如果是云状态且有同步回调，则触发同步而不跳转
+  const handleCardClick = () => {
+    // 处理中、下载中、格式转换中不响应点击
+    if (isProcessing || status === 'downloading') {
+      return
+    }
+    if (status === 'cloud' && onSyncClick) {
+      onSyncClick()
+    } else {
+      onClick?.()
+    }
+  }
+  
   // 根据状态获取处理中文本
   const getProcessingText = () => {
     if (processingText) return processingText
     switch (status) {
-      case 'converting': return '正在转换...'
-      case 'ocr': return '正在识别...'
-      default: return '正在处理...'
+      case 'converting': return t('book_status.converting')
+      case 'ocr': return t('book_status.ocr_processing')
+      default: return t('book_status.processing')
     }
   }
 
@@ -185,7 +203,7 @@ export default function BookCard({
   if (variant === 'hero') {
     return (
       <div
-        onClick={onClick}
+        onClick={handleCardClick}
         className={cn(
           'relative flex h-40 cursor-pointer overflow-hidden rounded-xl transition-transform hover:scale-[1.02]',
           className
@@ -252,7 +270,7 @@ export default function BookCard({
 
   // Grid 变体（书架网格）
   if (variant === 'grid') {
-    // 处理中状态 - 显示脉冲动效卡片
+    // 处理中状态 - 显示脉冲动效卡片（不显示书名，避免泄露书籍信息）
     if (isProcessing) {
       return (
         <div
@@ -269,15 +287,15 @@ export default function BookCard({
             />
           </div>
           
-          {/* 标题 - 处理中也显示 */}
-          <h3 className="mt-2 text-sm font-medium text-secondary-label line-clamp-2">{title}</h3>
+          {/* 处理中状态不显示书名 - 占位保持布局一致 */}
+          <div className="mt-2 h-5" />
         </div>
       )
     }
     
     return (
       <div
-        onClick={onClick}
+        onClick={handleCardClick}
         className={cn(
           'group relative flex flex-col cursor-pointer transition-transform hover:scale-[1.02]',
           className
@@ -347,6 +365,34 @@ export default function BookCard({
 
   // List 变体（列表模式 - Horizontal Card Style）
   if (variant === 'list') {
+    // 处理中状态 - 显示特殊的处理中卡片（不显示书名）
+    if (isProcessing) {
+      return (
+        <div
+          className={cn(
+            'relative flex h-[100px] overflow-hidden rounded-2xl shadow-lg',
+            'bg-gradient-to-r from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600',
+            'animate-pulse',
+            className
+          )}
+        >
+          {/* 封面区域 - 处理中图标 */}
+          <div className="relative w-1/4 shrink-0 flex items-center justify-center p-2">
+            <div className="relative w-full max-w-[60px] overflow-hidden rounded-lg bg-gray-300 dark:bg-gray-600 flex items-center justify-center" style={{ aspectRatio: '2/3' }}>
+              <Loader2 className="h-6 w-6 text-gray-500 dark:text-gray-400 animate-spin" />
+            </div>
+          </div>
+          
+          {/* 内容区域 - 只显示状态提示 */}
+          <div className="relative flex-1 flex flex-col justify-center px-4 py-3">
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+              {getProcessingText()}
+            </span>
+          </div>
+        </div>
+      )
+    }
+    
     const luminance = getLuminance(dominantColor)
     const isLight = luminance > 0.5
     const textClass = isLight ? 'text-gray-900' : 'text-white'
@@ -354,9 +400,9 @@ export default function BookCard({
 
     return (
       <div
-        onClick={onClick}
+        onClick={handleCardClick}
         className={cn(
-          'relative flex h-[100px] overflow-hidden rounded-2xl shadow-lg transition-transform duration-200 hover:scale-[1.02] cursor-pointer',
+          'relative flex h-[100px] overflow-hidden rounded-2xl shadow-lg transition-transform duration-fast hover:scale-[1.02] cursor-pointer',
           className
         )}
         style={{ backgroundColor: dominantColor }}
@@ -483,7 +529,7 @@ export default function BookCard({
   // Default 变体（简单卡片，兼容旧版）
   return (
     <div
-      onClick={onClick}
+      onClick={handleCardClick}
       className={cn(
         'rounded-lg border border-gray-200 dark:border-gray-700 p-3 cursor-pointer transition-all hover:shadow-md hover:border-system-blue/30',
         className

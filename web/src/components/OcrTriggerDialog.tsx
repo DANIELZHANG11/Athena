@@ -176,7 +176,7 @@ export default function OcrTriggerDialog({
           'bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl',
           'shadow-2xl border border-gray-200/50 dark:border-white/10',
           'rounded-2xl overflow-hidden',
-          'animate-in fade-in-0 zoom-in-95 duration-200'
+          'animate-in fade-in-0 zoom-in-95 duration-fast'
         )}
       >
         {/* 头部 */}

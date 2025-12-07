@@ -31,7 +31,17 @@ export type UploadErrorCode =
   | 'unknown'
 
 // 支持的文件格式
-export const SUPPORTED_FORMATS = ['epub', 'pdf', 'mobi', 'azw', 'azw3', 'txt', 'fb2', 'rtf']
+// EPUB/PDF: 直接支持阅读
+// 其他格式: 上传后服务器使用 Calibre 转换为 EPUB
+export const SUPPORTED_FORMATS = [
+  'epub', 'pdf',           // 直接支持
+  'mobi', 'azw', 'azw3',   // Amazon Kindle 格式
+  'fb2',                   // FictionBook
+  'txt', 'rtf',            // 纯文本和富文本
+  'djvu', 'djv',           // DjVu 扫描文档（两种扩展名）
+  'lit',                   // Microsoft Reader
+  'doc', 'docx',           // Microsoft Word
+]
 export const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500MB
 
 // 上传状态

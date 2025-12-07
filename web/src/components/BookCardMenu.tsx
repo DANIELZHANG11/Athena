@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan } from 'lucide-react'
+import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan, FolderPlus } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import BookMetadataDialog from './BookMetadataDialog'
 import OcrTriggerDialog from './OcrTriggerDialog'
+import AddToShelfDialog from './AddToShelfDialog'
 
 type Props = {
   bookId: string
@@ -47,8 +48,9 @@ export default function BookCardMenu({
   const [showConfirm, setShowConfirm] = useState(false)
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
   const [showOcrDialog, setShowOcrDialog] = useState(false)
+  const [showShelfDialog, setShowShelfDialog] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, openUpward: false })
   const menuRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
@@ -57,21 +59,28 @@ export default function BookCardMenu({
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect()
       const menuWidth = 180
+      const menuHeight = 280 // 预估菜单高度
       
       // 根据 position 属性决定左右对齐
       let left = position === 'right' 
         ? rect.right - menuWidth 
         : rect.left
       
-      // 确保菜单不超出视口
+      // 确保菜单不超出视口左右边界
       if (left < 8) left = 8
       if (left + menuWidth > window.innerWidth - 8) {
         left = window.innerWidth - menuWidth - 8
       }
       
+      // 检查是否需要向上打开（底部空间不足）
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const openUpward = spaceBelow < menuHeight && spaceAbove > spaceBelow
+      
       setMenuPosition({
-        top: rect.bottom + 4,
-        left
+        top: openUpward ? rect.top : rect.bottom + 4,
+        left,
+        openUpward
       })
     }
   }, [position])
@@ -189,13 +198,16 @@ export default function BookCardMenu({
             'bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl',
             'shadow-2xl border border-gray-200/50 dark:border-white/10',
             'rounded-xl overflow-hidden',
-            'animate-in fade-in-0 zoom-in-95 duration-200',
+            'animate-in fade-in-0 zoom-in-95 duration-fast',
             'z-[9999]'
           )}
           style={{ 
-            top: menuPosition.top,
+            top: menuPosition.openUpward ? 'auto' : menuPosition.top,
+            bottom: menuPosition.openUpward ? `${window.innerHeight - menuPosition.top + 4}px` : 'auto',
             left: menuPosition.left,
-            transformOrigin: position === 'right' ? 'top right' : 'top left'
+            transformOrigin: menuPosition.openUpward 
+              ? (position === 'right' ? 'bottom right' : 'bottom left')
+              : (position === 'right' ? 'top right' : 'top left')
           }}
         >
           {/* 编辑书籍信息 */}
@@ -210,7 +222,7 @@ export default function BookCardMenu({
               'w-full flex items-center gap-3 px-4 py-3',
               'text-left text-sm font-medium',
               'text-label hover:bg-secondary-background',
-              'transition-colors duration-150'
+              'transition-colors duration-fast'
             )}
           >
             <FileText className="w-4 h-4 text-system-blue" />
@@ -230,7 +242,7 @@ export default function BookCardMenu({
                 'w-full flex items-center gap-3 px-4 py-3',
                 'text-left text-sm font-medium',
                 'text-label hover:bg-secondary-background',
-                'transition-colors duration-150'
+                'transition-colors duration-fast'
               )}
             >
               <Scan className="w-4 h-4 text-system-orange" />
@@ -252,6 +264,25 @@ export default function BookCardMenu({
             </div>
           )}
 
+          {/* 加入书架 */}
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setShowShelfDialog(true)
+              setOpen(false)
+            }}
+            className={cn(
+              'w-full flex items-center gap-3 px-4 py-3',
+              'text-left text-sm font-medium',
+              'text-label hover:bg-secondary-background',
+              'transition-colors duration-fast'
+            )}
+          >
+            <FolderPlus className="w-4 h-4 text-system-purple" />
+            <span>{t('shelf.add_to_shelf')}</span>
+          </button>
+
           {/* 分隔线 */}
           <div className="h-px bg-separator mx-2" />
           
@@ -267,7 +298,7 @@ export default function BookCardMenu({
               'w-full flex items-center gap-3 px-4 py-3',
               'text-left text-sm font-medium',
               'text-label hover:bg-secondary-background',
-              'transition-colors duration-150',
+              'transition-colors duration-fast',
               'disabled:opacity-50'
             )}
           >
@@ -298,7 +329,7 @@ export default function BookCardMenu({
               'w-full flex items-center gap-3 px-4 py-3',
               'text-left text-sm font-medium',
               'text-system-red hover:bg-system-red/10',
-              'transition-colors duration-150'
+              'transition-colors duration-fast'
             )}
           >
             <Trash2 className="w-4 h-4" />
@@ -330,7 +361,7 @@ export default function BookCardMenu({
               'bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl',
               'shadow-2xl border border-gray-200/50 dark:border-white/10',
               'rounded-2xl p-6',
-              'animate-in fade-in-0 zoom-in-95 duration-200'
+              'animate-in fade-in-0 zoom-in-95 duration-fast'
             )}
           >
             <div className="flex flex-col items-center text-center">
@@ -413,6 +444,14 @@ export default function BookCardMenu({
         onSuccess={() => {
           onOcrTrigger?.()
         }}
+      />
+
+      {/* 加入书架对话框 */}
+      <AddToShelfDialog
+        bookId={bookId}
+        bookTitle={bookTitle}
+        open={showShelfDialog}
+        onClose={() => setShowShelfDialog(false)}
       />
     </>
   )

@@ -14,11 +14,33 @@ function SheetTrigger(props: React.ComponentProps<typeof DialogPrimitive.Trigger
 function SheetPortal(props: React.ComponentProps<typeof DialogPrimitive.Portal>) { return <DialogPrimitive.Portal data-slot="sheet-portal" {...props} /> }
 function SheetOverlay(props: React.ComponentProps<typeof DialogPrimitive.Overlay>) { return <DialogPrimitive.Overlay data-slot="sheet-overlay" className={cn('fixed inset-0 z-50 bg-black/50', props.className)} {...props} /> }
 function SheetContent({ className, side = 'right', ...props }: React.ComponentProps<typeof DialogPrimitive.Content> & { side?: 'left' | 'right' | 'top' | 'bottom' }) {
-  const styles = side === 'right' ? 'inset-y-0 right-0 w-3/4 sm:w-96' : side === 'left' ? 'inset-y-0 left-0 w-3/4 sm:w-96' : side === 'top' ? 'inset-x-0 top-0 h-1/2' : 'inset-x-0 bottom-0 h-1/2'
+  // 根据方向设置位置样式
+  const positionStyles = {
+    right: 'inset-y-0 right-0 w-3/4 sm:w-96',
+    left: 'inset-y-0 left-0 w-3/4 sm:w-96',
+    top: 'inset-x-0 top-0 h-1/2',
+    bottom: 'inset-x-0 bottom-0'
+  }
+  // 根据方向设置动画样式 - 使用 Motion Token duration-slow (500ms)
+  const animationStyles = {
+    right: 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right duration-slow ease-apple',
+    left: 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left duration-slow ease-apple',
+    top: 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top duration-slow ease-apple',
+    bottom: 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom duration-slow ease-apple'
+  }
   return (
     <SheetPortal>
-      <SheetOverlay />
-      <DialogPrimitive.Content data-slot="sheet-content" className={cn('bg-popover text-popover-foreground fixed z-50 border shadow-lg', styles, className)} {...props} />
+      <SheetOverlay className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+      <DialogPrimitive.Content 
+        data-slot="sheet-content" 
+        className={cn(
+          'bg-popover text-popover-foreground fixed z-50 border shadow-lg transition-transform duration-medium ease-apple',
+          positionStyles[side],
+          animationStyles[side],
+          className
+        )} 
+        {...props} 
+      />
     </SheetPortal>
   )
 }

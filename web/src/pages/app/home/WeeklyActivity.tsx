@@ -37,7 +37,7 @@ export default function WeeklyActivity({ days, goalMinutes }: Props) {
   }, [])
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 border border-gray-100 dark:border-gray-700 shadow-lg flex flex-col transition-transform duration-200 hover:scale-[1.02]">
+    <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 border border-gray-100 dark:border-gray-700 shadow-lg flex flex-col transition-transform duration-fast hover:scale-[1.02]">
       {/* 标题 */}
       <div className="text-secondary-label text-sm font-medium uppercase tracking-wide mb-4">
         {t('home.weekly_activity', 'Weekly Activity')}
@@ -127,7 +127,7 @@ export default function WeeklyActivity({ days, goalMinutes }: Props) {
                         strokeDashoffset={offset}
                         strokeLinecap="round"
                         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-                        className="transition-all duration-500"
+                        className="transition-all duration-slow"
                       />
                     </svg>
                     {/* 白色内圈 */}

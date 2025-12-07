@@ -6,7 +6,7 @@
  * - 监听后台处理状态（封面、元数据、OCR）并弹出确认对话框
  * - 上传完成后广播事件，供书库页面刷新
  */
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
@@ -109,6 +109,95 @@ export default function UploadManager({
       }))
     },
   })
+  
+  // 用于追踪正在等待转换完成的书籍
+  const convertingBookRef = useRef<{ id: string; title: string } | null>(null)
+  const conversionPollRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // 轮询检查转换状态
+  const pollConversionStatus = useCallback(async (bookId: string, title: string) => {
+    try {
+      const res = await fetch(`/api/books/${bookId}`)
+      if (!res.ok) {
+        console.log(`[UploadManager] Failed to fetch book status: ${res.status}`)
+        return
+      }
+      const book = await res.json()
+      console.log(`[UploadManager] Polling conversion status for ${bookId}:`, book.conversion_status)
+      
+      if (book.conversion_status === 'completed') {
+        // 转换完成，停止轮询并开始监控元数据提取
+        console.log(`[UploadManager] Conversion completed for ${bookId}, starting metadata monitoring`)
+        if (conversionPollRef.current) {
+          clearInterval(conversionPollRef.current)
+          conversionPollRef.current = null
+        }
+        convertingBookRef.current = null
+        
+        // 广播转换完成事件，通知 LibraryPage 刷新
+        window.dispatchEvent(new CustomEvent('book_conversion_complete', {
+          detail: { bookId, title }
+        }))
+        
+        // 开始监控元数据提取
+        lastUploadRef.current = { id: bookId, title }
+        dialogShownRef.current = false
+        startMonitoring(bookId, title)
+      } else if (book.conversion_status === 'failed') {
+        // 转换失败，停止轮询
+        console.log(`[UploadManager] Conversion failed for ${bookId}`)
+        if (conversionPollRef.current) {
+          clearInterval(conversionPollRef.current)
+          conversionPollRef.current = null
+        }
+        convertingBookRef.current = null
+      }
+      // pending/processing: 继续轮询
+    } catch (err) {
+      console.error('[UploadManager] Error polling conversion status:', err)
+    }
+  }, [startMonitoring])
+  
+  // 开始监控转换状态（用于非 EPUB/PDF 格式）
+  const startConversionMonitoring = useCallback((bookId: string, title: string) => {
+    console.log(`[UploadManager] Starting conversion monitoring for ${bookId} (${title})`)
+    
+    // 清理之前的轮询
+    if (conversionPollRef.current) {
+      clearInterval(conversionPollRef.current)
+    }
+    
+    convertingBookRef.current = { id: bookId, title }
+    
+    // 立即检查一次
+    pollConversionStatus(bookId, title)
+    
+    // 每 3 秒轮询一次，最多 5 分钟（100 次）
+    let pollCount = 0
+    const maxPolls = 100
+    conversionPollRef.current = setInterval(() => {
+      pollCount++
+      if (pollCount >= maxPolls) {
+        console.log(`[UploadManager] Conversion monitoring timeout for ${bookId}`)
+        if (conversionPollRef.current) {
+          clearInterval(conversionPollRef.current)
+          conversionPollRef.current = null
+        }
+        convertingBookRef.current = null
+        return
+      }
+      pollConversionStatus(bookId, title)
+    }, 3000)
+  }, [pollConversionStatus])
+  
+  // 组件卸载时清理轮询
+  useEffect(() => {
+    return () => {
+      if (conversionPollRef.current) {
+        clearInterval(conversionPollRef.current)
+      }
+    }
+  }, [])
 
   const {
     stage,
@@ -125,15 +214,35 @@ export default function UploadManager({
       // 广播上传成功事件，供其他组件监听
       window.dispatchEvent(new CustomEvent('book_uploaded', { detail: result }))
       
-      // 保存上传信息并开始监控后处理状态
-      lastUploadRef.current = { id: result.id, title: result.title }
+      // 获取文件扩展名，判断是否需要转换
+      const ext = result.title.split('.').pop()?.toLowerCase() || ''
+      const originalFormat = pendingFile?.name.split('.').pop()?.toLowerCase() || ext
+      const directFormats = ['epub', 'pdf']
+      const needsConversion = !directFormats.includes(originalFormat)
+      
+      // 保存上传信息（包含格式信息）
+      lastUploadRef.current = { id: result.id, title: result.title, format: originalFormat }
       dialogShownRef.current = false  // 重置对话框显示标记
-      startMonitoring(result.id, result.title)
+      
+      // 【关键】只有 EPUB/PDF 格式才立即开始监控元数据提取
+      // 其他格式（AZW3/MOBI等）需要先完成 Calibre 转换，转换完成后会自动触发元数据提取
+      if (!needsConversion) {
+        startMonitoring(result.id, result.title)
+      } else {
+        console.log(`[UploadManager] Format ${originalFormat} needs conversion, starting conversion monitoring`)
+        // 开始监控转换状态，转换完成后自动开始元数据监控
+        startConversionMonitoring(result.id, result.title)
+      }
       
       // 延迟关闭上传 modal（但不立即导航，等待后处理完成）
       setTimeout(() => {
         setIsModalOpen(false)
         reset()
+        
+        // 对于需要转换的格式，直接导航到书库页面
+        if (needsConversion && navigateOnSuccess) {
+          navigate('/app/library')
+        }
       }, 1500)
     },
     onError: (code) => {

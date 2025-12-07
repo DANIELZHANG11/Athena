@@ -55,7 +55,7 @@ export default function UploadProgress({
 
   return (
     <div className={cn(
-      'rounded-xl border p-4 transition-all duration-300',
+      'rounded-xl border p-4 transition-all duration-medium',
       isComplete && 'border-system-green/30 bg-system-green/5',
       isError && 'border-system-red/30 bg-system-red/5',
       isActive && 'border-system-blue/30 bg-system-blue/5',
@@ -110,7 +110,7 @@ export default function UploadProgress({
         <div className="mb-2">
           <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
             <div
-              className="h-full bg-system-blue rounded-full transition-all duration-300 ease-out"
+              className="h-full bg-system-blue rounded-full transition-all duration-medium ease-out"
               style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
             />
           </div>

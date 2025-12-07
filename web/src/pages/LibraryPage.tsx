@@ -9,12 +9,13 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BookCard from '../components/BookCard'
+import ShelfView from '../components/ShelfView'
 import UploadManager from '../components/upload/UploadManager'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/lib/api'
 import { useLocalBookCache } from '@/hooks/useLocalBookCache'
-import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, Check } from 'lucide-react'
+import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, Check, Library } from 'lucide-react'
 
 interface BookItem {
   id: string
@@ -28,21 +29,38 @@ interface BookItem {
   createdAt?: string
   ocrStatus?: string | null  // 'pending' | 'processing' | 'completed' | 'failed' | null
   isImageBased?: boolean     // 是否为图片型 PDF
+  conversionStatus?: string | null  // 'pending' | 'processing' | 'completed' | 'failed' | null
+  originalFormat?: string    // 原始格式 (epub, pdf, azw3, mobi 等)
 }
 
-type ViewMode = 'grid' | 'list'
+type ViewMode = 'grid' | 'list' | 'shelf'
 type SortBy = 'recent' | 'title' | 'author' | 'upload'
+
+// localStorage key 用于持久化视图模式
+const VIEW_MODE_STORAGE_KEY = 'athena_library_view_mode'
 
 export default function LibraryPage() {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
   const [items, setItems] = useState<BookItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  // 从 localStorage 读取初始视图模式
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
+    return (saved === 'grid' || saved === 'list' || saved === 'shelf') ? saved : 'grid'
+  })
   const [sortBy, setSortBy] = useState<SortBy>('recent')
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const accessToken = useAuthStore((s) => s.accessToken)
+  
+  // 追踪正在转换的书籍ID，用于检测转换完成
+  const convertingBooksRef = useRef<Set<string>>(new Set())
+
+  // 当视图模式改变时保存到 localStorage
+  useEffect(() => {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode)
+  }, [viewMode])
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -86,20 +104,57 @@ export default function LibraryPage() {
   
   // 获取所有书籍 ID 并检查本地缓存状态
   const bookIds = useMemo(() => items.map(item => item.id), [items])
-  const { getBookCacheStatus } = useLocalBookCache(bookIds)
+  const { getBookCacheStatus, markDownloading, markDownloaded } = useLocalBookCache(bookIds)
 
-  // 检查是否有书籍正在 OCR 处理中
-  const hasOcrProcessing = useMemo(() => 
-    items.some(item => item.ocrStatus === 'pending' || item.ocrStatus === 'processing'),
+  // 后台下载书籍（不跳转到阅读页）
+  const handleSyncBook = useCallback(async (bookId: string) => {
+    const token = accessToken || localStorage.getItem('access_token') || ''
+    if (!token) return
+    
+    // 标记开始下载
+    markDownloading(bookId)
+    
+    try {
+      const contentUrl = `/api/v1/books/${bookId}/content?token=${encodeURIComponent(token)}`
+      const response = await fetch(contentUrl)
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`)
+      }
+      
+      const blob = await response.blob()
+      const contentType = response.headers.get('Content-Type') || ''
+      const format = contentType.includes('pdf') ? 'pdf' : 'epub'
+      const etag = response.headers.get('ETag') || undefined
+      
+      // 动态导入 saveBookFile 以避免循环依赖
+      const { saveBookFile } = await import('@/lib/bookStorage')
+      await saveBookFile(bookId, blob, format as 'epub' | 'pdf', etag)
+      
+      // 标记下载完成
+      markDownloaded(bookId)
+      
+      console.log(`[LibraryPage] Book ${bookId} synced successfully`)
+    } catch (error) {
+      console.error(`[LibraryPage] Failed to sync book ${bookId}:`, error)
+      // 下载失败时也要更新状态（移除 downloading 标记）
+      markDownloaded(bookId) // 这会触发状态更新，即使失败也能让用户重试
+    }
+  }, [accessToken, markDownloading, markDownloaded])
+
+  // 检查是否有书籍正在 OCR 处理中或格式转换中
+  const hasProcessing = useMemo(() => 
+    items.some(item => 
+      item.ocrStatus === 'pending' || item.ocrStatus === 'processing' ||
+      item.conversionStatus === 'pending' || item.conversionStatus === 'processing'
+    ),
     [items]
   )
 
   // fetchList 函数提取出来以便复用
   const fetchList = useCallback(async () => {
     try {
-      console.log('[LibraryPage] Fetching books list...')
       const response = await api.get('/books')
-      console.log('[LibraryPage] Books response:', response.data)
       const token = accessToken || localStorage.getItem('access_token') || ''
       const list = (response.data?.data?.items || []).map((x: any) => ({
         id: x.id,
@@ -115,9 +170,31 @@ export default function LibraryPage() {
         createdAt: x.created_at,
         ocrStatus: x.ocr_status || null,
         isImageBased: x.is_image_based || false,
+        conversionStatus: x.conversion_status || null,
+        originalFormat: x.original_format || '',
       }))
+      
+      // 【关键】检测转换完成的书籍并广播事件
+      const prevConverting = convertingBooksRef.current
+      const currentConverting = new Set<string>()
+      
+      list.forEach((book: BookItem) => {
+        const isConverting = book.conversionStatus === 'pending' || book.conversionStatus === 'processing'
+        if (isConverting) {
+          currentConverting.add(book.id)
+        } else if (prevConverting.has(book.id) && book.conversionStatus === 'completed') {
+          // 这本书之前在转换，现在完成了！广播事件
+          console.log(`[LibraryPage] Book conversion completed: ${book.id} (${book.title})`)
+          window.dispatchEvent(new CustomEvent('book_conversion_complete', {
+            detail: { bookId: book.id, title: book.title, author: book.author }
+          }))
+        }
+      })
+      
+      // 更新追踪的转换中书籍
+      convertingBooksRef.current = currentConverting
+      
       setItems(list)
-      console.log('[LibraryPage] Loaded', list.length, 'books')
       return list
     } catch (error) {
       console.error('[LibraryPage] Failed to fetch books:', error)
@@ -163,28 +240,41 @@ export default function LibraryPage() {
     }
     window.addEventListener('book_data_updated', onDataUpdated as any)
     
+    // 监听格式转换完成事件（CALIBRE转换完成后）
+    const onConversionComplete = () => {
+      console.log('[LibraryPage] Book conversion completed, refreshing list...')
+      fetchList()
+    }
+    window.addEventListener('book_conversion_complete', onConversionComplete as any)
+    
     return () => {
       window.removeEventListener('book_uploaded', onUploaded as any)
       window.removeEventListener('book_cover_ready', onCoverReady as any)
       window.removeEventListener('book_data_updated', onDataUpdated as any)
+      window.removeEventListener('book_conversion_complete', onConversionComplete as any)
     }
   }, [t, accessToken, fetchList])
 
-  // OCR 处理中时，每 5 秒轮询一次刷新列表
+  // OCR 处理中或格式转换中时，每 5 秒轮询一次刷新列表
   useEffect(() => {
-    if (!hasOcrProcessing) return
+    if (!hasProcessing) return
 
-    console.log('[LibraryPage] OCR processing detected, starting polling...')
+    // 只在开始轮询时打印一次日志
+    console.log('[LibraryPage] Processing detected, starting polling (interval: 5s)...')
+    let pollCount = 0
     const pollInterval = setInterval(() => {
-      console.log('[LibraryPage] Polling for OCR status update...')
+      pollCount++
+      // 每6次（30秒）才打印一次日志，避免刷屏
+      if (pollCount % 6 === 0) {
+        console.log(`[LibraryPage] Still polling... (${pollCount * 5}s elapsed)`)
+      }
       fetchList()
     }, 5000) // 每 5 秒轮询
 
     return () => {
-      console.log('[LibraryPage] Stopping OCR polling')
       clearInterval(pollInterval)
     }
-  }, [hasOcrProcessing, fetchList])
+  }, [hasProcessing, fetchList])
 
   // 处理书籍删除
   const handleBookDeleted = useCallback((bookId: string) => {
@@ -243,6 +333,16 @@ export default function LibraryPage() {
             >
               列表
             </button>
+            <button
+              onClick={() => setViewMode('shelf')}
+              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'shelf' 
+                  ? 'bg-system-background shadow-sm text-label' 
+                  : 'text-secondary-label hover:text-label'
+              }`}
+            >
+              书架
+            </button>
           </div>
           
           {/* 上传按钮 - 显眼样式 */}
@@ -289,6 +389,17 @@ export default function LibraryPage() {
                     >
                       <List className="h-4 w-4" />
                       <span className="text-sm">列表</span>
+                    </button>
+                    <button
+                      onClick={() => { setViewMode('shelf'); setShowMenu(false) }}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors ${
+                        viewMode === 'shelf' 
+                          ? 'bg-system-blue/10 text-system-blue' 
+                          : 'hover:bg-secondary-background text-label'
+                      }`}
+                    >
+                      <Library className="h-4 w-4" />
+                      <span className="text-sm">书架</span>
                     </button>
                   </div>
                 </div>
@@ -351,16 +462,29 @@ export default function LibraryPage() {
       {/* 书籍列表 */}
       {!isLoading && items.length > 0 && (
         <>
-          {viewMode === 'grid' ? (
+          {viewMode === 'shelf' ? (
+            <ShelfView
+              books={sortedItems}
+              onBookDeleted={handleBookDeleted}
+              onFinishedChange={handleFinishedChange}
+              onMetadataChange={handleMetadataChange}
+              onOcrTrigger={handleOcrTrigger}
+              onBookClick={(bookId) => navigate(`/app/read/${bookId}`)}
+            />
+          ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-4">
               {sortedItems.map((item) => {
-                // 计算书籍状态：优先显示阅读进度，否则显示缓存状态
+                // 计算书籍状态
+                // 优先级：格式转换中 > 阅读完成 > 阅读中 > 缓存状态
                 const cacheStatus = getBookCacheStatus(item.id)
-                const displayStatus = item.progress && item.progress >= 100 
-                  ? 'completed' 
-                  : item.progress && item.progress > 0 
-                    ? 'reading' 
-                    : cacheStatus
+                const isConverting = item.conversionStatus === 'pending' || item.conversionStatus === 'processing'
+                const displayStatus = isConverting
+                  ? 'converting'
+                  : item.progress && item.progress >= 100 
+                    ? 'completed' 
+                    : item.progress && item.progress > 0 
+                      ? 'reading' 
+                      : cacheStatus
                 
                   return (
                   <BookCard
@@ -369,7 +493,7 @@ export default function LibraryPage() {
                     variant="grid"
                     title={item.title}
                     author={item.author}
-                    coverUrl={item.coverUrl}
+                    coverUrl={isConverting ? undefined : item.coverUrl}
                     progress={item.progress}
                     status={displayStatus}
                     isFinished={item.isFinished}
@@ -379,7 +503,8 @@ export default function LibraryPage() {
                     onFinishedChange={handleFinishedChange}
                     onMetadataChange={handleMetadataChange}
                     onOcrTrigger={handleOcrTrigger}
-                    onClick={() => navigate(`/app/read/${item.id}`)}
+                    onSyncClick={() => handleSyncBook(item.id)}
+                    onClick={isConverting ? undefined : () => navigate(`/app/read/${item.id}`)}
                   />
                 )
               })}
@@ -388,11 +513,14 @@ export default function LibraryPage() {
             <div className="divide-y divide-gray-100 dark:divide-gray-800">
               {sortedItems.map((item) => {
                 const cacheStatus = getBookCacheStatus(item.id)
-                const displayStatus = item.progress && item.progress >= 100 
-                  ? 'completed' 
-                  : item.progress && item.progress > 0 
-                    ? 'reading' 
-                    : cacheStatus
+                const isConverting = item.conversionStatus === 'pending' || item.conversionStatus === 'processing'
+                const displayStatus = isConverting
+                  ? 'converting'
+                  : item.progress && item.progress >= 100 
+                    ? 'completed' 
+                    : item.progress && item.progress > 0 
+                      ? 'reading' 
+                      : cacheStatus
                 
                 return (
                   <BookCard
@@ -401,7 +529,7 @@ export default function LibraryPage() {
                     variant="list"
                     title={item.title}
                     author={item.author}
-                    coverUrl={item.coverUrl}
+                    coverUrl={isConverting ? undefined : item.coverUrl}
                     progress={item.progress}
                     status={displayStatus}
                     isFinished={item.isFinished}
@@ -411,7 +539,8 @@ export default function LibraryPage() {
                     onFinishedChange={handleFinishedChange}
                     onMetadataChange={handleMetadataChange}
                     onOcrTrigger={handleOcrTrigger}
-                    onClick={() => navigate(`/app/read/${item.id}`)}
+                    onSyncClick={() => handleSyncBook(item.id)}
+                    onClick={isConverting ? undefined : () => navigate(`/app/read/${item.id}`)}
                   />
                 )
               })}

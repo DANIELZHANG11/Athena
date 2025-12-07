@@ -39,7 +39,7 @@ export default function Modal({ children, onClose, showCloseButton = false, clas
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-[100] grid place-items-center bg-black/20 backdrop-blur-sm animate-in fade-in-0 duration-150"
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/20 backdrop-blur-sm animate-in fade-in-0 duration-fast"
       onClick={handleBackdropClick}
     >
       <div 
@@ -51,7 +51,7 @@ export default function Modal({ children, onClose, showCloseButton = false, clas
           'shadow-2xl',
           'border border-gray-200/50 dark:border-white/10',
           // 缩放进入动效 - 从中心由小变大
-          'animate-in fade-in-0 zoom-in-95 duration-200',
+          'animate-in fade-in-0 zoom-in-95 duration-fast',
           className
         )}
         style={{ transformOrigin: 'center' }}

@@ -291,6 +291,10 @@ def convert_to_epub(book_id: str, user_id: str):
     """
     使用 Calibre 容器将非 EPUB/PDF 格式的书籍转换为 EPUB
     通过共享卷与 Calibre 容器交互，然后轮询等待转换完成
+    
+    状态流转：pending -> processing -> completed/failed
+    
+    【重要】每个数据库操作使用独立事务，避免长事务问题
     """
     import asyncio
     import uuid as _uuid
@@ -300,7 +304,22 @@ def convert_to_epub(book_id: str, user_id: str):
     
     CALIBRE_BOOKS_DIR = os.environ.get("CALIBRE_CONVERT_DIR", "/calibre_books")
     
-    async def _run():
+    async def _update_status(status: str, extra_sql: str = "", extra_params: dict = None):
+        """独立事务更新状态"""
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            params = {"id": book_id, **(extra_params or {})}
+            if extra_sql:
+                sql = f"UPDATE books SET conversion_status = '{status}', {extra_sql}, updated_at = now() WHERE id = cast(:id as uuid)"
+            else:
+                sql = f"UPDATE books SET conversion_status = '{status}', updated_at = now() WHERE id = cast(:id as uuid)"
+            await conn.execute(text(sql), params)
+            print(f"[Convert] Status updated to '{status}' for book: {book_id}")
+    
+    async def _get_book_info():
+        """独立事务获取书籍信息"""
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
@@ -309,153 +328,178 @@ def convert_to_epub(book_id: str, user_id: str):
                 text("SELECT minio_key, original_format, title, converted_epub_key FROM books WHERE id = cast(:id as uuid)"),
                 {"id": book_id},
             )
-            row = res.fetchone()
-            if not row:
-                print(f"[Convert] Book not found: {book_id}")
-                return
+            return res.fetchone()
+    
+    async def _update_converted_epub(epub_key: str):
+        """独立事务更新转换后的 EPUB 信息"""
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            await conn.execute(
+                text("UPDATE books SET minio_key = :key, converted_epub_key = :key, conversion_status = 'completed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                {"key": epub_key, "id": book_id},
+            )
+            print(f"[Convert] Updated book with converted EPUB, status='completed': {book_id}")
+    
+    async def _run():
+        # 步骤1：更新状态为 processing
+        await _update_status('processing')
+        
+        # 步骤2：获取书籍信息
+        row = await _get_book_info()
+        if not row:
+            print(f"[Convert] Book not found: {book_id}")
+            return
+        
+        minio_key, original_format, title, existing_epub = row[0], row[1], row[2], row[3]
+        fmt_lower = (original_format or '').lower()
+        
+        # 如果已经是 EPUB 或已有转换后的 EPUB，跳过
+        if fmt_lower == 'epub':
+            print(f"[Convert] Book is already EPUB, skipping: {book_id}")
+            await _update_status('completed')
+            return
+        if existing_epub:
+            print(f"[Convert] Book already has converted EPUB, skipping: {book_id}")
+            await _update_status('completed')
+            return
+        
+        # PDF 不需要转换
+        if fmt_lower == 'pdf':
+            print(f"[Convert] PDF format does not need conversion: {book_id}")
+            await _update_status('completed')
+            return
+        
+        print(f"[Convert] Converting {fmt_lower} to EPUB: {title}")
+        
+        job_id = str(_uuid.uuid4())[:8]
+        input_filename = f"input-{job_id}.{fmt_lower}"
+        output_filename = f"output-{job_id}.epub"
+        
+        # Calibre 容器中的路径是 /books，Worker 容器中的路径是 /calibre_books
+        worker_input_path = os.path.join(CALIBRE_BOOKS_DIR, input_filename)
+        worker_output_path = os.path.join(CALIBRE_BOOKS_DIR, output_filename)
+        calibre_input_path = f"/books/{input_filename}"
+        calibre_output_path = f"/books/{output_filename}"
+        
+        try:
+            # 从存储下载源文件
+            client = get_s3()
+            ensure_bucket(client, BUCKET)
+            resp = client.get_object(Bucket=BUCKET, Key=minio_key)
+            book_data = resp["Body"].read()
             
-            minio_key, original_format, title, existing_epub = row[0], row[1], row[2], row[3]
-            fmt_lower = (original_format or '').lower()
+            # 写入共享卷
+            os.makedirs(CALIBRE_BOOKS_DIR, exist_ok=True)
+            with open(worker_input_path, 'wb') as f:
+                f.write(book_data)
+            print(f"[Convert] Wrote source file: {worker_input_path} ({len(book_data)} bytes)")
             
-            # 如果已经是 EPUB 或已有转换后的 EPUB，跳过
-            if fmt_lower == 'epub':
-                print(f"[Convert] Book is already EPUB, skipping: {book_id}")
-                return
-            if existing_epub:
-                print(f"[Convert] Book already has converted EPUB, skipping: {book_id}")
-                return
+            # 创建转换请求文件（Calibre 容器中的监控脚本会读取并执行）
+            request_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.request")
+            with open(request_file, 'w') as f:
+                f.write(f"{calibre_input_path}\n{calibre_output_path}\n")
+            print(f"[Convert] Created conversion request: {request_file}")
             
-            # PDF 不需要转换
-            if fmt_lower == 'pdf':
-                print(f"[Convert] PDF format does not need conversion: {book_id}")
-                return
+            # 轮询等待转换完成（最多等待 5 分钟）
+            done_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.done")
+            error_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.error")
             
-            print(f"[Convert] Converting {fmt_lower} to EPUB: {title}")
+            max_wait = 300  # 5 分钟
+            wait_interval = 2  # 每 2 秒检查一次
+            waited = 0
             
-            job_id = str(_uuid.uuid4())[:8]
-            input_filename = f"input-{job_id}.{fmt_lower}"
-            output_filename = f"output-{job_id}.epub"
-            
-            # Calibre 容器中的路径是 /books，Worker 容器中的路径是 /calibre_books
-            worker_input_path = os.path.join(CALIBRE_BOOKS_DIR, input_filename)
-            worker_output_path = os.path.join(CALIBRE_BOOKS_DIR, output_filename)
-            calibre_input_path = f"/books/{input_filename}"
-            calibre_output_path = f"/books/{output_filename}"
-            
-            try:
-                # 从存储下载源文件
-                client = get_s3()
-                ensure_bucket(client, BUCKET)
-                resp = client.get_object(Bucket=BUCKET, Key=minio_key)
-                book_data = resp["Body"].read()
-                
-                # 写入共享卷
-                os.makedirs(CALIBRE_BOOKS_DIR, exist_ok=True)
-                with open(worker_input_path, 'wb') as f:
-                    f.write(book_data)
-                print(f"[Convert] Wrote source file: {worker_input_path} ({len(book_data)} bytes)")
-                
-                # 创建转换请求文件（Calibre 容器中的监控脚本会读取并执行）
-                request_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.request")
-                with open(request_file, 'w') as f:
-                    f.write(f"{calibre_input_path}\n{calibre_output_path}\n")
-                print(f"[Convert] Created conversion request: {request_file}")
-                
-                # 轮询等待转换完成（最多等待 5 分钟）
-                done_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.done")
-                error_file = os.path.join(CALIBRE_BOOKS_DIR, f"convert-{job_id}.error")
-                
-                max_wait = 300  # 5 分钟
-                wait_interval = 2  # 每 2 秒检查一次
-                waited = 0
-                
-                while waited < max_wait:
-                    if os.path.exists(done_file):
-                        print(f"[Convert] Conversion completed!")
-                        break
-                    if os.path.exists(error_file):
-                        with open(error_file, 'r') as f:
-                            error_msg = f.read()
-                        print(f"[Convert] Conversion failed: {error_msg}")
-                        # 清理
-                        try:
-                            os.remove(request_file)
-                            os.remove(error_file)
-                            os.remove(worker_input_path)
-                        except:
-                            pass
-                        await conn.execute(
-                            text("UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('conversion_error', :err) WHERE id = cast(:id as uuid)"),
-                            {"err": error_msg[:500], "id": book_id},
-                        )
-                        return
-                    
-                    time.sleep(wait_interval)
-                    waited += wait_interval
-                    if waited % 30 == 0:
-                        print(f"[Convert] Still waiting... ({waited}s)")
-                
-                if waited >= max_wait:
-                    print(f"[Convert] Conversion timed out after {max_wait}s")
-                    # 标记为需要手动转换
-                    await conn.execute(
-                        text("UPDATE books SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('needs_manual_conversion', true) WHERE id = cast(:id as uuid)"),
-                        {"id": book_id},
-                    )
-                    return
-                
-                # 读取转换后的文件
-                if not os.path.exists(worker_output_path):
-                    print(f"[Convert] Output file not found: {worker_output_path}")
-                    return
-                
-                with open(worker_output_path, 'rb') as f:
-                    epub_data = f.read()
-                print(f"[Convert] Read converted EPUB: {len(epub_data)} bytes")
-                
-                # 上传到存储
-                epub_key = make_object_key(user_id, f"converted/{book_id}.epub")
-                upload_bytes(BUCKET, epub_key, epub_data, "application/epub+zip")
-                print(f"[Convert] Uploaded converted EPUB: {epub_key}")
-                
-                # 删除 S3 中的原始非 EPUB/PDF 文件（节省存储空间）
-                try:
-                    client.delete_object(Bucket=BUCKET, Key=minio_key)
-                    print(f"[Convert] Deleted original file from S3: {minio_key}")
-                except Exception as del_e:
-                    print(f"[Convert] Warning: Failed to delete original file: {del_e}")
-                
-                # 更新数据库：minio_key 指向新的 EPUB，保留 converted_epub_key 作为标记
-                await conn.execute(
-                    text("UPDATE books SET minio_key = :key, converted_epub_key = :key, updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"key": epub_key, "id": book_id},
-                )
-                print(f"[Convert] Updated book minio_key to converted EPUB: {book_id}")
-                
-                # 清理临时文件
-                for f in [worker_input_path, worker_output_path, request_file, done_file]:
+            while waited < max_wait:
+                if os.path.exists(done_file):
+                    print(f"[Convert] Conversion completed!")
+                    break
+                if os.path.exists(error_file):
+                    with open(error_file, 'r') as f:
+                        error_msg = f.read()
+                    print(f"[Convert] Conversion failed: {error_msg}")
+                    # 清理
                     try:
-                        os.remove(f)
+                        os.remove(request_file)
+                        os.remove(error_file)
+                        os.remove(worker_input_path)
                     except:
                         pass
+                    # 标记转换失败
+                    await _update_status('failed', 
+                        "meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('conversion_error', :err)",
+                        {"err": error_msg[:500]})
+                    return
                 
-                # 广播转换完成事件
-                try:
-                    import json as _j
-                    asyncio.create_task(
-                        ws_broadcast(
-                            f"book:{book_id}",
-                            _j.dumps({"event": "CONVERTED_TO_EPUB", "epub_key": epub_key}),
-                        )
-                    )
-                except Exception:
-                    pass
-                
-            except Exception as e:
-                print(f"[Convert] Conversion error: {e}")
-                import traceback
-                traceback.print_exc()
+                time.sleep(wait_interval)
+                waited += wait_interval
+                if waited % 30 == 0:
+                    print(f"[Convert] Still waiting... ({waited}s)")
+            
+            if waited >= max_wait:
+                print(f"[Convert] Conversion timed out after {max_wait}s")
+                # 标记为转换失败（超时）
+                await _update_status('failed',
+                    "meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('needs_manual_conversion', true, 'conversion_error', 'timeout')")
                 return
+            
+            # 读取转换后的文件
+            if not os.path.exists(worker_output_path):
+                print(f"[Convert] Output file not found: {worker_output_path}")
+                await _update_status('failed',
+                    "meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('conversion_error', 'output_not_found')")
+                return
+            
+            with open(worker_output_path, 'rb') as f:
+                epub_data = f.read()
+            print(f"[Convert] Read converted EPUB: {len(epub_data)} bytes")
+            
+            # 上传到存储
+            epub_key = make_object_key(user_id, f"converted/{book_id}.epub")
+            upload_bytes(BUCKET, epub_key, epub_data, "application/epub+zip")
+            print(f"[Convert] Uploaded converted EPUB: {epub_key}")
+            
+            # 删除 S3 中的原始非 EPUB/PDF 文件（节省存储空间）
+            try:
+                client.delete_object(Bucket=BUCKET, Key=minio_key)
+                print(f"[Convert] Deleted original file from S3: {minio_key}")
+            except Exception as del_e:
+                print(f"[Convert] Warning: Failed to delete original file: {del_e}")
+            
+            # 【关键】使用独立事务更新数据库
+            await _update_converted_epub(epub_key)
+            
+            # 清理临时文件
+            for f in [worker_input_path, worker_output_path, request_file, done_file]:
+                try:
+                    os.remove(f)
+                except:
+                    pass
+            
+            # 广播转换完成事件
+            try:
+                import json as _j
+                asyncio.create_task(
+                    ws_broadcast(
+                        f"book:{book_id}",
+                        _j.dumps({"event": "CONVERTED_TO_EPUB", "epub_key": epub_key}),
+                    )
+                )
+            except Exception:
+                pass
+            
+        except Exception as e:
+            print(f"[Convert] Conversion error: {e}")
+            import traceback
+            traceback.print_exc()
+            # 标记为失败
+            try:
+                await _update_status('failed',
+                    "meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('conversion_error', :err)",
+                    {"err": str(e)[:500]})
+            except:
+                pass
+            return
         
         # 转换完成后，触发封面和元数据提取（使用合并任务）
         print(f"[Convert] Triggering cover and metadata extraction for: {book_id}")
@@ -913,21 +957,21 @@ def analyze_book_type(book_id: str, user_id: str):
 def _pdf_to_images_with_sizes(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> list:
     """
     将 PDF 转换为图片列表，用于 OCR
-    每页单独记录尺寸（PDF 每页尺寸可能不同）
+    **每页单独记录尺寸**，因为 PDF 每页尺寸可能不同
     
-    参数：
+    Args:
         pdf_data: PDF 文件二进制数据
         max_pages: 最大处理页数，0 表示处理所有页面
         dpi: 渲染分辨率
-    返回：
-        字典列表：[
+    Returns:
+        list of dict: [
             {
                 "page_num": 1,
                 "image_bytes": bytes,
                 "width": 1200,   # 该页渲染后的像素宽度
                 "height": 1600,  # 该页渲染后的像素高度
-                "pdf_width": 595.0,   # PDF 原始宽度（points，72 DPI）
-                "pdf_height": 842.0,  # PDF 原始高度（points）
+                "pdf_width": 595.0,   # PDF 原始宽度 (points, 72 DPI)
+                "pdf_height": 842.0,  # PDF 原始高度 (points)
             },
             ...
         ]
@@ -1023,11 +1067,11 @@ def _get_optimal_workers(reserved_cores: int = 2, max_workers: int = 8) -> int:
     3. 预留核心给其他任务（API、其他 Celery 任务）
     4. 最大工作线程数限制（避免内存过高）
     
-    参数：
+    Args:
         reserved_cores: 预留给其他任务的核心数，默认 2
         max_workers: 最大工作线程数，默认 8
     
-    返回：
+    Returns:
         int: 推荐的工作线程数
     """
     import os
@@ -1075,7 +1119,7 @@ def _pipeline_ocr_process(
     2. 批量处理，控制内存占用
     3. 使用队列实现流水线，减少等待时间
     
-    参数：
+    Args:
         pdf_data: PDF 文件二进制数据
         ocr_instance: PaddleOCR 实例
         max_pages: 最大处理页数，0 表示所有
@@ -1083,8 +1127,8 @@ def _pipeline_ocr_process(
         batch_size: 每批处理的页数
         progress_callback: 进度回调函数 (processed, total) -> None
     
-    返回：
-        元组: (ocr_pages, full_text, total_pages, processed_pages)
+    Returns:
+        tuple: (ocr_pages, full_text, total_pages, processed_pages)
     """
     import fitz
     import tempfile
@@ -1151,6 +1195,7 @@ def _pipeline_ocr_process(
     
     def image_producer():
         """生产者：批量转换 PDF 页面为图片"""
+        nonlocal conversion_done
         
         with ThreadPoolExecutor(max_workers=image_workers) as executor:
             # 分批提交任务
@@ -1179,7 +1224,7 @@ def _pipeline_ocr_process(
     
     def ocr_consumer():
         """消费者：对图片执行 OCR"""
-        nonlocal processed_count
+        nonlocal processed_count, all_text_parts
         
         while True:
             # 检查是否所有图片都已处理完
@@ -1303,11 +1348,11 @@ def _pipeline_ocr_process(
 def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple:
     """
     将 PDF 转换为图片列表，用于 OCR（兼容旧接口）
-    参数：
+    Args:
         pdf_data: PDF 文件二进制数据
         max_pages: 最大处理页数，0 表示处理所有页面
         dpi: 渲染分辨率
-    返回：
+    Returns:
         (images, image_width, image_height)
         images: [(page_num, image_bytes, total_pages), ...]
         image_width, image_height: 第一页的渲染尺寸（像素）
@@ -1466,7 +1511,7 @@ def process_book_ocr(book_id: str, user_id: str):
             # 7. 更新书籍状态
             # 【重要】OCR 完成后，保持 is_digitalized=true 但不修改 initial_digitalization_confidence
             # confidence 应该保持低值（如 0.1），表示这是图片型 PDF
-            # 这样前端才能正确判断需要显示 OCR 层
+            # 这样前端才能正确判断需要显示 OCR 层 
             await conn.execute(
                 text("""
                     UPDATE books 

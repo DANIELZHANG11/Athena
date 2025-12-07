@@ -266,12 +266,18 @@ async def upload_complete(
                     pass
                 return {"status": "success", "data": data}
     img_based, conf = _quick_confidence(BOOKS_BUCKET, key)
+    
+    # 对于非 EPUB/PDF 格式，需要设置 conversion_status='pending'
+    fmt_lower = (original_format or '').lower()
+    needs_conversion = fmt_lower not in ('epub', 'pdf')
+    conversion_status = 'pending' if needs_conversion else None
+    
     async with engine.begin() as conn:
         await conn.execute(
             text(
                 """
-        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag, content_sha256, storage_ref_count)
-        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag, :sha256, 1)
+        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag, content_sha256, storage_ref_count, conversion_status)
+        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag, :sha256, 1, :conv_status)
         """
             ),
             {
@@ -287,6 +293,7 @@ async def upload_complete(
                 "conf": conf,
                 "etag": etag,
                 "sha256": content_sha256,
+                "conv_status": conversion_status,
             },
         )
         # 初始化 meta.page_count 为占位，后台任务将补齐
@@ -308,11 +315,10 @@ async def upload_complete(
         r.setex(idem_key, 24 * 3600, str(data))
     
     # 根据格式决定任务流程
-    fmt_lower = (original_format or '').lower()
     try:
         celery_app.send_task("tasks.analyze_book_type", args=[book_id, user_id])
         
-        if fmt_lower in ('epub', 'pdf'):
+        if not needs_conversion:
             # EPUB/PDF: 使用合并任务一次性提取封面和元数据（只下载一次文件）
             celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
             # 注意：不自动触发 deep_analyze_book (OCR)
@@ -320,6 +326,7 @@ async def upload_complete(
             # 图片型 PDF 上传后，前端会检测 is_image_based 并弹窗提示用户选择
         else:
             # 其他格式（AZW3, MOBI 等）先转换为 EPUB，转换完成后会自动触发封面和元数据提取
+            print(f"[Upload] Non-EPUB/PDF format ({fmt_lower}), triggering Calibre conversion...")
             celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
     except Exception:
         pass
@@ -526,6 +533,48 @@ async def _deep_analyze_and_standardize(book_id: str, user_id: str):
             )
         except Exception:
             pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 获取书籍所属的书架列表（放在 /{book_id} 通配路由之前）
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/{book_id}/shelves")
+async def get_book_shelves(book_id: str, auth=Depends(require_user)):
+    """查询某本书所属的所有书架"""
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        res = await conn.execute(
+            text(
+                """
+            SELECT s.id::text, s.name, s.description, s.updated_at
+            FROM shelf_items si
+            JOIN shelves s ON s.id = si.shelf_id
+            WHERE si.book_id = cast(:bid as uuid)
+              AND s.user_id = current_setting('app.user_id')::uuid
+            ORDER BY s.name
+            """
+            ),
+            {"bid": book_id},
+        )
+        rows = res.fetchall()
+        return {
+            "status": "success",
+            "data": {
+                "items": [
+                    {
+                        "id": r[0],
+                        "name": r[1],
+                        "description": r[2],
+                        "updated_at": str(r[3]),
+                    }
+                    for r in rows
+                ]
+            },
+        }
 
 
 @router.get("/{book_id}/cover")
@@ -1893,7 +1942,7 @@ async def list_books(
         q = text(
             """
             SELECT b.id::text, b.title, b.author, b.language, b.original_format, b.minio_key, b.size, b.created_at, b.updated_at, b.version, COALESCE(b.is_digitalized,false), COALESCE(b.initial_digitalization_confidence,0), b.cover_image_key,
-                   COALESCE(rp.progress, 0) as progress, rp.finished_at, b.converted_epub_key, b.ocr_status
+                   COALESCE(rp.progress, 0) as progress, rp.finished_at, b.converted_epub_key, b.ocr_status, b.conversion_status
             FROM books b
             LEFT JOIN reading_progress rp ON rp.book_id = b.id AND rp.user_id = current_setting('app.user_id')::uuid
             """
@@ -1974,6 +2023,7 @@ async def list_books(
                     "finished_at": str(r[14]) if r[14] else None,  # 已读完时间
                     "ocr_status": r[16],  # OCR 状态: pending/processing/completed/failed/null
                     "is_image_based": is_image_based,
+                    "conversion_status": r[17],  # 格式转换状态: pending/processing/completed/failed/null
                 }
             )
         next_cursor = None
@@ -2003,7 +2053,7 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                 """
             SELECT id::text, title, author, language, original_format, minio_key, size, created_at, updated_at, version,
                    COALESCE(is_digitalized,false), COALESCE(initial_digitalization_confidence,0), converted_epub_key, digitalize_report_key, cover_image_key,
-                   COALESCE(metadata_confirmed, false), ocr_status, meta, deleted_at, user_id
+                   COALESCE(metadata_confirmed, false), ocr_status, meta, deleted_at, user_id, conversion_status
             FROM books WHERE id = cast(:id as uuid)
             """
             ),
@@ -2087,6 +2137,7 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                 "ocr_status": row[16],
                 "page_count": page_count,
                 "is_image_based": is_image_based,
+                "conversion_status": row[20],  # 格式转换状态: pending/processing/completed/failed/null
             },
         }
 
@@ -3021,6 +3072,45 @@ async def update_shelf(
         )
         if res.rowcount == 0:
             raise HTTPException(status_code=409, detail="version_conflict")
+    return {"status": "success"}
+
+
+@shelves_router.delete("/{shelf_id}")
+async def delete_shelf(
+    shelf_id: str,
+    quota=Depends(require_write_permission),
+    auth=Depends(require_user),
+):
+    """删除书架（同时删除书架内的关联关系）"""
+    user_id, _ = auth
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+        )
+        # 先删除书架内的书籍关联
+        await conn.execute(
+            text(
+                """
+            DELETE FROM shelf_items 
+            WHERE shelf_id = cast(:sid as uuid)
+              AND shelf_id IN (SELECT id FROM shelves WHERE user_id = current_setting('app.user_id')::uuid)
+            """
+            ),
+            {"sid": shelf_id},
+        )
+        # 再删除书架本身
+        res = await conn.execute(
+            text(
+                """
+            DELETE FROM shelves 
+            WHERE id = cast(:sid as uuid) 
+              AND user_id = current_setting('app.user_id')::uuid
+            """
+            ),
+            {"sid": shelf_id},
+        )
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="shelf_not_found")
     return {"status": "success"}
 
 

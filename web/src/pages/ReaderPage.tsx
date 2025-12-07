@@ -207,8 +207,19 @@ export default function ReaderPage() {
                     id: bookData.id, 
                     title: bookData.title, 
                     format: bookData.original_format,
-                    size: bookData.size
+                    size: bookData.size,
+                    conversion_status: bookData.conversion_status
                 })
+                
+                // 检查书籍是否正在转换中
+                const convStatus = bookData.conversion_status
+                if (convStatus === 'pending' || convStatus === 'processing') {
+                    throw new Error('BOOK_CONVERTING')
+                }
+                if (convStatus === 'failed') {
+                    throw new Error('BOOK_CONVERSION_FAILED')
+                }
+                
                 setBook(bookData)
 
                 // 2. 创建阅读会话
@@ -527,6 +538,42 @@ export default function ReaderPage() {
 
     // 错误状态
     if (error) {
+        // 特殊处理：书籍正在转换中
+        if (error === 'BOOK_CONVERTING') {
+            return (
+                <div className="flex h-screen flex-col items-center justify-center gap-6 p-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-system-blue/10">
+                        <Loader2 className="h-8 w-8 animate-spin text-system-blue" />
+                    </div>
+                    <div className="text-center">
+                        <h2 className="text-lg font-medium mb-2">{book?.title || '书籍'}</h2>
+                        <p className="text-secondary-label">正在转换格式，请稍后再试...</p>
+                        <p className="text-sm text-tertiary-label mt-2">
+                            服务器正在将此书籍转换为可阅读格式
+                        </p>
+                    </div>
+                    <Button onClick={() => navigate('/app/library')}>返回书库</Button>
+                </div>
+            )
+        }
+        
+        // 特殊处理：书籍转换失败
+        if (error === 'BOOK_CONVERSION_FAILED') {
+            return (
+                <div className="flex h-screen flex-col items-center justify-center gap-4 p-4">
+                    <AlertCircle className="h-12 w-12 text-red-500" />
+                    <div className="text-center">
+                        <h2 className="text-lg font-medium mb-2">{book?.title || '书籍'}</h2>
+                        <p className="text-red-500">格式转换失败</p>
+                        <p className="text-sm text-secondary-label mt-2">
+                            此书籍格式无法自动转换，请尝试上传其他版本
+                        </p>
+                    </div>
+                    <Button onClick={() => navigate('/app/library')}>返回书库</Button>
+                </div>
+            )
+        }
+        
         return (
             <div className="flex h-screen flex-col items-center justify-center gap-4 p-4">
                 <AlertCircle className="h-12 w-12 text-red-500" />
@@ -553,7 +600,7 @@ export default function ReaderPage() {
                 <div className="w-64">
                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div 
-                            className="h-full bg-system-blue transition-all duration-300"
+                            className="h-full bg-system-blue transition-all duration-medium"
                             style={{ width: `${downloadProgress}%` }}
                         />
                     </div>

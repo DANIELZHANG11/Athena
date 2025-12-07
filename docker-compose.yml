@@ -271,6 +271,27 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+  # Calibre 转换监控器 - 监听转换请求并执行 ebook-convert
+  calibre-watcher:
+    image: zukubq0aouv2k2.xuanyuan.run/linuxserver/calibre:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - calibre_books:/books
+      - ./scripts/calibre-convert-watcher.sh:/scripts/convert-watcher.sh:ro
+    # 启动时运行 watcher 脚本
+    entrypoint: ["/bin/bash", "/scripts/convert-watcher.sh"]
+    command: []
+    depends_on:
+      - calibre
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
   worker:
     build:
       context: ./api

@@ -127,7 +127,7 @@ export default function Home() {
                 <WeeklyActivity days={dash?.weekly || []} goalMinutes={dash?.goals?.daily_minutes || 30} />
 
                 {/* Streak Card - 统一阴影和hover效果 */}
-                <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 border border-gray-100 dark:border-gray-700 shadow-lg flex flex-col justify-center h-[140px] transition-transform duration-200 hover:scale-[1.02]">
+                <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 border border-gray-100 dark:border-gray-700 shadow-lg flex flex-col justify-center h-[140px] transition-transform duration-fast hover:scale-[1.02]">
                   <div className="text-sm text-secondary-label uppercase font-medium mb-1">{t('home.current_streak')}</div>
                   <div className="text-3xl font-bold mb-1">{dash?.streak?.current_streak || 0} {t('common.days')}</div>
                   <div className="text-sm text-secondary-label">

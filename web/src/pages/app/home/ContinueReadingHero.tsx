@@ -156,7 +156,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
 
             {/* Hero Card - 1/4 封面 + 3/4 Ambient Blur */}
             <div
-                className="relative overflow-hidden rounded-2xl shadow-xl cursor-pointer group transition-transform duration-200 hover:scale-[1.01]"
+                className="relative overflow-hidden rounded-2xl shadow-xl cursor-pointer group transition-transform duration-fast hover:scale-[1.01]"
                 style={{ backgroundColor: dominantColor, height: '160px' }}
                 onClick={() => navigate(`/app/read/${bookId}`)}
             >
@@ -193,7 +193,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                                 <img
                                     src={coverUrl}
                                     alt={title}
-                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-slow group-hover:scale-105"
                                     onError={() => {
                                         console.warn('[Hero] Image load error:', coverUrl)
                                         setImgError(true)
@@ -206,7 +206,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                             )}
                             
                             {/* Play 按钮 - Hover 时显示 */}
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-medium">
                                 <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg backdrop-blur-sm">
                                     <Play className="w-4 h-4 ml-0.5 text-black" fill="currentColor" />
                                 </div>
@@ -239,7 +239,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                                     </div>
                                     <div className="h-1.5 rounded-full bg-black/10 overflow-hidden">
                                         <div
-                                            className="h-full bg-white/90 rounded-full transition-all duration-500 ease-out"
+                                            className="h-full bg-white/90 rounded-full transition-all duration-slow ease-out"
                                             style={{ width: `${Math.max(2, progressPercent)}%` }}
                                         />
                                     </div>
