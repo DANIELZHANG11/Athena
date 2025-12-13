@@ -30,12 +30,12 @@ export default function DeviceShowcase() {
                 <motion.div
                   className="relative rounded-[38px] overflow-hidden"
                   style={{
-                    y: (index === 1 ? device2Y : index === 3 ? device4Y : 0) as any,
+                    y: index === 1 ? device2Y : index === 3 ? device4Y : 0,
                     height: '440px',
                     background: 'linear-gradient(180deg, #121314 0%, #0a0b0c 100%)',
                     boxShadow:
                       '0 18px 36px rgba(0,0,0,0.28), 0 8px 16px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(255,255,255,0.04)'
-                  }}
+                  } as any}
                 >
                   <div className="absolute inset-0 rounded-[38px] z-10 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 2px rgba(0,0,0,0.8), inset 0 1px 2px rgba(255,255,255,0.06)' }} />
                   <div className="absolute inset-0 rounded-[38px] border-[7px] border-black/95 z-10 pointer-events-none" />

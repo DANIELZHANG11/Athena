@@ -37,10 +37,7 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/hooks/useProgressData.ts(169,7): error TS2322: Type 'Timeout' is not assignable to type 'number'.
-Error: src/hooks/useTokenRefresh.ts(52,9): error TS2322: Type 'Timeout' is not assignable to type 'number'.
 Error: src/landing/DeviceShowcase.tsx(33,21): error TS2353: Object literal may only specify known properties, and 'y' does not exist in type 'Properties<string | number, string & {}>'.
-Error: src/layouts/AppLayout.tsx(80,7): error TS2322: Type 'Timeout' is not assignable to type 'number'.
 Error: src/pages/app/home/HomeHeader.tsx(36,62): error TS2353: Object literal may only specify known properties, and 'y' does not exist in type 'Properties<string | number, string & {}>'.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.

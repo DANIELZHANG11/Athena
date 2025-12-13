@@ -33,7 +33,7 @@ export default function HomeHeader() {
         
         {/* 右上角：用户头像 */}
         <motion.div 
-          style={{ opacity: rightOpacity, scale: rightScale, y: rightTranslateY as any }}
+          style={{ opacity: rightOpacity, scale: rightScale, y: rightTranslateY } as any}
           className="flex items-center"
         >
           <ProfileButton />
