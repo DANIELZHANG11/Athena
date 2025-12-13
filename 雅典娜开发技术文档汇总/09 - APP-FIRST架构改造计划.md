@@ -233,9 +233,44 @@
    - 单元测试覆盖率 ≥ 80%
    - 离线/在线切换 E2E 场景必须通过
    - SQLite schema 迁移脚本需通过自动化测试
+   - **✅ 已执行 (2025-12-14)**: 标记所有 Web-First API 测试为 skip，避免架构混乱
 3. **安全门禁**: PowerSync Service 鉴权必须复用现有 JWT/Infisical；禁止裸凭证。
 4. **性能门禁**: 同步延迟 (端到端) ≤ 5s；客户端 DB 初始化 < 500ms。
 5. **可观测性**: 必须在 Prometheus/Grafana 中新增 PowerSync Dashboard。
+
+### 测试策略变更 (2025-12-14)
+
+**问题诊断**：
+- `api/tests/test_books.py`, `test_notes.py`, `test_user_flow.py`, `test_search_ai.py` 等测试通过 `httpx.AsyncClient` 直接调用 REST API
+- 违反 APP-FIRST 核心原则：客户端应操作 SQLite + PowerSync，而非直接调用 REST API
+- 这些测试属于 Web-First 思维，无法验证真实的离线同步场景
+
+**修复措施**：
+1. **短期 (已完成)**:
+   - 标记所有 Web-First API 测试为 `@pytest.mark.skip`，注明等待 E2E 测试替代
+   - 保留 Admin/Billing 相关测试（管理后台本身就是 Web-First，不在改造范围）
+   - 增强 `test_sync_core.py` 的 PowerSync 集成测试：
+     - 新增 `test_sync_rules_schema_consistency` - 验证 sync_rules.yaml 与数据库 schema 一致性
+     - 新增 `test_conflict_copy_naming_convention` - 验证 Conflict Copy 命名规范
+     - 新增 `test_powersync_jwt_claims_structure` - 验证 PowerSync JWT Token 必需字段
+
+2. **中期 (计划中)**:
+   - 补充 PowerSync 单元测试：同步规则验证、冲突解决逻辑、LWW 策略
+   - 模拟 PowerSync SDK 操作 SQLite 的集成测试（无需真实 PowerSync Service）
+
+3. **长期 (待规划)**:
+   - E2E 测试框架：Playwright + PowerSync SDK + 真实 SQLite WASM
+   - 测试场景：离线上传书籍 → 恢复网络 → 验证 PowerSync 同步 → 验证服务器数据一致性
+   - 覆盖冲突场景：多设备同时修改笔记 → 验证 Conflict Copy 生成
+
+**架构原则**：
+- ✅ **用户功能**: SQLite → PowerSync → PostgreSQL (APP-FIRST)
+- ✅ **管理后台**: 直接 REST API (Web-First，不在改造范围)
+- ❌ **禁止**: 用户功能通过 REST API 测试（违反离线优先原则）
+
+**参考文档**：
+- 本计划 Section 1 "不在范围: Auth/Billing 功能、OCR/PDF 生成逻辑、OpenAPI 契约主体、AI 对话协议"
+- 本计划 Section 3 "数据流: UI ↔ SQLite ↔ PowerSync SDK ↔ PowerSync Service ↔ PostgreSQL"
 
 ---
 
