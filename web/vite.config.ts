@@ -105,7 +105,7 @@ export default defineConfig({
     hmr: { protocol: 'ws' },
     proxy: {
       '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:48000',
+        target: 'http://localhost:48000',
         changeOrigin: true,
         ws: true
       },

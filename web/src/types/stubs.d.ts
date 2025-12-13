@@ -24,6 +24,26 @@ declare module '@radix-ui/react-scroll-area' {
   export const ScrollAreaThumb: React.FC<any>;
   export const Corner: React.FC<any>;
 }
+declare module '@radix-ui/react-dropdown-menu';
+declare module '@radix-ui/react-select';
+declare module '@radix-ui/react-tabs';
+declare module '@radix-ui/react-toggle';
+declare module '@radix-ui/react-toggle-group';
+declare module '@radix-ui/react-tooltip';
+declare module '@radix-ui/react-switch';
+declare module '@radix-ui/react-slider';
+declare module '@radix-ui/react-separator';
+declare module '@radix-ui/react-progress';
+declare module '@radix-ui/react-navigation-menu';
+declare module '@radix-ui/react-menubar';
+
+// date-fns stub
+declare module 'date-fns' {
+  export function formatDistanceToNow(date: Date | number, options?: any): string;
+}
+declare module 'date-fns/locale' {
+  export const zhCN: any;
+}
 
 // Framer Motion types fix
 declare module 'framer-motion' {
