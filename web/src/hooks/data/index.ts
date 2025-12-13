@@ -12,7 +12,7 @@ export {
   useBooksData,
   useBookData,
   type BookItem,
-} from './useBooksData'
+} from '../useBooksData'
 
 // 笔记和高亮数据
 export {
@@ -21,7 +21,7 @@ export {
   useBookAnnotations,
   type NoteItem,
   type HighlightItem,
-} from './useNotesData'
+} from '../useNotesData'
 
 // 阅读进度数据
 export {
@@ -29,7 +29,7 @@ export {
   useAllProgressData,
   useReadingSession,
   type ReadingProgressData,
-} from './useProgressData'
+} from '../useProgressData'
 
 // 书架数据
 export {
@@ -38,4 +38,4 @@ export {
   useBookShelvesData,
   type ShelfData,
   type ShelfBookData,
-} from './useShelvesData'
+} from '../useShelvesData'

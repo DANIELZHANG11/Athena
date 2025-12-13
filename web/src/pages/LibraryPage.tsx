@@ -10,7 +10,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BookCard from '../components/BookCard'
-import ShelfView from '../components/ShelfView'
 import UploadManager from '../components/upload/UploadManager'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth'
@@ -41,7 +40,7 @@ const VIEW_MODE_STORAGE_KEY = 'athena_library_view_mode'
 export default function LibraryPage() {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
-  const isOnline = useOnlineStatus()
+  const { isOnline } = useOnlineStatus()
   const accessToken = useAuthStore((s) => s.accessToken)
   
   // 视图状态
@@ -152,13 +151,22 @@ export default function LibraryPage() {
       )
     }
 
+    // Shelf view 已被移除（APP-FIRST 架构），降级为 grid 视图
     if (viewMode === 'shelf') {
       return (
-        <ShelfView 
-          books={items} 
-          onBookClick={handleBookClick}
-          getBookCacheStatus={getBookCacheStatus}
-        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+          {items.map((book) => (
+            <BookCard
+              key={book.id}
+              book={book}
+              viewMode="grid"
+              onClick={() => handleBookClick(book.id)}
+              onDownload={() => handleSyncBook(book.id)}
+              cacheStatus={getBookCacheStatus(book.id)}
+              isOnline={isOnline}
+            />
+          ))}
+        </div>
       )
     }
 

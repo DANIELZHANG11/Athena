@@ -3,15 +3,14 @@
  *
  * 用途：
  * - 发送邮箱验证码并校验登录
- * - 成功后写入本地令牌（LocalStorage + IndexedDB）并跳转首页
+ * - 成功后写入本地令牌（LocalStorage）并跳转首页
  *
- * 说明：仅新增注释，不改动页面逻辑与接口调用
+ * 说明：App-First 架构，仅使用 LocalStorage 存储 token
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { dbSet } from '../services/db'
 import { useTranslation } from 'react-i18next'
 
 export default function LoginPage() {
@@ -73,8 +72,6 @@ export default function LoginPage() {
               if (ok) {
                 localStorage.setItem('access_token', tokens.access_token)
                 localStorage.setItem('refresh_token', tokens.refresh_token)
-                await dbSet('access_token', tokens.access_token)
-                await dbSet('refresh_token', tokens.refresh_token)
                 nav('/')
               } else {
                 setMsg(t('login.fail'))
@@ -83,8 +80,6 @@ export default function LoginPage() {
               console.error('[E2E DEBUG] verify_code: failed')
               localStorage.setItem('access_token', 'e2e_access')
               localStorage.setItem('refresh_token', 'e2e_refresh')
-              await dbSet('access_token', 'e2e_access')
-              await dbSet('refresh_token', 'e2e_refresh')
               nav('/')
             }
           }}
