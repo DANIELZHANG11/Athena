@@ -181,7 +181,7 @@ export function useDashboardData() {
         // 规则：如果今天达标，Streak 包含今天。如果今天未达标，但昨天达标，Streak 延续。如果昨天也没达标，Streak 为 0。
         // 特例：如果今天还没达标，但是是 "进行中"，Streak 显示什么？通常显示截止到昨天的 Streak，除非今天达标了+1。
 
-        let checkDate = new Date(now)
+        const checkDate = new Date(now)
         let checkStr = getLocalDateString(checkDate)
 
         if (isReached(checkStr)) {
@@ -201,7 +201,7 @@ export function useDashboardData() {
         }
 
         // 向前回溯
-        while (true) {
+        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
             // 如果我们已经确认 streak 断了 (count=0 且昨天未达标)，由于逻辑在上面处理了，这里只需要在 count > 0 或 昨天达标的情况下继续
             if (!isReached(checkStr)) break
 
@@ -251,8 +251,6 @@ export function useDashboardData() {
         // 我们可以只遍历 sortedDates，检测日期是否连续且达标。
 
         if (sortedDates.length > 0) {
-            const firstDate = new Date(sortedDates[0])
-            const lastDate = new Date(sortedDates[sortedDates.length - 1])
             const dayMs = 24 * 60 * 60 * 1000
 
             // 优化：只遍历有记录的时间段，或者简单点遍历 map keys 检查连续性

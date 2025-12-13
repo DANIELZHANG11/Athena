@@ -42,7 +42,7 @@ export default function NotesPage() {
 
   // 1. 获取所有笔记和高亮
   const { notes, isLoading: notesLoading, updateNote, deleteNote } = useNotesData({})
-  const { highlights, isLoading: highlightsLoading, updateHighlight, deleteHighlight } = useHighlightsData({})
+  const { highlights, isLoading: highlightsLoading,  deleteHighlight } = useHighlightsData({})
   
   // 2. 获取书籍列表 (用于筛选)
   const { items: books } = useBooksData({ sortBy: 'title' })
@@ -129,7 +129,7 @@ export default function NotesPage() {
         await deleteHighlight(item.id)
       }
       toast({ title: t('common.deleted', '已删除') })
-    } catch (error) {
+    } catch {
       toast({ 
         title: t('common.error', '操作失败'), 
         variant: 'destructive' 
@@ -155,7 +155,7 @@ export default function NotesPage() {
       await updateNote(editingNote.id, editContent)
       setEditingNote(null)
       toast({ title: t('common.saved', '已保存') })
-    } catch (error) {
+    } catch {
       toast({ 
         title: t('common.error', '保存失败'), 
         variant: 'destructive' 

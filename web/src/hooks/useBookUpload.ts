@@ -17,8 +17,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
-import { saveBookFile, saveOfflineUploadQueue, getOfflineUploadQueue } from '@/lib/bookStorage'
-import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { saveBookFile, saveOfflineUploadQueue } from '@/lib/bookStorage'
 
 // 上传阶段枚举
 export type UploadStage = 'idle' | 'hashing' | 'initializing' | 'uploading' | 'completing' | 'done' | 'error'

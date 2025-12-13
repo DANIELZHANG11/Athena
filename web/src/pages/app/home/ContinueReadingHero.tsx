@@ -74,7 +74,7 @@ function extractDominantColor(imageUrl: string): Promise<string> {
         let imageData: ImageData
         try {
           imageData = ctx.getImageData(5, 10, 40, 55)
-        } catch (securityError) {
+        } catch {
           // CORS 限制导致无法读取像素（不透明响应）
           console.warn('[Hero ColorExtract] CORS blocked pixel read, using default color')
           resolve(DEFAULT_COLOR)

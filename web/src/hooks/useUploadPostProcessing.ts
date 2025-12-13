@@ -118,7 +118,7 @@ export function useUploadPostProcessing(options: UseUploadPostProcessingOptions 
 
   }, [book, monitoredBookId])
 
-  const startMonitoring = useCallback((bookId: string, initialTitle?: string) => {
+  const startMonitoring = useCallback((bookId: string) => {
     console.log('[UploadPostProcessing] Starting monitoring for book:', bookId)
     setMonitoredBookId(bookId)
     prevStatusRef.current = null
