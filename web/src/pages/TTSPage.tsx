@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export default function TTSPage() {
@@ -11,7 +11,7 @@ export default function TTSPage() {
   const [ledger, setLedger] = useState<any[]>([])
   const timerRef = useRef<any>(null)
   const at = typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : ''
-  const call = async (path: string, init?: RequestInit) => {
+  const call = useCallback(async (path: string, init?: RequestInit) => {
     try {
       const r = await fetch(path, { ...(init||{}), headers: { ...(init?.headers||{}), Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' } })
       const ct = r.headers.get('content-type') || ''
@@ -21,7 +21,7 @@ export default function TTSPage() {
     } catch {
       return {}
     }
-  }
+  }, [at])
   const start = async () => {
     const j = await call('/api/v1/tts', { method: 'POST', body: JSON.stringify({ text }) })
     const d = j.data || {}
@@ -40,13 +40,13 @@ export default function TTSPage() {
     timerRef.current = null
     await refreshBilling()
   }
-  const refreshBilling = async () => {
+  const refreshBilling = useCallback(async () => {
     const b = await call('/api/v1/billing/balance')
     setBalance(b.data)
     const l = await call('/api/v1/billing/ledger')
     setLedger(l.data || [])
-  }
-  useEffect(() => { refreshBilling() }, [])
+  }, [call])
+  useEffect(() => { refreshBilling() }, [refreshBilling])
   return (
     <div style={{ padding: 16 }}>
       <div>

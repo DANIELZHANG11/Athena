@@ -262,6 +262,7 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
         db.close()
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 只在组件挂载时初始化一次
 
   // 认证状态变化时连接/断开
@@ -289,7 +290,7 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
     }
 
     handleAuthChange()
-  }, [isAuthenticated, state.db, state.isInitialized, state.isConnected, connector])
+  }, [isAuthenticated, state.db, state.isInitialized, state.isConnected, connector, setState])
 
   // 监听同步状态
   useEffect(() => {

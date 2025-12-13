@@ -112,6 +112,7 @@ export default function ReaderPage() {
     return () => {
       if (blobUrl) revokeBlobUrl(blobUrl)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, accessToken])
 
   // 初始化进度
@@ -125,6 +126,7 @@ export default function ReaderPage() {
         if (loc) setEpubLocation(loc)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress, book])
 
   // EPUB 位置变更

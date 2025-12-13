@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 
 export default function BillingPage() {
   const [balance, setBalance] = useState<any>(null)
   const [ledger, setLedger] = useState<any[]>([])
   const at = typeof window !== 'undefined' ? localStorage.getItem('access_token') || '' : ''
-  const fetchJson = async (url: string) => {
+  const fetchJson = useCallback(async (url: string) => {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${at}` } })
     return r.json()
-  }
+  }, [at])
   useEffect(() => {
     const load = async () => {
       const b = await fetchJson('/api/v1/billing/balance')
@@ -16,7 +16,7 @@ export default function BillingPage() {
       setLedger(l.data || [])
     }
     load()
-  }, [])
+  }, [fetchJson])
   return (
     <div style={{ padding: 16 }}>
       <h2>余额</h2>

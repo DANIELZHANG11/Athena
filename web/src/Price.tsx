@@ -12,6 +12,7 @@ export default function Price() {
         if (proMonthly) setPrice({ amount_minor: proMonthly.amount_minor, currency: proMonthly.currency })
       })
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language])
   if (!price) return null
   const factor = price.currency === 'JPY' ? 1 : 100

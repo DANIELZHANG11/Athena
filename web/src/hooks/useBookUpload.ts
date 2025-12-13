@@ -499,7 +499,7 @@ export function useBookUpload(options: UseBookUploadOptions = {}) {
       }
       return null
     }
-  }, [updateState, handleError, reset, onSuccess])
+  }, [updateState, handleError, reset, onSuccess, onError])
 
   return {
     // 状态
