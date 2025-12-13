@@ -67,7 +67,7 @@ export function useProgressData(bookId: string | null) {
   }, [data])
 
   // 防抖保存进度
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const saveTimeoutRef = useRef<number | null>(null)
   const pendingUpdateRef = useRef<Partial<ReadingProgressData> | null>(null)
 
   // 保存进度（防抖 1 秒）

@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/auth'
  * 3. 组件卸载时清理定时器
  */
 export function useTokenRefresh() {
-    const timerRef = useRef<NodeJS.Timeout | null>(null)
+    const timerRef = useRef<number | null>(null)
     const { isAuthenticated, isTokenExpiringSoon, refreshAccessToken } = useAuthStore()
 
     useEffect(() => {

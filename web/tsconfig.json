@@ -3,15 +3,18 @@
     "target": "ES2020",
     "lib": [
       "ES2020",
-      "DOM"
+      "DOM",
+      "DOM.Iterable"
     ],
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": false,
+    "skipLibCheck": true,
     "types": [
       "vite/client",
-      "vite-plugin-pwa/client"
+      "vite-plugin-pwa/client",
+      "node"
     ],
     "baseUrl": ".",
     "paths": {
@@ -21,7 +24,7 @@
     },
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
     "noEmit": true
   },
   "include": [

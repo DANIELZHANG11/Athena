@@ -61,7 +61,7 @@ export default function AppLayout() {
   // 判断是否在阅读页面
   const isReaderPage = loc.pathname.startsWith('/app/read/')
   const [isNavVisible, setIsNavVisible] = useState(!isReaderPage)
-  const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const hideTimerRef = useRef<number | null>(null)
 
   // 阅读页面交互显示逻辑
   useEffect(() => {

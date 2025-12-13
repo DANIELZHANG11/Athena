@@ -37,14 +37,26 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/AddToShelfDialog.tsx(102,52): error TS2554: Expected 0 arguments, but got 1.
-Error: src/components/AddToShelfDialog.tsx(147,29): error TS2554: Expected 0 arguments, but got 2.
-Error: src/components/AddToShelfDialog.tsx(171,34): error TS2554: Expected 0 arguments, but got 2.
-Error: src/hooks/useAIChatCache.ts(112,35): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(133,50): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(155,32): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(182,36): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(190,24): error TS2554: Expected 0 arguments, but got 1.
-Error: src/pages/AIConversationsPage.tsx(65,25): error TS2554: Expected 0 arguments, but got 1.
+
+> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
+> eslint "src/**/*.{ts,tsx}"
+
+
+Oops! Something went wrong! :(
+
+ESLint: 8.57.1
+
+ESLint couldn't find the plugin "eslint-plugin-react-hooks".
+
+(The package "eslint-plugin-react-hooks" was not found when loaded as a Node module from the directory "/home/runner/work/Athena/Athena/web".)
+
+It's likely that the plugin isn't installed correctly. Try reinstalling by running the following:
+
+    npm install eslint-plugin-react-hooks@latest --save-dev
+
+The plugin "eslint-plugin-react-hooks" was referenced from the config file in ".eslintrc.cjs".
+
+If you still can't figure out the problem, please stop by https://eslint.org/chat/help to chat with the team.
+
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
