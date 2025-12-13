@@ -241,7 +241,8 @@ export function useOcrData({
       const defaultHeight = data.image_height || firstPageSize.height
       
       // 保存到 IndexedDB
-      await saveOcrData(bookId, {
+      await saveOcrData({
+        bookId,
         isImageBased: data.is_image_based,
         confidence: data.confidence,
         totalPages: data.total_pages,

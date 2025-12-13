@@ -8,28 +8,36 @@ export interface ConversationRecord {
   title: string
   created_at: string
   updated_at: string
+  createdAt: string  // 兼容旧字段
 }
 
 export interface MessageRecord {
   id: string
-  conversation_id: string
+  conversationId: string
+  conversation_id?: string
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  createdAt?: string
+  metadata?: any
 }
 
-export const saveMessages = async () => {
-  // Stub
+export const saveConversations = async (conversations: ConversationRecord[]) => {
+  console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
+}
+
+export const saveMessages = async (messages: MessageRecord[]) => {
+  console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
 }
 
 export const getCachedConversations = async () => {
-  return []
+  return [] as ConversationRecord[]
 }
 
-export const getConversationMessages = async () => {
-  return []
+export const getConversationMessages = async (conversationId: string) => {
+  return [] as MessageRecord[]
 }
 
-export const deleteConversation = async () => {
-  // Stub
+export const deleteConversation = async (id: string) => {
+  console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
 }

@@ -37,19 +37,16 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/AddToShelfDialog.tsx(33,8): error TS2307: Cannot find module '@/lib/shelvesStorage' or its corresponding type declarations.
-Error: src/hooks/data/index.ts(15,8): error TS2307: Cannot find module './useBooksData' or its corresponding type declarations.
-Error: src/hooks/data/index.ts(24,8): error TS2307: Cannot find module './useNotesData' or its corresponding type declarations.
-Error: src/hooks/data/index.ts(32,8): error TS2307: Cannot find module './useProgressData' or its corresponding type declarations.
-Error: src/hooks/data/index.ts(41,8): error TS2307: Cannot find module './useShelvesData' or its corresponding type declarations.
-Error: src/hooks/useAIChatCache.ts(26,8): error TS2307: Cannot find module '@/lib/aiChatStorage' or its corresponding type declarations.
+Error: src/components/AddToShelfDialog.tsx(102,52): error TS2554: Expected 0 arguments, but got 1.
+Error: src/components/AddToShelfDialog.tsx(147,29): error TS2554: Expected 0 arguments, but got 2.
+Error: src/components/AddToShelfDialog.tsx(171,34): error TS2554: Expected 0 arguments, but got 2.
+Error: src/hooks/useAIChatCache.ts(19,3): error TS2305: Module '"@/lib/aiChatStorage"' has no exported member 'saveConversations'.
+Error: src/hooks/useAIChatCache.ts(133,50): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(155,32): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(182,36): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(190,24): error TS2554: Expected 0 arguments, but got 1.
 Error: src/hooks/useOcrData.ts(244,33): error TS2554: Expected 1 arguments, but got 2.
-Error: src/layouts/AppLayout.tsx(7,35): error TS2307: Cannot find module '@/lib/syncStorage' or its corresponding type declarations.
-Error: src/pages/AIConversationsPage.tsx(19,8): error TS2307: Cannot find module '@/lib/aiChatStorage' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(13,23): error TS2307: Cannot find module '../components/ShelfView' or its corresponding type declarations.
-Error: src/pages/LibraryPage.tsx(178,13): error TS2322: Type 'OnlineStatusReturn' is not assignable to type 'boolean'.
-Error: src/pages/LoginPage.tsx(14,23): error TS2307: Cannot find module '../services/db' or its corresponding type declarations.
-Error: src/pages/NotesPage.tsx(36,37): error TS2307: Cannot find module 'date-fns' or its corresponding type declarations.
-Error: src/pages/NotesPage.tsx(37,22): error TS2307: Cannot find module 'date-fns/locale' or its corresponding type declarations.
+Error: src/pages/AIConversationsPage.tsx(16,3): error TS2305: Module '"@/lib/aiChatStorage"' has no exported member 'saveConversations'.
+Error: src/pages/AIConversationsPage.tsx(205,36): error TS2551: Property 'createdAt' does not exist on type 'ConversationRecord'. Did you mean 'created_at'?
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.

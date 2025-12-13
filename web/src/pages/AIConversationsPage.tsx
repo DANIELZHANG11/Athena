@@ -20,7 +20,7 @@ import {
 
 export default function AIConversationsPage() {
   const { t } = useTranslation('common')
-  const isOnline = useOnlineStatus()
+  const { isOnline } = useOnlineStatus()
   const [conversations, setConversations] = useState<ConversationRecord[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -202,7 +202,7 @@ export default function AIConversationsPage() {
                     <span className="text-sm text-label truncate">{conv.title}</span>
                   </div>
                   <div className="text-xs text-tertiary-label mt-1 ml-6">
-                    {new Date(conv.createdAt).toLocaleDateString()}
+                    {new Date(conv.created_at || conv.createdAt).toLocaleDateString()}
                   </div>
                 </button>
               ))
