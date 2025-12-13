@@ -175,7 +175,7 @@ export default function UploadManager({
         // 开始监控元数据提取
         lastUploadRef.current = { id: bookId, title }
         dialogShownRef.current = false
-        startMonitoring(bookId, title)
+        startMonitoring(bookId)
       } else if (book?.conversion_status === 'failed') {
         // 转换失败，停止轮询
         console.log(`[UploadManager] Conversion failed for ${bookId}`)
@@ -265,7 +265,7 @@ export default function UploadManager({
       // 其他格式（AZW3/MOBI等）需要先完成 Calibre 转换，转换完成后会自动触发元数据提取
       if (!needsConversion) {
         console.log(`[UploadManager] Starting immediate metadata monitoring for ${result.id}`)
-        startMonitoring(result.id, result.title)
+        startMonitoring(result.id)
       } else {
         console.log(`[UploadManager] Format ${originalFormat} needs conversion, starting conversion monitoring`)
         // 开始监控转换状态，转换完成后自动开始元数据监控
