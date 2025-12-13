@@ -72,7 +72,7 @@ export default defineConfig({
         type: 'module',
       },
     }),
-  },
+  ],
   resolve: {
     alias: [
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) }

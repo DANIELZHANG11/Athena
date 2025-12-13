@@ -37,74 +37,25 @@ Run pnpm run build
 > athena-web@0.0.1 build /home/runner/work/Athena/Athena/web
 > vite build
 
-vite v5.4.21 building for production...
-transforming...
-Found 3 warnings while optimizing generated CSS:
+Error: R] Unexpected "}"
 
-Issue #1:
-│   }
-│   .\[\&_\.recharts-dot\[stroke\=\\\'\#fff\\\'\]\]\:stroke-transparent {
-│     & .recharts-dot[stroke=\'#fff\'] {
-┆                              ^-- Unexpected token IDHash("fff'")
-┆
-│       stroke: transparent;
-│     }
+    vite.config.ts:75:2:
+      75 │   },
+         ╵   ^
 
-Issue #2:
-│   }
-│   .\[\&_\.recharts-sector\[stroke\=\\\'\#fff\\\'\]\]\:stroke-transparent {
-│     & .recharts-sector[stroke=\'#fff\'] {
-┆                                 ^-- Unexpected token IDHash("fff'")
-┆
-│       stroke: transparent;
-│     }
-
-Issue #3:
-│   }
-│   .\[\&_svg\:not\(\[class\*\\\'size-\\\'\]\)\]\:size-4 {
-│     & svg:not([class*\'size-\']) {
-┆                     ^-- Unexpected token in attribute selector: Delim('*')
-┆
-│       width: calc(var(--spacing) * 4);
-│       height: calc(var(--spacing) * 4);
-
-✓ 3312 modules transformed.
-vite v5.4.21 building for production...
-transforming...
-✓ 82 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/sw.js  73.64 kB │ gzip: 19.05 kB
-✓ built in 177ms
-
-PWA v0.16.7
-mode      injectManifest
-precache  1 entries (0.00 KiB)
-files generated
-  dist/sw.js
-warnings
-  One of the glob patterns doesn't match any files. Please remove or fix the following: {
-  "globDirectory": "/home/runner/work/Athena/Athena/web/dist",
-  "globPattern": "**/*.{js,css,html,ico,png,svg,json,woff,woff2}",
-  "globIgnores": [
-    "**/node_modules/**/*",
-    "sw.js",
-    "sw.js"
-  ]
-}
-
-x Build failed in 7.89s
+failed to load config from /home/runner/work/Athena/Athena/web/vite.config.ts
 error during build:
-[vite-plugin-pwa:build] [plugin vite-plugin-pwa:build] node_modules/.pnpm/@powersync+web@1.30.0_@journeyapps+wa-sqlite@1.4.1_@powersync+common@1.44.0/node_modules/@powersync/web/lib/src/worker/db/open-worker-database.js: There was an error during the build:
-  Invalid value "iife" for option "output.format" - UMD and IIFE output formats are not supported for code-splitting builds.
-Additionally, handling the error in the 'buildEnd' hook caused the following error:
-  Invalid value "iife" for option "output.format" - UMD and IIFE output formats are not supported for code-splitting builds.
-file: /home/runner/work/Athena/Athena/web/node_modules/.pnpm/@powersync+web@1.30.0_@journeyapps+wa-sqlite@1.4.1_@powersync+common@1.44.0/node_modules/@powersync/web/lib/src/worker/db/open-worker-database.js
-    at getRollupError (file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/rollup@4.53.2/node_modules/rollup/dist/es/shared/parseAst.js:401:41)
-    at file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/rollup@4.53.2/node_modules/rollup/dist/es/shared/node-entry.js:23333:39
-    at async catchUnfinishedHookActions (file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/rollup@4.53.2/node_modules/rollup/dist/es/shared/node-entry.js:22791:16)
-    at async rollupInternal (file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/rollup@4.53.2/node_modules/rollup/dist/es/shared/node-entry.js:23316:5)
-    at async build (file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.26_lightningcss@1.30.2_terser@5.44.1/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65709:14)
-    at async CAC.<anonymous> (file:///home/runner/work/Athena/Athena/web/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.26_lightningcss@1.30.2_terser@5.44.1/node_modules/vite/dist/node/cli.js:829:5)
+Error: Build failed with 1 error:
+vite.config.ts:75:2: ERROR: Unexpected "}"
+    at failureErrorWithLog (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:1472:15)
+    at /home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:945:25
+    at runOnEndCallbacks (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:1315:45)
+    at buildResponseToResult (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:943:7)
+    at /home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:970:16
+    at responseCallbacks.<computed> (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:622:9)
+    at handleIncomingPacket (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:677:12)
+    at Socket.readFromStdout (/home/runner/work/Athena/Athena/web/node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js:600:7)
+    at Socket.emit (node:events:524:28)
+    at addChunk (node:internal/streams/readable:561:12)
  ELIFECYCLE  Command failed with exit code 1.
 Error: Process completed with exit code 1.
