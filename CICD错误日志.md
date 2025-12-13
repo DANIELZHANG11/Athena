@@ -37,49 +37,14 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-
-> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
-> eslint "src/**/*.{ts,tsx}"
-
-
-/home/runner/work/Athena/Athena/web/src/hooks/useBookFileCache.ts
-Error:   87:27  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
-
-/home/runner/work/Athena/Athena/web/src/hooks/useUploadPostProcessing.ts
-Error:   71:24  error  'isLoading' is assigned a value but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/lib/aiChatStorage.ts
-Error:   25:41  error  '_conversations' is defined but never used   @typescript-eslint/no-unused-vars
-Error:   29:36  error  '_messages' is defined but never used        @typescript-eslint/no-unused-vars
-Error:   37:47  error  '_conversationId' is defined but never used  @typescript-eslint/no-unused-vars
-Error:   41:42  error  '_id' is defined but never used              @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/lib/shelvesStorage.ts
-Error:    6:38  error  '_shelfId' is defined but never used  @typescript-eslint/no-unused-vars
-Error:    6:56  error  '_bookId' is defined but never used   @typescript-eslint/no-unused-vars
-Error:   10:43  error  '_shelfId' is defined but never used  @typescript-eslint/no-unused-vars
-Error:   10:61  error  '_bookId' is defined but never used   @typescript-eslint/no-unused-vars
-Error:   18:39  error  '_bookId' is defined but never used   @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/AIConversationsPage.tsx
-Error:    94:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
-Error:   103:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
-
-/home/runner/work/Athena/Athena/web/src/pages/LibraryPage.tsx
-Error:   61:5  error  'isReady' is assigned a value but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/ProfilePage.tsx
-Error:   113:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
-Error:   121:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
-
-/home/runner/work/Athena/Athena/web/src/pages/SearchPage.tsx
-Error:   35:10  error  'debouncedQuery' is assigned a value but never used     @typescript-eslint/no-unused-vars
-Error:   35:26  error  'setDebouncedQuery' is assigned a value but never used  @typescript-eslint/no-unused-vars
-
-/home/runner/work/Athena/Athena/web/src/pages/app/Home.tsx
-Error:   18:9  error  'db' is assigned a value but never used  @typescript-eslint/no-unused-vars
-
-✖ 19 problems (19 errors, 0 warnings)
-
- ELIFECYCLE  Command failed with exit code 1.
-Error: Process completed with exit code 1.
+Error: src/components/AddToShelfDialog.tsx(102,52): error TS2554: Expected 0 arguments, but got 1.
+Error: src/components/AddToShelfDialog.tsx(147,29): error TS2554: Expected 0 arguments, but got 2.
+Error: src/components/AddToShelfDialog.tsx(171,34): error TS2554: Expected 0 arguments, but got 2.
+Error: src/hooks/useAIChatCache.ts(112,35): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(133,50): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(155,32): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(182,36): error TS2554: Expected 0 arguments, but got 1.
+Error: src/hooks/useAIChatCache.ts(190,24): error TS2554: Expected 0 arguments, but got 1.
+Error: src/pages/AIConversationsPage.tsx(65,25): error TS2554: Expected 0 arguments, but got 1.
+ ELIFECYCLE  Command failed with exit code 2.
+Error: Process completed with exit code 2.
