@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan, FolderPlus } from 'lucide-react'
-import { useAuthStore } from '@/stores/auth'
 import { cn } from '@/lib/utils'
+import { usePowerSync } from '@powersync/react'
+import { bookStorage } from '@/lib/bookStorage'
 import BookMetadataDialog from './BookMetadataDialog'
 import OcrTriggerDialog from './OcrTriggerDialog'
 import AddToShelfDialog from './AddToShelfDialog'
@@ -44,6 +45,7 @@ export default function BookCardMenu({
   position = 'right',
 }: Props) {
   const { t } = useTranslation('common')
+  const db = usePowerSync()
   const [open, setOpen] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
@@ -118,20 +120,20 @@ export default function BookCardMenu({
 
   const handleToggleFinished = async () => {
     setLoading(true)
+    
+    const newFinishedState = !isFinished
+    
     try {
-      const at = useAuthStore.getState().accessToken || ''
-      const res = await fetch('/api/v1/reader/mark-finished', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${at}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ book_id: bookId, finished: !isFinished }),
-      })
-      if (res.ok) {
-        onFinishedChange?.(!isFinished)
-        setOpen(false)
-      }
+      // 使用 PowerSync 更新状态
+      await db.execute(
+        'UPDATE books SET is_finished = ?, progress = ?, updated_at = datetime("now") WHERE id = ?',
+        [newFinishedState ? 1 : 0, newFinishedState ? 100 : 0, bookId]
+      )
+      
+      console.log('[BookCardMenu] Updated finished status:', bookId, newFinishedState)
+      
+      onFinishedChange?.(newFinishedState)
+      setOpen(false)
     } catch (e) {
       console.error('Failed to toggle finished status:', e)
     } finally {
@@ -142,25 +144,19 @@ export default function BookCardMenu({
   const handleDelete = async () => {
     setLoading(true)
     try {
-      const at = useAuthStore.getState().accessToken || ''
       console.log('[BookCardMenu] Deleting book:', bookId)
-      const res = await fetch(`/api/v1/books/${bookId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${at}` },
-      })
-      console.log('[BookCardMenu] Delete response status:', res.status)
-      if (res.ok) {
-        console.log('[BookCardMenu] Book deleted successfully, calling onDeleted callback')
-        setShowConfirm(false)
-        setOpen(false)
-        // 确保状态更新后再调用回调
-        setTimeout(() => {
-          onDeleted?.()
-        }, 100)
-      } else {
-        const errorData = await res.json().catch(() => ({}))
-        console.error('[BookCardMenu] Delete failed:', res.status, errorData)
-      }
+      
+      // 1. 删除 PowerSync 数据
+      await db.execute('DELETE FROM books WHERE id = ?', [bookId])
+      
+      // 2. 删除本地文件
+      await bookStorage.deleteBook(bookId)
+      
+      console.log('[BookCardMenu] Book deleted successfully')
+      setShowConfirm(false)
+      setOpen(false)
+      
+      onDeleted?.()
     } catch (e) {
       console.error('[BookCardMenu] Failed to delete book:', e)
     } finally {
@@ -230,7 +226,7 @@ export default function BookCardMenu({
           </button>
 
           {/* OCR 本书 - 仅对图片型 PDF 且未完成 OCR 显示 */}
-          {isImageBased && ocrStatus !== 'completed' && ocrStatus !== 'processing' && ocrStatus !== 'pending' && (
+          {isImageBased && (ocrStatus === null || ocrStatus === 'failed') && (
             <button
               onClick={(e) => {
                 e.preventDefault()
@@ -339,7 +335,7 @@ export default function BookCardMenu({
         document.body
       )}
 
-      {/* 删除确认对话框 - 遵循 UIUX 毛玻璃规范，使用 Portal 避免 transform 影响 */}
+      {/* 删除确认对话框 */}
       {showConfirm && createPortal(
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4"

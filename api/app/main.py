@@ -39,11 +39,11 @@ from .reader import router as reader_router
 from .realtime import router as realtime_router
 from .search import router as search_router
 from .srs import router as srs_router
-from .sync import router as sync_router
 from .tracing import init_tracer, tracer_middleware
 from .translate import router as translate_router
 from .tts import router as tts_router
 from .home import router as home_router
+from .powersync import router as powersync_router
 
 sentry_dsn = os.getenv("SENTRY_DSN", "")
 if sentry_dsn:
@@ -83,7 +83,7 @@ app.include_router(pricing_admin_router)
 app.include_router(export_router)
 app.include_router(admin_panel_router)
 app.include_router(home_router)
-app.include_router(sync_router)
+app.include_router(powersync_router)
 
 
 @app.websocket("/ws/docs/{doc_id}")

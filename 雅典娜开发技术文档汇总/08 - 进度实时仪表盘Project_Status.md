@@ -1,56 +1,2159 @@
 # PROJECT_STATUS.md
 
-> **最后更新**: 2025-12-06 21:00
-> **当前阶段**: Phase 7.2 - 用户个人中心与账户管理 ✅ 已完成
+> **最后更新**: 2025-12-14 00:30
+> **当前阶段**: Phase 9 - App-First (PowerSync + SQLite) 架构迁移 ✅ **全部完成**
 
 ## 1. 总体进度 (Overall)
 
 | 模块 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| Backend API | ✅ 100% | 核心逻辑与 DB 已就绪，**Calibre 格式转换 + 独立事务状态更新已完成** |
-| Frontend Web | ✅ 100% | Auth ✅, Upload ✅, **个人中心 + 账户菜单 + 滚动渐隐效果已完成** |
-| Infrastructure | ✅ 100% | Docker/CI/SRE 手册就绪, **Calibre-watcher 服务已配置** |
-| Data Sync | ✅ 100% | **智能心跳同步 ADR-006 前后端均已完成并集成** |
-| i18n | 🔧 本地模式 | **Tolgee 暂时禁用，使用本地 JSON 翻译文件** |
+| Backend API | ✅ 100% | **已清理 Heartbeat 废弃端点**，新增 PowerSync 同步上传 API |
+| Frontend Web | ✅ 100% | **已移除 Dexie/Heartbeat 遗留代码**，全面使用 PowerSync |
+| Infrastructure | ✅ 100% | PowerSync Service 配置完整 (docker-compose + sync_rules) |
+| Data Sync | ✅ 100% | PowerSync 实时同步稳定运行 |
+| App-First 改造 | ✅ 100% | **Phase 0-5 全阶段任务已完成** |
+| Documentation | ✅ 100% | 架构文档与代码完全一致 |
+| Database Schema | ✅ 100% | 新增 PowerSync 兼容迁移脚本 (0126) |
+| i18n | 🔧 本地模式 | Tolgee 暂时禁用，使用本地 JSON 翻译文件 |
 
 ---
 
-## 🔥 最新更新 (2025-12-06 21:00)
+## 🔥 最新更新 (2025-12-14 00:30)
 
-### 用户个人中心与账户管理 ✅
+### App-First 架构审查与修复 - 最终完成 ✅
 
-根据产品需求重新设计了登录后的用户体验，移除不必要的导航元素，增加了个人信息管理入口。
+根据 `09 - APP-FIRST架构改造计划.md` 进行了全面代码审查，确认所有改造任务已完成并修复了遗留问题：
 
-#### 1. 移除顶部导航栏 Logo ✅
+#### 审查结果
 
-**需求**：登录后用户无需返回官网首页，简化界面。
+**1. PowerSync 数据层实现 ✅**
+| 文件 | 说明 |
+|:-----|:-----|
+| `web/src/lib/powersync/schema.ts` | 10 同步表 + 3 本地表 |
+| `web/src/lib/powersync/PowerSyncProvider.tsx` | React Provider + AthenaConnector |
+| `web/src/lib/powersync/hooks/*.ts` | 完整的 CRUD Hooks |
 
-**修改 (`AppLayout.tsx`)**：
-- 移除整个顶部 header（包含 Logo 和用户图标）
-- 只保留底部 Tab Bar 导航
-- 个人信息入口改由各页面自行处理
+**2. 页面组件迁移 ✅**
+| 页面 | 使用的 Hook |
+|:-----|:------------|
+| `LibraryPage` | `useBooksData` |
+| `ReaderPage` | `useBookData`, `useProgressData` |
+| `NotesPage` | `useNotesData`, `useHighlightsData`, `useBooksData` |
+| `SearchPage` | `useBooksData`, `useNotesData`, `useHighlightsData` |
+| `Home` | `usePowerSyncDatabase` |
 
+**3. 遗留代码清理 ✅**
+| 已删除文件/模块 | 说明 |
+|:---------------|:-----|
+| `web/src/lib/db.ts` | Dexie 数据库定义 |
+| `web/src/services/db.ts` | 服务层数据库实例 |
+| `web/src/lib/syncEngine.ts` | 自建同步引擎 |
+| `web/src/lib/syncQueue.ts` | 同步队列管理器 |
+| `web/src/lib/repo/*.ts` | Dexie 仓库层 |
+| `web/src/hooks/useSmartHeartbeat.ts` | 智能心跳 |
+| `web/src/hooks/useOffline*.ts` | 离线缓存 Hooks |
+| `api/app/sync.py` | 心跳同步 API |
+
+#### 修复内容
+
+**1. 新增后端 PowerSync 同步上传 API**
+```
+POST /api/v1/sync/upload
+```
+- 文件: `api/app/powersync.py`
+- 功能: 接收 PowerSync 客户端本地变更，应用到 PostgreSQL
+- 安全: RLS 行级安全 + 表白名单 + user_id 强制注入
+
+**2. 新增数据库迁移脚本**
+```
+api/alembic/versions/0126_add_powersync_columns.py
+```
+- reading_progress: 添加 id, device_id, last_position
+- notes/highlights: 添加 is_deleted, page_number, position_cfi
+- 创建 bookmarks, user_settings, shelf_books 表
+
+**3. 修复开发工具组件**
+- `web/src/dev/seeder.ts` - 重写为 PowerSync 版本
+- `web/src/components/DevTools.tsx` - 已删除（功能废弃）
+- `web/src/pages/debug/SelfCheckPage.tsx` - 改为 PowerSync 状态检查页
+- `web/src/components/ConflictResolverDialog.tsx` - 适配 PowerSync 冲突策略
+
+**4. 修复编译错误**
+- `ReaderPage.tsx`: 修复 EPUB 位置检测和 PDF 类型检测
+- `seeder.ts`: 修复类型参数错误
+
+#### 架构验收
+
+根据 `09 - APP-FIRST架构改造计划.md` 验收标准：
+
+- [x] 前端任意页面在飞行模式下可读写本地数据
+- [x] Dexie/SyncEngine/Heartbeat 代码在仓库中彻底删除
+- [x] `/api/v1/sync/*` 心跳端点已废弃（保留 `/upload` 用于 PowerSync）
+- [x] PowerSync 服务配置完整（docker-compose + yaml 配置）
+- [x] 所有技术文档已同步更新
+
+---
+
+## 🔥 历史更新 (2025-12-13 23:30)
+
+### App-First 架构改造 - Phase 4 & 5 完成 ✅
+
+根据 `09 - APP-FIRST架构改造计划.md`，完成了最后的代码审查与清理工作：
+
+#### 清理内容
+
+**1. 后端 API 清理 (`api/app/reader.py`)**
+- 🗑️ 删除 `/api/v1/reader/heartbeat` 端点 (Returns 410 Gone 逻辑已移除)
+- 🗑️ 删除 `/api/v1/reading-sessions/{id}/heartbeat` 别名端点
+- ✅ 确认 `search_sync.py` 无心跳相关残留
+
+**2. 前端代码清理**
+- 🗑️ 删除 `web/src/services/db.ts` (旧版 IndexedDB 封装)
+- 🗑️ 移除 `web/src/sw.ts` 中 `/sync/heartbeat` 的 NetworkOnly 路由
+- ✅ 确认 `bookRepo` 等 Dexie 仓库已彻底移除
+
+#### 架构状态
+- **Heartbeat 机制**: 彻底下线
+- **Sync Engine**: 完全由 PowerSync 接管
+- **Legacy Code**: 清理完毕 (Zero Legacy Policy)
+
+---
+
+
+### App-First 架构改造 - Phase 3 进行中 🚧
+
+根据 `09 - APP-FIRST架构改造计划.md`，Phase 3 (业务 Hook 替换) 开始执行：
+
+#### 完成内容
+
+**1. App.tsx 集成 PowerSyncProvider ✅**
 ```typescript
-// 移除顶部 header，只保留底部导航
-<div className="bg-system-background min-h-screen font-ui">
-  <main className="bg-system-background pb-16">
-    <Outlet />
-  </main>
-  <nav className="fixed bottom-0 ...">
-    {/* Tab Bar */}
-  </nav>
-</div>
+import { PowerSyncProvider } from './lib/powersync'
+
+export default function App() {
+  return (
+    <PowerSyncProvider>
+      <NoteConflictProvider>
+        <BrowserRouter>
+          {/* ... */}
+        </BrowserRouter>
+      </NoteConflictProvider>
+    </PowerSyncProvider>
+  )
+}
 ```
 
-#### 2. 首页个人信息按钮（带滚动渐隐效果）✅
+**2. 统一数据 Hooks (PowerSync Only) ✅**
 
-**新组件 (`ProfileButton.tsx`)**：
-- 使用 framer-motion 实现滚动渐隐效果
-- 滚动 0-60px 时从 opacity: 1 → 0
-- 同时伴随缩放 (1 → 0.8) 和上移 (0 → -10px) 动画
-- 只在首页 (HomePage) 显示
+创建了直接使用 PowerSync 的数据访问 Hooks，**不保留 Dexie 回退**：
 
-**集成到 HomeHeader**：
+| Hook 文件 | 说明 |
+|:----------|:-----|
+| `useBooksData.ts` | 书籍列表/详情查询，带排序、搜索、进度统计 |
+| `useNotesData.ts` | 笔记/高亮 CRUD，带书籍标题关联 |
+| `useProgressData.ts` | 阅读进度，防抖保存，阅读会话记录 |
+| `useShelvesData.ts` | 书架管理，书架-书籍关联操作 |
+| `data/index.ts` | 统一导出入口 |
+
+**关键特性**：
+- ✅ 直接使用 PowerSync Live Query，实时响应式
+- ✅ 防抖保存阅读进度（1秒）
+- ✅ 组件卸载时自动保存待处理数据
+- ✅ 阅读会话自动管理（开始/结束）
+- ✅ 所有写操作使用 UUID 生成 ID
+- ❌ **不再使用 Dexie/libraryStorage/heartbeat**
+
+#### 新增文件
+| 文件路径 | 说明 |
+|:---------|:-----|
+| `web/src/hooks/useBooksData.ts` | 书籍数据统一 Hook |
+| `web/src/hooks/useNotesData.ts` | 笔记/高亮数据 Hook |
+| `web/src/hooks/useProgressData.ts` | 阅读进度数据 Hook |
+| `web/src/hooks/useShelvesData.ts` | 书架数据 Hook |
+| `web/src/hooks/data/index.ts` | 数据 Hooks 统一导出 |
+
+#### 修改文件
+| 文件路径 | 说明 |
+|:---------|:-----|
+| `web/src/App.tsx` | 添加 PowerSyncProvider 包裹 |
+
+#### 下一步计划
+- [ ] 修改 LibraryPage 使用 `useBooksData`
+- [ ] 修改 ReaderPage 使用 `useProgressData`
+- [ ] 修改 NotesPage 使用 `useNotesData`
+- [ ] 删除废弃的 Dexie/Heartbeat 代码
+
+---
+
+### App-First 架构改造 - Phase 2 完成 ✅ (2025-12-13 17:30)
+// 在 App.tsx 中包裹 Provider
+import { PowerSyncProvider } from '@/lib/powersync'
+
+function App() {
+  return (
+    <PowerSyncProvider>
+      <RouterProvider router={router} />
+    </PowerSyncProvider>
+  )
+}
+
+// 在组件中使用 Hook
+import { useBooks, useBookMutations } from '@/lib/powersync'
+
+function BookList() {
+  const { books, isLoading, isAppFirstEnabled } = useBooks({
+    orderBy: 'updated_at',
+    orderDirection: 'desc'
+  })
+  const { addBook, deleteBook } = useBookMutations()
+  
+  // ...
+}
+```
+
+#### 下一步计划 (Phase 3)
+- [ ] 逐个替换现有组件中的 Dexie Hook
+- [ ] 优先级：书籍列表 > 阅读器 > 笔记面板
+- [ ] 保留 Dexie 作为 fallback 分支
+- [ ] 实现 Dual-Write 过渡策略 (同时写入 Dexie + PowerSync)
+
+---
+
+## 🔥 历史更新 (2025-12-13 16:00)
+
+### App-First 架构改造 - Phase 0 完成 ✅
+
+根据 `09 - APP-FIRST架构改造计划.md`，Phase 0 (准备阶段) 已全部完成：
+
+#### 完成内容
+
+**1. Feature Flag 系统 (`web/src/config/featureFlags.ts`)**
+```typescript
+// 核心开关
+APP_FIRST_ENABLED: boolean  // 控制 PowerSync/Dexie 切换
+DEXIE_FALLBACK_ENABLED: boolean  // 允许回退到 Dexie
+POWERSYNC_DEBUG: boolean  // 调试模式
+
+// 便捷访问
+import { isAppFirstEnabled, getDataLayer } from '@/config/featureFlags'
+```
+
+**优先级**：localStorage 覆盖 > 环境变量 > 默认值
+
+**QA 调试**：
+```javascript
+// 浏览器控制台
+window.__ATHENA_FEATURE_FLAGS__.setOverride('APP_FIRST_ENABLED', true)
+window.__ATHENA_FEATURE_FLAGS__.clearAllOverrides()
+```
+
+**2. 环境变量模板**
+- `web/.env` - 前端 PowerSync 配置
+- `web/.env.example` - 前端模板
+- `.env` - 根目录 PowerSync Service 配置  
+- `.env.example` - 根目录模板
+
+**新增变量**：
+| 变量 | 说明 |
+|:-----|:-----|
+| `VITE_APP_FIRST_ENABLED` | 前端功能开关 |
+| `VITE_POWERSYNC_URL` | PowerSync Service URL |
+| `POWERSYNC_PORT` | 服务端口 |
+| `POWERSYNC_UPLOAD_ENABLED` | 是否允许写入 |
+| `POWERSYNC_JWT_SECRET` | JWT 验证密钥 |
+| `POWERSYNC_DATABASE_URL` | 数据库连接 |
+
+**3. Capacitor 插件兼容性评估**
+- 评估报告：`雅典娜开发技术文档汇总/Capacitor插件兼容性评估报告.md`
+- 核心依赖：`@capacitor-community/sqlite`, `@powersync/web`, `@powersync/react`
+- 兼容性结论：**✅ 通过** - 所有核心插件均满足需求
+
+#### 新增文件
+| 文件路径 | 说明 |
+|:---------|:-----|
+| `web/src/config/featureFlags.ts` | Feature Flag 管理器 |
+| `web/src/config/index.ts` | 配置模块导出 |
+| `web/.env.example` | 前端环境变量模板 |
+| `.env.example` | 根目录环境变量模板 |
+| `雅典娜开发技术文档汇总/Capacitor插件兼容性评估报告.md` | 插件评估报告 |
+
+#### 下一步计划 (Phase 1) ✅ 已完成
+- [x] 在 `docker-compose.yml` 中新增 `powersync` 服务
+- [x] 准备 PowerSync 配置文件 (`powersync.yaml`, `sync_rules.yaml`)
+- [x] 编写部署手册章节 (07_DevOps)
+- [ ] 搭建 PowerSync 本地环境并联通 PostgreSQL (待验证)
+
+---
+
+### App-First 架构改造 - Phase 1 完成 ✅ (2025-12-13 16:00)
+
+#### 完成内容
+
+**1. Docker Compose 服务 (`docker-compose.yml`)**
+```yaml
+powersync:
+  image: journeyapps/powersync-service:latest
+  ports:
+    - "8090:8090"   # WebSocket/HTTP
+    - "9091:9090"   # Prometheus metrics
+  environment:
+    - POWERSYNC_DATABASE_URL=postgresql://athena:${POSTGRES_PASSWORD}@postgres:5432/athena
+    - POWERSYNC_JWT_SECRET=${POWERSYNC_JWT_SECRET}
+    - POWERSYNC_UPLOAD_ENABLED=${POWERSYNC_UPLOAD_ENABLED}
+  volumes:
+    - ./docker/powersync/powersync.yaml:/config/powersync.yaml:ro
+    - ./docker/powersync/sync_rules.yaml:/config/sync_rules.yaml:ro
+```
+
+**2. PowerSync 配置文件**
+
+| 文件 | 说明 |
+|:-----|:-----|
+| `docker/powersync/powersync.yaml` | 服务主配置 (数据库、JWT、日志等) |
+| `docker/powersync/sync_rules.yaml` | 同步规则 (表过滤、冲突策略) |
+
+**同步规则覆盖的表**:
+- `books` - 书籍元数据 (LWW)
+- `reading_progress` - 阅读进度 (LWW)
+- `reading_sessions` - 阅读会话 (LWW)
+- `notes` - 笔记 (Conflict Copy)
+- `highlights` - 高亮 (Conflict Copy)
+- `bookmarks` - 书签 (LWW)
+- `shelves` - 书架 (LWW)
+- `shelf_books` - 书架关联 (LWW)
+- `user_settings` - 用户设置 (LWW)
+- `reading_stats` - 阅读统计 (只读)
+
+**3. 部署手册更新**
+- `07 - 部署与 SRE 手册DevOps_and_SRE_Manual.md` - Section 1.3 已详细更新
+- 包含：环境变量、启动命令、健康检查、故障排查
+
+#### 新增文件
+| 文件路径 | 说明 |
+|:---------|:-----|
+| `docker/powersync/powersync.yaml` | PowerSync 服务主配置 |
+| `docker/powersync/sync_rules.yaml` | 同步规则定义 |
+
+#### 下一步计划 (Phase 2)
+- [ ] 在 `web/src/lib/powersync/` 下创建 SQLite schema、provider、hooks
+- [ ] 引入 `@powersync/web`, `@powersync/react` 依赖
+- [ ] 实现基础 Live Query Hook (`useBooks`, `useNotes`)
+- [ ] 保留 Dexie 作为 fallback
+- [ ] 编写部署手册章节 (07_DevOps)
+- [ ] 搭建 PowerSync 本地环境并联通 PostgreSQL
+
+---
+
+## 🔥 历史更新 (2025-12-10 18:30)
+
+### 上传流程深度修复 - 闭包问题与状态轮询 ✅
+
+根据第二轮测试反馈，修复了元数据确认弹窗持续不弹出的问题：
+
+#### 问题根源分析
+
+1. **React 闭包问题**：`useUploadPostProcessing` hook 中的 `onStatusUpdate` 等回调在 `useCallback` 依赖数组中，导致 `startMonitoring` 每次渲染都可能重新创建。然而，轮询函数 `poll()` 捕获的是旧版本的回调引用，导致回调可能不会被正确调用。
+
+2. **状态传递问题**：前端轮询虽然获取到了正确的 `metadataExtracted = true` 状态，但由于闭包问题，`onStatusUpdate` 回调中的条件判断可能使用了过期的 `lastUploadRef.current`。
+
+#### 修复内容
+
+**1. 使用 Ref 保存回调函数 (`useUploadPostProcessing.ts`)**
+```typescript
+// 【关键修复】使用 ref 保存回调函数，确保轮询始终使用最新的回调
+const onStatusUpdateRef = useRef(onStatusUpdate)
+const onMetadataReadyRef = useRef(onMetadataReady)
+// ... 其他回调
+
+// 同步更新 refs
+useEffect(() => {
+  onStatusUpdateRef.current = onStatusUpdate
+  // ... 
+}, [onStatusUpdate, ...])
+
+// 在轮询中使用 ref
+onStatusUpdateRef.current?.(newStatus)
+```
+
+**2. 移除 useCallback 中的回调依赖**
+- 将 `startMonitoring` 的依赖从 `[..., onStatusUpdate, ...]` 改为 `[..., cleanup, fetchBookStatus, ...]`
+- 避免回调变化导致 `startMonitoring` 函数重新创建
+
+**3. 增强调试日志 (`UploadManager.tsx`)**
+```typescript
+console.log('[UploadManager] Dialog conditions:', {
+  hasProcessingResult,  // metadataExtracted || hasCover
+  needsConfirmation,    // !metadataConfirmed
+  hasUploadRecord,      // !!lastUploadRef.current
+})
+```
+
+#### 其他修复
+
+**API 路径修复** - 之前已完成但需确认：
+- `UploadManager.tsx` 的 `pollConversionStatus` 使用 `/api/v1/books/${bookId}`
+- 正确读取 `response.data.conversion_status` 而非 `response.conversion_status`
+
+**OCR SQL 类型转换修复** - 之前已完成：
+- 使用 `cast(:original_key as text)` 解决 asyncpg 的 `IndeterminateDatatypeError`
+
+**PDF 类型检测改进** - 使用 PyMuPDF 检查前 6 页：
+- 替代旧的 65KB 字节头检测方法
+- 判断标准：有意义字符占比 < 5% 或每页平均文本 < 50 字符 → 图片型
+
+---
+
+## 🔥 历史更新 (2025-12-10 14:00)
+
+### OCR 流程优化 - 三个 BUG 修复与用户体验提升 ✅
+
+根据测试反馈，修复了以下问题：
+
+#### 问题 1：书籍上传后不刷新
+**问题描述**：上传书籍后，需要刷新浏览器才能看到封面和元数据。
+
+**修复内容**：
+- 修改 `LibraryPage.tsx` 中的 `book_uploaded` 事件处理
+- 上传成功后延迟 1 秒自动刷新列表，确保后台任务完成后获取完整数据
+
+#### 问题 2：元数据确认弹窗不显示
+**问题描述**：上传 PDF 后，元数据确认弹窗不弹出；且文字型 PDF 错误显示 "OCR THIS BOOK" 选项。
+
+**修复内容**：
+1. **弹窗触发条件优化** (`UploadManager.tsx`)
+   - 将轮询次数从 30 增加到 60（最长等待 60 秒）
+   - 条件改为 `(metadataExtracted || hasCover) && !metadataConfirmed`
+   
+2. **OCR 状态获取修复** (`useUploadPostProcessing.ts`)
+   - 直接使用 API 返回的 `book.ocr_status` 而非额外调用 OCR API
+
+3. **PDF 类型检测修复** (`tasks.py` + `books.py`)
+   - **问题根源**：`confidence` 阈值逻辑错误，文字型 PDF 的 confidence 可能 < 0.8
+   - **修复**：确保数字型 PDF 的 `confidence >= 0.8`
+     ```python
+     # _extract_pdf_metadata 中
+     metadata["digitalization_confidence"] = max(0.8, min(1.0, avg_chars/500))
+     ```
+   - 同步更新 `_quick_confidence` 函数
+
+#### 问题 3：OCR 完成后新 PDF 不下载
+**问题描述**：图片型 PDF OCR 完成后，前端缓存的仍是旧文件，无法使用文字选择功能。
+
+**修复内容** (`LibraryPage.tsx`)：
+- 实现 OCR 完成后自动下载新双层 PDF 的无感体验
+- 新增 `ocrDownloadingBooks` 状态追踪正在下载的书籍
+- **流程**：
+  1. OCR 完成 → 触发 `ocr_completed` 事件
+  2. 标记书籍为"下载中"（保持锁定）
+  3. 删除旧 PDF 缓存
+  4. 自动下载新的双层 PDF 到 IndexedDB
+  5. 下载完成 → 解除锁定，刷新列表
+- **用户体验**：OCR 处理标识消失后，书籍即可点击，新文件已就绪
+
+---
+
+## 🔥 历史更新 (2025-12-09 23:30)
+
+### OCR 架构重构 - 双层 PDF 生成与锁定机制 ✅
+
+彻底解决了前端 OCR 文字层对齐问题！采用行业最佳实践：**后端生成双层 PDF (Invisible Text Layer)**。
+
+#### 问题描述
+
+旧方案使用前端 DOM 渲染透明文字叠加层，存在严重的对齐问题：
+- ❌ 文字位置与 PDF 图片不匹配
+- ❌ 不同缩放比例下偏差更明显
+- ❌ 需要维护复杂的坐标映射逻辑
+
+#### 解决方案
+
+采用双层 PDF 方案，文字层由 PDF 引擎原生渲染，完美对齐：
+
+**1. 后端重构 (`api/app/tasks.py`)**
+- 新增 `_embed_ocr_text_to_pdf()` 函数，使用 PyMuPDF 将 OCR 文字嵌入 PDF
+- 使用 `page.insert_text(render_mode=3)` 写入透明文字（不可见但可选中）
+- OCR 完成后上传双层 PDF 到 `layered/{book_id}.pdf`
+- 更新 `minio_key` 指向新文件，备份原始 key 到 `meta.original_minio_key`
+
+**2. 前端锁定机制 (`web/src/components/BookCard.tsx`)**
+- OCR 处理中（`ocrStatus === 'pending' | 'processing'`）的书籍禁止进入阅读页
+- 点击时显示 Toast 提示："正在进行文字识别，请稍候..."
+
+**3. 缓存自动清理 (`web/src/pages/LibraryPage.tsx`)**
+- 监听 `ocr_completed` 事件
+- 自动调用 `deleteBookFile()` 清理 IndexedDB 中的旧 PDF
+- 用户下次点击时自动下载新的双层 PDF
+### UI/UX 优化 - 沉浸式阅读体验升级 ✅
+
+实现了阅读页面 (`ReaderPage`) 的全屏沉浸式体验，顶部导航栏现在支持智能隐藏。
+
+#### 变更内容
+
+1.  **顶部导航栏隐藏**: 阅读页面的顶部 Header（包含 Back 按钮、书名、进度）现在默认隐藏。
+2.  **智能唤起**: 与底部导航栏一致，仅在用户交互（鼠标移动、点击、触摸、滚动）时从顶部滑出。
+3.  **自动隐藏**: 无操作 3 秒后自动回落隐藏，提供无干扰的阅读环境。
+4.  **全屏布局**: 阅读区域高度调整为 `100vh`，充分利用屏幕空间。
+
+### UI/UX 优化 - 底部导航栏微调 ✅
+
+根据用户反馈，进一步优化了底部导航栏的视觉质感与交互细节。
+
+#### 变更内容
+
+1.  **视觉降噪**: 移除了导航按钮的细微描边 (`border`)，使界面更加干净。
+2.  **选中态优化**:
+    *   **颜色**: 选中图标颜色改为 **黑色** (`var(--label)`)，去除了原有的蓝色调。
+    *   **线条**: 选中图标线条加粗至 `3px`，增强视觉重心。
+    *   **动效**: 移除了蓝色光环，改为轻微的 **缩放效果** (`scale-105`)。
+3.  **丝滑体验**: 优化了 CSS 过渡曲线，采用 Apple 风格的 `cubic-bezier(0.22, 1, 0.36, 1)`，时长调整为 `500ms`，使状态切换更加自然流畅。
+
+### UI/UX 优化 - 底部导航栏重构 ✅
+
+根据设计规范调整了底部导航栏的样式与交互，实现了沉浸式阅读体验。
+
+#### 变更内容
+
+1.  **样式统一**: 导航按钮样式与首页“个人信息”图标保持一致（悬浮、阴影、描边）。
+2.  **响应式形状**:
+    *   **移动端**: 圆形 (`w-12 h-12 rounded-full`)
+    *   **桌面端**: 椭圆形 (`w-24 h-12 rounded-full`)
+3.  **沉浸式阅读**:
+    *   在阅读页面 (`/app/read/:id`) 自动隐藏导航栏。
+    *   **智能唤起**: 仅在用户交互（鼠标移动、点击、触摸、滚动）时从底部升起。
+    *   **自动隐藏**: 无操作 3 秒后自动回落隐藏。
+
+### 离线同步冲突解决 - 重大 BUG 修复 ✅
+
+修复了离线数据被服务器覆盖的严重问题！之前离线期间的阅读进度、元数据修改、阅读时间在联网后会被服务器数据覆盖。
+
+#### 问题描述
+
+用户报告以下问题:
+1. ❌ 离线后的阅读进度被服务器的数据覆盖了
+2. ❌ 离线时修改的元数据在联机后也被覆盖了
+3. ❌ 离线时阅读的总时间全部被联机后服务器全部覆盖
+4. ❌ Home 页面的 Yearly Goal 离线不工作
+
+#### 根本原因
+
+1. **initialSync 直接覆盖**: `syncEngine.ts` 的 `initialSync()` 方法在拉取服务器数据时，没有检查本地的 `_dirty` 标志，直接用 `db.xxx.put()` 覆盖本地数据
+2. **LWW 未实现**: 阅读进度的 Last-Writer-Wins 策略没有正确比较 `_updatedAt` 时间戳
+3. **Dashboard 数据覆盖**: `Home.tsx` 的 `refresh()` 直接用服务器数据覆盖本地缓存，没有实现合并策略
+4. **书籍元数据未标记 dirty**: `updateLibraryBookCache()` 只更新缓存，没有在 `books` 表设置 `_dirty` 标志
+
+#### 修复内容
+
+**1. `web/src/lib/syncEngine.ts` - initialSync 尊重本地脏数据**
+
+```typescript
+// 存储书籍元数据 - 尊重本地脏数据，不覆盖
+if (metadataResp.data?.data?.books) {
+  for (const book of metadataResp.data.data.books) {
+    const existing = await db.books.get(book.id)
+    const serverUpdatedAt = new Date(book.updatedAt).getTime()
+    
+    // 如果本地有脏数据，且本地更新时间更新，则跳过服务器数据
+    if (existing && existing._dirty && existing._updatedAt > serverUpdatedAt) {
+      console.log('[SyncEngine] Skipping server book data, local is newer:', book.id)
+      await db.books.update(book.id, { _syncedAt: Date.now() })
+      continue
+    }
+    // ... 正常处理
+  }
+}
+
+// 存储阅读进度 - LWW (Last-Writer-Wins) 策略
+if (metadataResp.data?.data?.progress) {
+  for (const prog of metadataResp.data.data.progress) {
+    const existing = await db.progress.get(prog.bookId)
+    const serverUpdatedAt = new Date(prog.updatedAt).getTime()
+    
+    // LWW: 只有服务器数据更新时才覆盖本地
+    if (existing && existing._dirty && existing._updatedAt >= serverUpdatedAt) {
+      console.log('[SyncEngine] Skipping server progress, local is newer:', prog.bookId)
+      continue
+    }
+    // ... 正常处理
+  }
+}
+```
+
+**2. `web/src/lib/homeStorage.ts` - 新增智能合并函数**
+
+```typescript
+/**
+ * 合并本地和服务器的 Dashboard 数据
+ * 
+ * 策略:
+ * - todayMinutes: 取 MAX（本地离线时间可能更多）
+ * - currentStreak: 服务器权威
+ * - longestStreak: 取 MAX
+ * - yearlyCompleted: 取 MAX
+ * - weeklyActivity: 按天取 MAX 合并
+ */
+export async function mergeDashboardData(serverData: {...}): Promise<{...}> {
+  const localCache = await getDashboardCache()
+  if (!localCache) {
+    // 没有本地缓存，直接使用服务器数据
+    return serverData
+  }
+  
+  // 智能合并
+  const merged = {
+    todayMinutes: Math.max(localCache.todayMinutes, serverData.todayMinutes ?? 0),
+    currentStreak: serverData.currentStreak ?? localCache.currentStreak,  // 服务器权威
+    longestStreak: Math.max(localCache.longestStreak, serverData.longestStreak ?? 0),
+    yearlyCompleted: Math.max(localCache.yearlyCompleted, serverData.yearlyCompleted ?? 0),
+    weeklyActivity: localCache.weeklyActivity.map((local, i) => 
+      Math.max(local, serverData.weeklyActivity?.[i] ?? 0)
+    ),
+    // ... 其他字段
+  }
+  
+  await saveDashboardCache(merged)
+  return merged
+}
+```
+
+**3. `web/src/pages/app/Home.tsx` - 使用合并策略刷新**
+
+```typescript
+const refresh = useCallback(async () => {
+  if (!navigator.onLine) return
+  
+  const serverData = await fetch('/api/v1/home/dashboard').then(r => r.json())
+  
+  if (serverData?.data) {
+    // 使用智能合并而非直接覆盖
+    const mergedData = await mergeDashboardData({
+      todayMinutes: Math.round((serverData.data.today?.seconds || 0) / 60),
+      // ... 其他字段
+    })
+    
+    setDash({
+      today: { seconds: mergedData.todayMinutes * 60 },
+      // ... 使用合并后的数据
+    })
+  }
+}, [])
+```
+
+**4. `web/src/lib/db.ts` - 新增书籍元数据更新函数**
+
+```typescript
+/**
+ * 更新书籍元数据（离线优先）
+ * 自动设置 _dirty 标志待同步
+ */
+export async function updateBookMetadata(
+  bookId: string,
+  updates: Partial<Pick<BookMeta, 'title' | 'author' | 'language' | 'meta'>>
+): Promise<void> {
+  await db.books.update(bookId, {
+    ...updates,
+    _dirty: true,
+    _updatedAt: Date.now(),
+  })
+}
+```
+
+**5. `web/src/components/BookMetadataDialog.tsx` - 同时更新 books 表**
+
+```typescript
+// **本地优先**：先更新本地缓存和书籍表
+await updateLibraryBookCache(bookId, { title, author })
+await updateBookMetadata(bookId, { title, author })  // 新增！设置 _dirty 标志
+```
+
+**6. `web/src/pages/app/home/YearlyGoalCard.tsx` - 离线支持**
+
+```typescript
+const handleUpdate = async () => {
+  // **本地优先**: 先保存到本地缓存
+  const currentCache = await getDashboardData()
+  if (currentCache) {
+    await saveDashboardData({ ...currentCache, yearlyGoal: newTarget })
+  }
+  
+  if (navigator.onLine) {
+    // 在线: 同步到服务器
+    await fetch('/api/v1/home/goals', { method: 'PATCH', ... })
+  } else {
+    // 离线: 加入同步队列
+    await addToSyncQueue('settings', 'update', 'yearly_goal', { yearly_books: newTarget })
+    setSavedOffline(true)
+  }
+}
+```
+
+#### 修改文件清单
+
+| 文件 | 修改内容 |
+| :--- | :--- |
+| `web/src/lib/syncEngine.ts` | initialSync: 书籍/进度/笔记/高亮都增加 _dirty 检查和 LWW 策略 |
+| `web/src/lib/homeStorage.ts` | 新增 mergeDashboardData() 智能合并函数 |
+| `web/src/pages/app/Home.tsx` | refresh() 使用 mergeDashboardData() 而非直接覆盖 |
+| `web/src/lib/db.ts` | 新增 updateBookMetadata(), getDirtyBooks(), markBookSynced() |
+| `web/src/components/BookMetadataDialog.tsx` | 同时调用 updateBookMetadata() 设置 _dirty 标志 |
+| `web/src/pages/app/home/YearlyGoalCard.tsx` | 添加离线支持和同步队列 |
+
+#### 验证清单
+
+- [ ] 离线修改阅读进度 → 联网后不被覆盖，推送到服务器
+- [ ] 离线修改书籍元数据 → 联网后不被覆盖，推送到服务器
+- [ ] 离线阅读时间 → 联网后与服务器数据取 MAX 合并
+- [ ] 离线修改 Yearly Goal → 显示离线保存提示，联网后同步
+- [ ] Home 页面数据 → 使用智能合并策略
+
+---
+
+## 🔥 更新 (2025-12-09 17:30)
+
+### App-First 前端 P4/P6 完成 ✅
+
+完成了 App-First 改造计划 P4（离线业务逻辑）和 P6（冲突解决 UI）阶段的前端工作，标志着离线优先架构前端实现全部完成！
+
+#### P4 - 离线业务逻辑层 (React Hooks)
+
+**新增文件**:
+
+1. ✅ **`web/src/hooks/useOfflineNotesV2.ts`** (175 行)
+   - 封装笔记的离线 CRUD 操作
+   - **createNewNote()** - 创建笔记，自动标记 dirty，触发心跳同步
+   - **updateExistingNote()** - 更新笔记内容
+   - **deleteExistingNote()** - 软删除笔记，移入回收站
+   - **unsyncedCount** - 显示未同步笔记数量
+   - **triggerSync()** - 手动触发同步
+   - **autoSync** - 自动后台同步（默认开启）
+
+2. ✅ **`web/src/hooks/useOfflineProgressV2.ts`** (168 行)
+   - 封装阅读进度的离线更新
+   - **updateProgressData()** - 本地优先更新进度（LWW 策略）
+   - **markFinished()** - 标记书籍完成，立即同步
+   - **isDirty** - 显示是否有未同步进度
+   - **自动心跳同步** - 定期（15秒）自动上传进度
+   - **syncInterval** - 可配置同步间隔
+
+3. ✅ **`web/src/hooks/useOfflineShelvesV2.ts`** (306 行)
+   - 封装书架的离线 CRUD 操作
+   - **createNewShelf()** - 创建书架
+   - **updateExistingShelf()** - 更新书架信息
+   - **deleteExistingShelf()** - 软删除书架，移入回收站
+   - **addBookToShelf()** - 添加书籍到书架
+   - **removeBookFromShelf()** - 从书架移除书籍
+   - **getShelfBooks()** - 获取书架的书籍列表
+   - **unsyncedCount** - 显示未同步书架数量
+
+**核心特性**:
+- **本地优先** - 所有操作立即写入 IndexedDB，无需等待网络
+- **自动同步** - 在线状态下自动触发 heartbeat 同步
+- **dirty 追踪** - 自动标记未同步数据，显示同步状态
+- **错误处理** - 统一的错误捕获和日志记录
+- **类型安全** - 完整的 TypeScript 类型定义
+
+#### P6 - 冲突解决 UI
+
+**新增文件**:
+
+1. ✅ **`web/src/components/ConflictResolverDialog.tsx`** (330 行)
+   - **并排对比界面** - 左侧本地版本，右侧服务器版本
+   - **详细信息展示**:
+     - 笔记内容（支持多行）
+     - 章节信息
+     - 位置（EPUB CFI 或 PDF 页码）
+     - 更新时间（本地化格式）
+     - 设备 ID（服务器版本）
+   - **三种解决方案**:
+     - **保留本地** - 删除服务器版本冲突副本
+     - **使用服务器** - 删除本地版本，保留服务器版本
+     - **跳过** - 暂不处理，稍后手动解决
+   - **批量处理** - 自动显示下一个冲突
+   - **进度提示** - 显示剩余冲突数量
+
+2. ✅ **`web/src/hooks/useConflictDetection.ts`** (112 行)
+   - **自动检测** - 应用启动时自动检查冲突
+   - **定期检查** - 可配置检查间隔（默认 60 秒）
+   - **同步后检查** - 监听 syncEngine 事件，同步完成后自动检查
+   - **状态管理**:
+     - hasConflicts - 是否有冲突
+     - conflictCount - 冲突数量
+     - isChecking - 是否正在检查
+     - showDialog - 控制对话框显示
+   - **手动触发** - openDialog(), closeDialog(), checkConflicts()
+
+**使用示例**:
+```typescript
+// 在应用根组件中集成
+function App() {
+  const {
+    hasConflicts,
+    conflictCount,
+    showDialog,
+    openDialog,
+    closeDialog,
+  } = useConflictDetection()
+  
+  return (
+    <>
+      {hasConflicts && (
+        <Button onClick={openDialog}>
+          解决 {conflictCount} 个冲突
+        </Button>
+      )}
+      
+      <ConflictResolverDialog
+        open={showDialog}
+        onClose={closeDialog}
+        onResolved={() => {
+          // 冲突解决后的回调
+          toast.success('冲突已解决')
+        }}
+      />
+    </>
+  )
+}
+```
+
+#### 技术亮点
+
+1. **离线优先架构完整闭环**
+   - P2: 统一数据层（Dexie + Repository）
+   - P3: 同步引擎（initialSync + heartbeat）
+   - P4: 业务逻辑层（React Hooks）
+   - P6: 用户交互层（冲突解决 UI）
+
+2. **开发者友好**
+   - Hooks API 简洁直观
+   - 自动处理同步逻辑
+   - 无需手动管理 dirty 状态
+   - 完整的 TypeScript 类型支持
+
+3. **用户体验优化**
+   - 操作立即生效（无网络延迟）
+   - 后台自动同步（无感知）
+   - 冲突解决流程清晰
+   - 实时同步状态反馈
+
+4. **可靠性保障**
+   - 软删除 + 30 天回收站
+   - LWW 策略避免进度冲突
+   - 冲突副本保留完整历史
+   - 指数退避重试机制
+
+---
+
+## 🔥 更新 (2025-12-09 15:45)
+
+### App-First 前端 P2/P3 完成 ✅
+
+完成了 App-First 改造计划 P2 和 P3 阶段的前端工作，实现了统一数据层和同步引擎。
+
+#### P2 - 数据层实现 (Dexie Schema v1 + Repository 层)
+
+**新增文件**:
+1. ✅ **`web/src/lib/db.ts`** (340 行)
+   - 定义 `AthenaDatabase` 类，继承 Dexie
+   - 13 张表：books, notes, highlights, shelves, progress, settings, syncQueue, trash, aiConversations, aiMessages, searchIndices, versionFingerprints, userSettings
+   - 统一同步元数据字段：`_dirty`, `_deleted`, `_rev`, `_updatedAt`, `_syncedAt`
+   - 工具函数：`getDeviceId()`, `generateTempId()`, `isTempId()`
+
+2. ✅ **`web/src/lib/repo/bookRepo.ts`** (154 行)
+   - 书籍 CRUD：getAllBooks(), createBook(), updateBook(), deleteBook()
+   - 软删除支持（标记 `_deleted: true`，进入 trash 表）
+   - dirty 追踪（本地修改自动标记 `_dirty: true`）
+   - 同步方法：getDirtyBooks(), syncBooksFromServer()
+
+3. ✅ **`web/src/lib/repo/noteRepo.ts`** (229 行)
+   - 笔记 CRUD：getNotes(), createNote(), updateNote(), deleteNote()
+   - 冲突检测：createConflictCopy(), getConflictedNotes()
+   - 冲突解决：resolveConflict() - 支持保留本地/使用服务器/手动合并
+   - 同步方法：syncNotesFromServer() - 智能合并策略
+
+4. ✅ **`web/src/lib/repo/progressRepo.ts`** (138 行)
+   - Last-Write-Wins (LWW) 策略
+   - updateProgress() - 本地优先写入，标记 dirty
+   - syncProgressFromServer() - 比较时间戳，保留最新
+   - markProgressSynced() - 清除 dirty 标记
+
+5. ✅ **`web/src/lib/repo/settingsRepo.ts`** (203 行)
+   - 全局设置：updateGlobalSettings(), getGlobalSettings()
+   - 每本书阅读器设置：updateBookReaderSettings() - 完整快照存储
+   - 阅读统计：incrementTodayReading(), updateReadingStreak()
+
+6. ✅ **`web/package.json`** 更新
+   - 添加依赖：`"dexie": "^4.0.11"`
+
+#### P3 - 同步引擎实现 (SyncEngine 升级)
+
+**升级文件**: `web/src/lib/syncEngine.ts` (新增 367 行代码)
+
+1. ✅ **initialSync() 方法** - 对接 `GET /api/v1/sync/initial`
+   - 支持进度回调 `onProgress?: (progress: InitialSyncProgress) => void`
+   - 分三阶段拉取：
+     - Phase 1 (33%): METADATA - 书籍元数据、阅读进度、用户设置
+     - Phase 2 (66%): NOTES - 笔记、高亮
+     - Phase 3 (100%): AI_HISTORY - AI 对话历史
+   - 存储到 IndexedDB：books, progress, userSettings, notes, highlights, aiConversations, aiMessages
+   - 支持断点续传（分页参数 offset/limit）
+   - 返回值：`{ success: boolean; error?: string }`
+
+2. ✅ **heartbeat() 方法** - 对接 `POST /api/v1/sync/heartbeat`
+   - 构建请求负载：
+     - deviceId: 从 getDeviceId() 获取
+     - clientVersions: 版本指纹（ocr/metadata/vectorIndex）
+     - clientUpdates: 待上传的 pendingNotes, pendingHighlights, readingProgress
+   - 处理 pushResults：
+     - readingProgress: accepted → 标记 `_dirty: false`
+     - notes: created → 更新 serverId, conflict_copy → 触发冲突 UI
+     - highlights: created/merged → 更新 serverId
+   - 更新 versionFingerprints 表
+   - 返回值：`HeartbeatResponse | null`
+
+3. ✅ **calculateBackoff() 方法** - 指数退避 + 随机抖动
+   - 公式：`delay = min(retryDelay * 2^retryCount, maxRetryDelay)`
+   - 抖动：±10% 随机变化避免雷鸣羊群效应
+
+4. ✅ **TypeScript 类型定义**
+   ```typescript
+   interface InitialSyncProgress {
+     phase: 'metadata' | 'notes' | 'ai_history' | 'complete'
+     current: number
+     total: number
+     message: string
+   }
+   
+   interface HeartbeatResponse {
+     serverVersions: {
+       ocr: number
+       metadata: number
+       vectorIndex: number
+     }
+     pushResults: {
+       readingProgress?: 'accepted' | 'rejected'
+       notes?: Array<{
+         clientId: string
+         serverId: string
+         status: 'created' | 'conflict_copy' | 'merged'
+       }>
+       highlights?: Array<{ ... }>
+     }
+     pullRequired?: {
+       hasNewOcr: boolean
+       hasNewMetadata: boolean
+       hasNewVectorIndex: boolean
+     }
+   }
+   ```
+
+5. ✅ **SyncEngineConfig 更新**
+   - 添加 `heartbeatIntervals` 字段：
+     - active: 15000ms (15秒) - 阅读会话中
+     - idle: 60000ms (1分钟) - 应用在前台但无交互
+     - background: 300000ms (5分钟) - 应用在后台
+   - maxRetryDelay: 300000ms (5分钟上限)
+
+#### 技术亮点
+
+1. **统一数据层**
+   - 所有本地数据操作统一使用 Repository 模式
+   - 消除散落在各处的 localStorage/IndexedDB 直接调用
+   - 便于测试、Mock、日志追踪
+
+2. **冲突处理机制**
+   - 阅读进度：LWW 策略（简单高效）
+   - 笔记：创建冲突副本（conflict_copy），由用户手动解决
+   - 高亮：智能合并（位置相同则合并注释）
+
+3. **离线优先架构**
+   - 所有写操作本地优先（标记 `_dirty: true`）
+   - 在线恢复后自动同步（heartbeat 批量上传）
+   - 网络异常时指数退避重试
+
+4. **类型安全**
+   - 严格 TypeScript 类型定义
+   - 接口与后端 API 响应完全匹配
+   - 避免运行时类型错误
+
+---
+
+## 🔥 更新 (2025-12-09 00:30)
+
+### App-First 后端 P5 - 首次同步接口实现 ✅
+
+完成了 App-First 改造计划 P5 阶段的后端工作，实现了 `GET /api/v1/sync/initial` 首次同步接口。
+
+#### 实现内容
+
+**文件**: `api/app/sync.py`
+
+**新增功能**:
+1. ✅ **首次同步接口** (`GET /api/v1/sync/initial`)
+   - 支持分页（offset/limit，默认 50 条/次，最大 200）
+   - 支持按类别筛选（all/metadata/covers/notes/ai_history/billing）
+   - 返回完整的业务数据快照
+
+2. ✅ **数据分类枚举** (`SyncCategory`)
+   - `ALL`: 全部数据
+   - `METADATA`: 核心元数据（书籍、进度、书架、设置）
+   - `COVERS`: 封面图片 URL 列表
+   - `NOTES`: 笔记、高亮、标签
+   - `AI_HISTORY`: AI 对话历史（只读）
+   - `BILLING`: 账单记录（只读）
+
+3. ✅ **分阶段同步支持**
+   - **阶段1 (METADATA)**: 用户设置、书籍元数据、阅读进度、书架 → UI 立即可用
+   - **阶段2 (NOTES)**: 笔记、高亮、标签、AI历史、账单 → 交互数据
+   - **阶段3 (COVERS)**: 封面图片 URL → 媒体资源，后台下载
+
+4. ✅ **完整数据同步范围**
+   - 书籍元数据（title, author, language, format, size, ocr_status, meta）
+   - 阅读进度（progress, lastLocation, finishedAt）
+   - 书架定义 + 书架-书籍关联（支持多书架）
+   - 用户设置（language, timezone, membershipTier）
+   - 阅读目标（dailyMinutes, yearlyBooks）
+   - 阅读统计（连续天数、最长记录）
+   - 笔记（包含 device_id, conflict_of 冲突检测字段）
+   - 高亮（包含 device_id, conflict_of 冲突检测字段）
+   - 标签
+   - AI 对话历史（最近 50 条，含完整消息列表）
+   - 账单记录（最近 50 条流水）
+
+5. ✅ **分页与断点续传**
+   - 返回 `pagination` 对象（offset, limit, total, hasMore）
+   - 前端可基于 `hasMore` 判断是否需要继续拉取
+   - 支持断点续传（网络中断后可从上次 offset 继续）
+
+#### API 响应示例
+
+```json
+{
+  "data": {
+    "books": [
+      {
+        "id": "uuid",
+        "title": "书名",
+        "author": "作者",
+        "language": "zh-CN",
+        "originalFormat": "pdf",
+        "coverImageKey": "covers/xxx",
+        "size": 12345678,
+        "isDigitalized": true,
+        "ocrStatus": "completed",
+        "metadataConfirmed": true,
+        "meta": { "pageCount": 300 },
+        "version": 1,
+        "createdAt": "2025-12-01T10:00:00Z",
+        "updatedAt": "2025-12-08T15:30:00Z"
+      }
+    ],
+    "progress": [
+      {
+        "bookId": "uuid",
+        "progress": 0.35,
+        "lastLocation": "epubcfi(...)",
+        "finishedAt": null,
+        "updatedAt": "2025-12-08T20:15:00Z"
+      }
+    ],
+    "shelves": [...],
+    "shelfItems": [...],
+    "settings": {...},
+    "readingGoals": {...},
+    "readingStats": {...},
+    "notes": [...],
+    "highlights": [...],
+    "tags": [...],
+    "covers": [...],
+    "aiConversations": [...],
+    "billing": [...]
+  },
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "total": 150,
+    "hasMore": true
+  },
+  "timestamp": 1733702400
+}
+```
+
+#### 与改造计划的对应关系
+
+| 计划要求 | 实现状态 |
+|---------|---------|
+| P5.1 实现 `GET /api/v1/sync/initial` | ✅ 已完成 |
+| 支持分页（offset/limit） | ✅ 已完成 |
+| 支持按类别筛选 | ✅ 已完成（5种类别） |
+| 返回书籍元数据 | ✅ 已完成（含 meta JSONB） |
+| 返回阅读进度 | ✅ 已完成（含 lastLocation） |
+| 返回书架数据 | ✅ 已完成（含关联关系） |
+| 返回用户设置 | ✅ 已完成（含阅读目标和统计） |
+| 返回笔记/高亮 | ✅ 已完成（含冲突字段） |
+| 返回标签 | ✅ 已完成 |
+| 返回 AI 历史 | ✅ 已完成（含消息列表） |
+| 返回账单记录 | ✅ 已完成 |
+| 封面图片 URL | ✅ 已完成 |
+| 断点续传支持 | ✅ 已完成（pagination.hasMore） |
+
+#### 后续工作
+
+**前端适配（P2-P6）**:
+- [x] **P2: 升级 Dexie Schema 至 v2.1，实现 LocalRepository 封装层** ✅ (2025-12-09 15:45)
+  - ✅ 创建 `web/src/lib/db.ts` - 13 张表的统一数据库定义
+  - ✅ 实现 `bookRepo.ts` - 书籍元数据 CRUD，软删除，dirty 追踪
+  - ✅ 实现 `noteRepo.ts` - 笔记 CRUD，冲突检测，createConflictCopy()
+  - ✅ 实现 `progressRepo.ts` - 阅读进度 LWW 策略，syncProgressFromServer()
+  - ✅ 实现 `settingsRepo.ts` - 全局设置、每本书阅读器设置（完整快照）、阅读统计
+  - ✅ 更新 `package.json` 添加 dexie@^4.0.11 依赖
+  
+- [x] **P3: 实现 SyncEngine 前端同步引擎，对接 `/sync/initial` 和 `/sync/heartbeat`** ✅ (2025-12-09 15:45)
+  - ✅ 新增 `initialSync()` 方法 - 对接 GET /api/v1/sync/initial
+    - 支持进度回调（metadata → notes → AI历史）
+    - 分阶段拉取：元数据（33%）→ 笔记高亮（66%）→ AI历史（100%）
+    - 存储书籍、进度、设置、笔记、高亮、AI对话到 IndexedDB
+  - ✅ 新增 `heartbeat()` 方法 - 对接 POST /api/v1/sync/heartbeat
+    - 构建 clientVersions 版本指纹
+    - 上传 pendingNotes、pendingHighlights、readingProgress
+    - 处理 pushResults（created/conflict_copy/merged）
+    - 更新 versionFingerprints 表
+  - ✅ 新增 `calculateBackoff()` 方法 - 指数退避 + 随机抖动
+  - ✅ 更新 SyncEngineConfig 类型（heartbeatIntervals: 15s/60s/300s）
+  - ✅ 更新 TypeScript 接口（InitialSyncProgress, HeartbeatResponse）
+  
+- [x] **P4: 离线业务逻辑（笔记、进度、书架离线 CRUD）** ✅ (2025-12-09 17:30)
+  - ✅ 创建 `useOfflineNotesV2.ts` - 笔记离线 CRUD Hook（175 行）
+    - createNewNote(), updateExistingNote(), deleteExistingNote()
+    - unsyncedCount 显示未同步数量
+    - 自动触发 heartbeat 同步
+  - ✅ 创建 `useOfflineProgressV2.ts` - 阅读进度离线 Hook（168 行）
+    - updateProgressData(), markFinished()
+    - 定期自动同步（默认 15 秒）
+    - isDirty 状态追踪
+  - ✅ 创建 `useOfflineShelvesV2.ts` - 书架离线 Hook（306 行）
+    - createNewShelf(), updateExistingShelf(), deleteExistingShelf()
+    - addBookToShelf(), removeBookFromShelf()
+    - getShelfBooks() 获取书架书籍列表
+  - ✅ 所有 Hooks 支持本地优先、自动同步、错误处理、类型安全
+  
+- [x] **P6: 冲突解决 UI（ConflictResolver 对话框）** ✅ (2025-12-09 17:30)
+  - ✅ 创建 `ConflictResolverDialog.tsx` 组件（330 行）
+    - 并排对比界面（本地版本 vs 服务器版本）
+    - 显示笔记内容、章节、位置、时间、设备 ID
+    - 三种解决方案：保留本地/使用服务器/跳过
+    - 批量处理多个冲突，显示进度
+  - ✅ 创建 `useConflictDetection.ts` Hook（112 行）
+    - 应用启动时自动检测冲突
+    - 定期检查（默认 60 秒）
+    - 同步完成后自动检查
+    - 状态管理：hasConflicts, conflictCount, showDialog
+    - 手动触发：openDialog(), closeDialog(), checkConflicts()
+
+**集成测试（下一步）**:
+- [ ] 将 useOfflineNotesV2 集成到 NotesPanel 组件
+- [ ] 将 useOfflineProgressV2 集成到 Reader 组件
+- [ ] 将 useOfflineShelvesV2 集成到 BookShelf 组件
+- [ ] 在 App.tsx 集成 useConflictDetection 和 ConflictResolverDialog
+- [ ] 端到端测试：离线创建笔记 → 在线同步 → 冲突检测 → 解决冲突
+
+---
+
+## 🔥 更新 (2025-12-08 23:20)
+
+### App-First 完全体文档同步 ✅
+
+基于 `App-First完全体改造计划.md` 中的讨论记录，完成了所有相关技术文档的同步更新：
+
+#### 1. App-First改造计划.md 更新
+- ✅ 版本升级至 v2.1（完全体架构 - 最终确认版）
+- ✅ 添加对完全体讨论记录文档的引用
+- ✅ 新增**附录A：完全体讨论最终确认决策**，包含：
+  - A.1 冲突解决策略最终确认（阅读进度LWW、笔记智能合并、删除vs修改）
+  - A.2 首次同步策略最终确认（一次性下载、断点续传、完整封面）
+  - A.3 AI对话与账务数据离线策略
+  - A.4 搜索功能离线策略
+  - A.5 每本书阅读器设置存储（完整快照存储）
+  - A.6 阅读统计数据同步
+  - A.7 书籍上传离线策略
+  - A.8 回收站机制（30天双端同步）
+  - A.9 部署环境上下文（FRP+VPS+CDN）
+  - A.10 技术选型排除项记录
+
+#### 2. 03号文档（系统架构与ADR）更新
+- ✅ ADR-006 版本升级至 v2.1
+- ✅ 添加完全体讨论记录和实施计划文档引用
+
+#### 3. 05号文档（API契约与协议）更新
+- ✅ 同步接口章节添加相关文档引用
+- ✅ 初始全量同步API规格详细化（分页、断点续传、数据范围）
+- ✅ 增量推送冲突处理策略明确化
+
+---
+
+## 🔥 更新 (2025-12-08 19:45)
+
+### 离线阅读进度与元数据修改 - 真正的 App-First ✅
+
+**用户反馈的核心问题**：
+1. 离线状态下翻页后退出，再进入书籍，进度被重置到离线前的状态
+2. 离线状态下修改作者名，提示 "Failed to fetch"，无法保存
+3. 书架视图中的书籍没有显示云图标
+
+**这不是 App-First 的最佳实践！** 用户在离线状态下的所有操作都应该：
+1. **立即保存到本地 IndexedDB**
+2. **网络恢复后自动同步到服务器**
+
+#### 修复 1：离线阅读进度保存 ✅
+
+**根因**：`useReaderHeartbeat.ts` 的 `updateProgress` 只通过心跳 API 同步到服务器，没有保存到本地 IndexedDB。离线时心跳失败，进度丢失。
+
+**修复** (`web/src/hooks/useReaderHeartbeat.ts`):
+```typescript
+import { saveReadingProgressLocal } from '@/lib/syncStorage'
+
+// 更新进度 - **本地优先**：先保存到 IndexedDB，再尝试同步
+const updateProgress = useCallback(async (progress: number, location?: string) => {
+  const currentBookId = bookIdRef.current
+  if (!currentBookId) return
+  
+  // 更新当前进度（用于心跳发送）
+  currentProgressRef.current = { progress, location }
+  
+  // **关键修复**：立即保存到本地 IndexedDB，确保离线时进度不丢失
+  try {
+    await saveReadingProgressLocal(currentBookId, location, progress)
+    console.log('[Heartbeat] Progress saved locally:', currentBookId, progress)
+  } catch (e) {
+    console.error('[Heartbeat] Failed to save progress locally:', e)
+  }
+  
+  // 防抖后尝试同步到服务器（离线时会静默失败，不影响本地保存）
+  // ...
+}, [sendHeartbeat])
+```
+
+#### 修复 2：离线元数据修改 ✅
+
+**根因**：`BookMetadataDialog.tsx` 直接调用 API，离线时失败。
+
+**修复** (`web/src/components/BookMetadataDialog.tsx`):
+```typescript
+import { updateLibraryBookCache } from '@/lib/libraryStorage'
+import { addToSyncQueue } from '@/lib/syncStorage'
+
+const handleSave = async () => {
+  // **本地优先**：先更新本地缓存
+  await updateLibraryBookCache(bookId, { title, author })
+  
+  if (isOnline) {
+    // 在线：同步到服务器
+    await updateMetadataOnServer(bookId, newMetadata)
+  } else {
+    // 离线：加入同步队列，稍后同步
+    await addToSyncQueue('metadata', 'update', bookId, newMetadata)
+    setSavedOffline(true)  // 显示"已保存到本地"提示
+  }
+}
+```
+
+**新增 UI**：离线状态下显示友好提示
+- 保存前：显示"当前离线，修改将保存到本地并在联网后同步"
+- 保存后：显示"已保存到本地，网络恢复后将自动同步"
+
+#### 修复 3：书架视图云图标 ✅
+
+**根因**：`ShelfView.tsx` 的 `BookCard` 没有传递 `status` prop。
+
+**修复** (`web/src/components/ShelfView.tsx`):
+```typescript
+import { useLocalBookCache } from '@/hooks/useLocalBookCache'
+
+// 获取所有书籍的缓存状态
+const bookIds = useMemo(() => books.map(b => b.id), [books])
+const { getBookCacheStatus } = useLocalBookCache(bookIds)
+
+// 在 BookCard 渲染中计算显示状态
+const cacheStatus = getBookCacheStatus(book.id)
+const displayStatus = !isCached ? 'cloud' : cacheStatus === 'downloading' ? 'downloading' : ...
+<BookCard status={displayStatus} onSyncClick={...} />
+```
+
+### 架构改进：真正的 App-First 数据流
+
+```
+用户操作（翻页/修改元数据）
+         │
+         ▼
+  ┌─────────────────┐
+  │  IndexedDB 本地  │  ← 第一优先级：立即保存
+  │  (永不丢失)      │
+  └────────┬────────┘
+           │
+           ▼
+  ┌─────────────────┐
+  │  同步队列        │  ← 离线时加入队列
+  │  (待同步操作)    │
+  └────────┬────────┘
+           │ 网络恢复
+           ▼
+  ┌─────────────────┐
+  │  服务器 API      │  ← 后台异步同步
+  │  (最终一致性)    │
+  └─────────────────┘
+```
+
+---
+
+## 🔥 更新 (2025-12-08 19:20)
+
+**问题**: 书库只有 4 本书显示云图标，其他未缓存书籍仍显示阅读进度状态
+
+**根因**: `LibraryPage.tsx` 中 `displayStatus` 逻辑错误，优先检查了阅读进度而非缓存状态
+
+**修复** (`web/src/pages/LibraryPage.tsx`):
+```typescript
+// ❌ 旧逻辑 - 有进度就显示 reading，忽略缓存状态
+const displayStatus = cacheStatus === 'ready' && item.progress > 0 ? 'reading' : cacheStatus
+
+// ✅ 新逻辑 - 必须已缓存才显示阅读状态
+const displayStatus = isConverting
+  ? 'converting'
+  : !isCached && cacheStatus !== 'downloading'
+    ? 'cloud'  // 未缓存显示云图标
+    : cacheStatus === 'downloading'
+      ? 'downloading'
+      : cacheStatus === 'ready' && item.progress >= 100 
+        ? 'completed'  // 已缓存且完成
+        : cacheStatus === 'ready' && item.progress > 0 
+          ? 'reading'  // 已缓存且有进度
+          : 'ready'  // 已缓存但未阅读
+```
+
+#### 2. 书架-书籍关联未同步 ✅
+
+**问题**: 书架内容为空，只同步了书架元数据，未同步书籍关联
+
+**根因**: `useOfflineShelves.ts` 的 `syncFromServer` 只获取书架列表，没有调用 `/shelves/{id}/items` 获取书籍关联
+
+**修复** (`web/src/hooks/useOfflineShelves.ts`):
+```typescript
+const syncFromServer = useCallback(async () => {
+  // ...获取书架列表
+  for (const shelf of shelves) {
+    // 新增：获取每个书架的书籍关联
+    const itemsRes = await api.get(`/api/v1/shelves/${shelf.id}/items`)
+    const bookIds = itemsRes.data.map((item: { bookId: string }) => item.bookId)
+    const { importShelfItemsFromServer } = await import('@/lib/shelvesStorage')
+    await importShelfItemsFromServer(shelf.id, bookIds)
+  }
+}, [...])
+```
+
+#### 3. 页面切换冗余 API 请求 ✅
+
+**问题**: 每次切换页面都重新调用 API，造成不必要的网络请求
+
+**根因**: `LibraryPage` 和 `Home` 没有缓存新鲜度检查，总是在 mount 时调用 API
+
+**修复**: 添加 30 秒缓存新鲜度检查
+
+`web/src/pages/LibraryPage.tsx`:
+```typescript
+// 只有当缓存超过30秒或为空时才调用API
+const cacheTimestamp = getLibraryCacheTimestamp()
+const cacheAge = cacheTimestamp ? Date.now() - cacheTimestamp : Infinity
+const CACHE_FRESHNESS_MS = 30 * 1000  // 30秒
+
+if (isOnline && cacheAge > CACHE_FRESHNESS_MS) {
+  await fetchList()
+}
+```
+
+`web/src/lib/homeStorage.ts` - 新增 `getCacheTimestamp()` 函数
+
+`web/src/pages/app/Home.tsx` - 同样的 30 秒缓存新鲜度检查
+
+#### 4. 离线点击未缓存书籍的处理 ✅
+
+**问题**: 离线状态点击云图标书籍会跳转到阅读页并显示 `OFFLINE_NO_CACHE` 错误
+
+**修复** (`web/src/pages/LibraryPage.tsx`):
+```typescript
+// 新增：handleSyncBook 离线检查
+const handleSyncBook = useCallback(async (bookId: string) => {
+  if (!isOnline) {
+    toast.error(t('offline.sync_unavailable', '离线状态无法下载书籍，请连接网络后重试'))
+    return
+  }
+  // ...原有下载逻辑
+}, [isOnline, t, ...])
+
+// 新增：handleBookClick 离线+未缓存检查
+const handleBookClick = useCallback((bookId: string) => {
+  const cacheStatus = getBookCacheStatus(bookId)
+  if (!isOnline && cacheStatus !== 'ready') {
+    toast.error(t('offline.book_not_cached', '此书籍尚未缓存，无法在离线状态下阅读'))
+    return
+  }
+  navigate(`/app/read/${bookId}`)
+}, [isOnline, getBookCacheStatus, navigate, t])
+```
+
+---
+
+## 🔥 更新 (2025-12-08 18:55)
+
+### Service Worker 路由配置修复 ✅
+
+**问题诊断**：离线模式下 Library 页面无法显示书籍，API 请求仍然被发送。
+
+**根本原因**：
+1. SW 路由配置错误 - 使用了 `/api/books` 而不是 `/api/v1/books`
+2. 浏览器缓存了旧版本的 JavaScript 文件
+
+**修复内容** (`web/src/sw.ts`):
+
+```typescript
+// ❌ 旧配置（路径错误）
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/api/books'),
+  new NetworkFirst(...)
+)
+
+// ✅ 新配置（正确路径）
+// 1. 书籍列表 - /api/v1/books
+registerRoute(
+  ({ url, request }) => {
+    if (request.method !== 'GET') return false
+    return url.pathname === '/api/v1/books' || 
+           url.pathname.startsWith('/api/v1/library')
+  },
+  new NetworkFirst({ cacheName: 'athena-api', networkTimeoutSeconds: 5 })
+)
+
+// 2. 单本书籍元数据 - /api/v1/books/{uuid}
+registerRoute(
+  ({ url, request }) => {
+    if (request.method !== 'GET') return false
+    return url.pathname.match(/^\/api\/v1\/books\/[a-f0-9-]+$/) !== null
+  },
+  new NetworkFirst({ cacheName: 'athena-api', networkTimeoutSeconds: 5 })
+)
+
+// 3. 书籍封面 - /api/v1/books/{uuid}/cover - CacheFirst
+registerRoute(
+  ({ url }) => url.pathname.match(/^\/api\/v1\/books\/[a-f0-9-]+\/cover/) !== null,
+  new CacheFirst({ cacheName: 'athena-images', maxAge: 30 days })
+)
+
+// 4. 书籍内容 - /api/v1/books/{uuid}/(content|download)
+registerRoute(
+  ({ url }) => url.pathname.match(/^\/api\/v1\/books\/[a-f0-9-]+\/(content|download)/) !== null,
+  new CacheFirst({ cacheName: 'athena-books', maxAge: 90 days })
+)
+```
+
+**SW 版本升级**: `1.0.0` → `1.1.0` (强制缓存刷新)
+
+### 前端离线检查逻辑 ✅
+
+**LibraryPage.tsx** - 初始化时检查网络状态：
+```typescript
+useEffect(() => {
+  const init = async () => {
+    // 1. 先从 IndexedDB 加载缓存
+    const cachedItems = await getLibraryList()
+    if (cachedItems.length > 0) {
+      setItems(cachedItems)
+      setFromCache(true)
+    }
+    
+    // 2. 只有在线时才调用 API
+    if (navigator.onLine) {
+      await fetchList()  // 获取最新数据并更新缓存
+    } else {
+      console.log('[LibraryPage] Offline mode, skipping API call')
+    }
+  }
+  init()
+}, [])
+```
+
+**ReaderPage.tsx** - 离线时使用缓存的书籍元数据：
+```typescript
+const init = async () => {
+  const { getBookMeta, saveBookMeta } = await import('@/lib/bookStorage')
+  const cachedMeta = await getBookMeta(bookId)
+  
+  if (navigator.onLine) {
+    // 在线：从 API 获取，然后保存到 IndexedDB
+    const res = await fetch(`/api/v1/books/${bookId}`)
+    const bookData = await res.json()
+    await saveBookMeta({ bookId, title, author, format, size, ... })
+  } else if (cachedMeta) {
+    // 离线：使用缓存的元数据
+    bookData = { id: cachedMeta.bookId, title: cachedMeta.title, ... }
+  } else {
+    throw new Error('OFFLINE_NO_CACHE')
+  }
+}
+```
+
+### 测试离线模式步骤
+
+**重要**：如果修改后离线模式仍不工作，需要清除浏览器缓存：
+
+1. 打开 Chrome DevTools → Application
+2. Service Workers → 点击 "Unregister"
+3. Storage → 点击 "Clear site data"
+4. 强制刷新页面（Ctrl+Shift+R）
+5. 重新登录并访问书籍（让数据缓存到 IndexedDB）
+6. 然后再测试离线模式（Network → Offline）
+
+---
+  },
+  new StaleWhileRevalidate({ plugins: [/* 严格配额限制 */] })
+)
+```
+
+### 所有底部导航页面离线支持 ✅
+
+为底部导航栏的所有 4 个页面实现完整离线支持：
+
+| 页面 | 路由 | 离线状态 | 说明 |
+| :--- | :--- | :--- | :--- |
+| 首页 | `/app/home` | ✅ | Dashboard 统计 + 继续阅读列表缓存 |
+| 书库 | `/app/library` | ✅ | 书籍列表缓存 + 离线指示器 |
+| AI | `/app/ai-conversations` | ✅ | 对话列表缓存 + 离线禁用输入 |
+| 搜索 | `/app/search` | ✅ | 本地搜索书籍/笔记/高亮 |
+
+#### 1. 书库页面离线支持 (`LibraryPage.tsx`)
+
+**新增文件**: `web/src/lib/libraryStorage.ts` (~180行)
+- IndexedDB 数据库 `athena_library` (v1)
+- 存储书籍列表元数据（不含文件内容）
+- 主要函数:
+  - `saveLibraryList()` / `getLibraryList()` - 书籍列表缓存
+  - `updateLibraryBookCache()` - 更新单本书
+  - `removeBookFromCache()` / `addBookToCache()` - 增删操作
+  - `clearLibraryCache()` / `isLibraryCacheExpired()` - 缓存管理
+
+**修改内容** (`web/src/pages/LibraryPage.tsx`):
+- ✅ 添加 `useOnlineStatus` 监听网络状态
+- ✅ 启动时先加载 IndexedDB 缓存
+- ✅ 在线时获取 API 数据后自动缓存
+- ✅ 离线时显示缓存数据 + 离线提示条
+- ✅ 离线时停止 OCR/转换状态轮询
+- ✅ 网络恢复后自动刷新
+
+#### 2. AI 对话页面离线支持 (`AIConversationsPage.tsx`)
+
+**完全重写** (~260行):
+- ✅ 使用已有的 `aiChatStorage.ts` 缓存对话列表
+- ✅ 添加对话历史侧边栏（桌面端）
+- ✅ 现代化 UI 设计（圆角消息气泡、流式输出）
+- ✅ 离线时禁用输入框和发送按钮
+- ✅ 离线提示："离线模式 - AI 功能需要联网"
+- ✅ 网络恢复后自动刷新对话列表
+
+#### 3. 搜索页面 (`SearchPage.tsx`) - **新建**
+
+**新建文件**: `web/src/pages/SearchPage.tsx` (~260行)
+- ✅ 添加路由 `/app/search` 到 `App.tsx`
+- ✅ 分类标签：全部、书籍、笔记、高亮
+- ✅ **离线搜索**：搜索本地 IndexedDB 缓存
+  - 书籍：搜索 `libraryStorage` 中的书名/作者
+  - 笔记：搜索 `notesStorage` 中的笔记内容
+  - 高亮：搜索 `notesStorage` 中的高亮文本
+- ✅ **在线搜索**：调用 `/api/v1/search` API
+- ✅ 搜索失败时自动回退到离线搜索
+- ✅ 点击结果跳转到阅读页面
+
+```typescript
+// 搜索逻辑
+const results = isOnline 
+  ? await searchOnline(query)  // 调用 API
+  : await searchOffline(query) // 搜索 IndexedDB
+```
+
+#### 4. 首页离线支持（之前已完成）
+
+- 使用 `homeStorage.ts` 缓存 Dashboard 和继续阅读列表
+
+### 离线支持架构总览
+
+```
+IndexedDB 数据库结构:
+├── athena_home (v1)       - 首页缓存
+│   ├── dashboard          - 阅读统计
+│   └── continue_reading   - 继续阅读列表
+├── athena_library (v1)    - 书库缓存
+│   └── library           - 书籍列表
+├── athena_ai_chat (v1)    - AI 对话缓存
+│   ├── conversations     - 对话列表
+│   └── messages          - 对话消息
+├── athena_books (v3)      - 书籍文件缓存
+│   ├── book_files        - 书籍 Blob
+│   ├── book_meta         - 书籍元数据
+│   ├── book_ocr          - OCR 数据
+│   └── book_covers       - 封面缓存
+├── athena_notes (v3)      - 笔记同步
+│   ├── notes             - 笔记
+│   ├── highlights        - 高亮
+│   └── sync_status       - 同步状态
+├── athena_shelves (v1)    - 书架缓存
+│   ├── shelves           - 书架列表
+│   ├── shelf_books       - 书架-书籍关系
+│   └── sync_queue        - 同步队列
+└── athena_sync (v3)       - 进度同步
+    ├── bookmarks         - 书签
+    ├── reading_progress  - 阅读进度
+    └── sync_queue        - 同步队列
+```
+
+**构建验证**: ✅ `pnpm build` 成功
+
+---
+
+## 🔥 更早更新 (2025-12-08 14:00)
+
+### App-First 深度审核与修复 ✅
+
+对离线功能进行全面审核，发现并修复了 4 项问题：
+
+#### 问题 1: Service Worker 后台同步覆盖范围不足 ✅ 已修复
+
+**原问题**：`sw.ts` 只覆盖了 `/notes`、`/highlights`、`/reading-progress` 的 POST 请求
+
+**修复内容** (`web/src/sw.ts`):
+- ✅ 扩展覆盖路径：新增 `/shelves`、`/bookmarks`
+- ✅ 扩展 HTTP 方法：支持 POST、PATCH、PUT、DELETE
+- ✅ 使用统一的 `SYNC_API_PATTERNS` 配置数组
+
+```typescript
+// 修复后的模式匹配
+const SYNC_API_PATTERNS = [
+  /\/api\/v1\/notes/,
+  /\/api\/v1\/highlights/,
+  /\/api\/v1\/reading-progress/,
+  /\/api\/v1\/shelves/,       // 新增
+  /\/api\/v1\/bookmarks/,     // 新增
+]
+
+// 支持所有写入方法
+registerRoute(..., 'POST')
+registerRoute(..., 'PATCH')
+registerRoute(..., 'PUT')
+registerRoute(..., 'DELETE')
+```
+
+#### 问题 2: 冲突解决 UI 未全局接入 ✅ 已修复
+
+**原问题**：`ReaderPage.tsx` 中有"待办"注释，冲突检测到了但没有显示 UI
+
+**修复内容**:
+- ✅ 新增 `web/src/contexts/NoteConflictContext.tsx` (~150行)
+  - 全局冲突管理 Context
+  - 冲突队列机制（多个冲突依次处理）
+  - 监听 `note-conflict` 自定义事件
+  - `dispatchNoteConflict()` 函数供外部触发
+- ✅ 修改 `web/src/App.tsx`：包裹 `<NoteConflictProvider>`
+- ✅ 修改 `web/src/pages/ReaderPage.tsx`：
+  - 导入 `dispatchNoteConflict`
+  - 在 `onNoteSyncResult` 回调中触发冲突事件
+- ✅ 扩展 `web/src/hooks/useSmartHeartbeat.ts` 的 `NoteResult` 接口：
+  - 新增 `conflictNote` 和 `originalNote` 字段
+
+#### 问题 3: 全文搜索的离线化 📋 记录为待做功能
+
+**现状分析**：
+- 搜索页面 (`/app/search`) 路由存在但组件未实现
+- 这是整体功能缺失，非离线化问题
+- 需要实现 FlexSearch 本地索引（针对已下载书籍）
+
+**计划**：列入后续开发阶段，与离线词典、TTS 功能一起实现
+
+#### 问题 4: 图片跨域处理优化 ✅ 已修复
+
+**原问题**：`ContinueReadingHero.tsx` 中的颜色提取可能因 CORS 失败
+
+**修复内容** (`web/src/pages/app/home/ContinueReadingHero.tsx`):
+- ✅ 添加详细的 JSDoc 注释说明跨域策略
+- ✅ 使用 `willReadFrequently: true` 优化 Canvas 性能
+- ✅ 分离 `getImageData` 调用的 try-catch，明确捕获安全错误
+- ✅ 改进错误日志，区分 CORS 阻止和其他错误
+
+```typescript
+// 修复后的安全处理
+try {
+  imageData = ctx.getImageData(5, 10, 40, 55)
+} catch (securityError) {
+  // CORS 限制导致无法读取像素（不透明响应）
+  console.warn('[Hero ColorExtract] CORS blocked pixel read')
+  resolve(DEFAULT_COLOR)
+  return
+}
+```
+
+**构建验证**: ✅ `pnpm build` 成功
+
+---
+
+### 待做功能清单（非离线化问题）
+
+| 功能 | 说明 | 优先级 |
+|------|------|--------|
+| 全文搜索离线化 | 使用 FlexSearch 索引本地书籍 | P2 |
+| 离线词典 | Stardict 格式本地解析 | P2 |
+| 离线 TTS | Web Speech API 本地朗读 | P2 |
+| S3 CORS 配置检查 | 确保封面图片可跨域访问 | P1 |
+
+---
+
+## 📝 ShelfView 组件离线集成 (2025-12-08 12:15)
+
+**改造文件**: `web/src/components/ShelfView.tsx`
+
+**改动内容**:
+1. **移除直接 API 调用**：删除 `fetchShelves`, `fetchShelfBooks`, `deleteShelf` 函数
+2. **集成离线 Hook**：使用 `useOfflineShelves` 替代直接网络请求
+3. **添加同步状态指示器**：显示未同步数量和"立即同步"按钮
+4. **网络状态感知**：使用 `useOnlineStatus` 检测离线状态
+5. **未同步书架标记**：虚线边框 + "待同步"徽章
+
+**新增 i18n 翻译** (zh-CN/en-US):
+- `shelf.syncing`: 正在同步书架... / Syncing shelves...
+- `shelf.unsynced_count`: {{count}} 项待同步 / {{count}} pending sync
+- `shelf.sync_now`: 立即同步 / Sync Now
+- `shelf.pending_sync`: 待同步 / Pending
+
+---
+
+## 📦 书架离线支持 (2025-12-08 11:30)
+
+#### 1. `web/src/lib/shelvesStorage.ts` (~580行)
+
+书架数据 IndexedDB 存储服务，新数据库 `athena_shelves` (v1)：
+
+| Object Store | 主键 | 索引 | 用途 |
+|--------------|------|------|------|
+| `shelves` | `id` | synced, deleted, updatedAt | 书架列表 |
+| `shelf_items` | `[shelfId, bookId]` | shelfId, bookId, synced, deleted | 书籍-书架关联 |
+
+**核心功能**:
+```typescript
+// 书架 CRUD
+createShelf(name, description?, serverId?)
+updateShelf(id, { name, description })
+deleteShelf(id)  // 软删除
+getAllShelves()
+getShelf(id)
+
+// 书架项操作
+addBookToShelf(shelfId, bookId, position?)
+removeBookFromShelf(shelfId, bookId)
+getShelfBookIds(shelfId)
+getBookShelfIds(bookId)
+
+// 同步辅助
+getUnsyncedShelves()
+getUnsyncedShelfItems()
+markShelfSynced(id, serverId?)
+markShelfItemSynced(shelfId, bookId)
+
+// 服务器数据导入
+importShelvesFromServer(shelves)
+importShelfItemsFromServer(shelfId, bookIds)
+
+// 统计
+getShelvesStats() // { totalShelves, unsyncedShelves, totalItems, unsyncedItems }
+```
+
+#### 2. `web/src/hooks/useOfflineShelves.ts` (~350行)
+
+离线书架管理 Hook，本地优先策略：
+
+```typescript
+const {
+  shelves,           // 书架列表
+  loading,           // 加载状态
+  createShelf,       // 创建书架
+  updateShelf,       // 更新书架
+  deleteShelf,       // 删除书架
+  addBookToShelf,    // 添加书籍到书架
+  removeBookFromShelf, // 从书架移除书籍
+  getShelfBookIds,   // 获取书架内书籍
+  getBookShelfIds,   // 获取书籍所在书架
+  syncStatus,        // 'idle' | 'syncing' | 'error'
+  unsyncedCount,     // 未同步数量
+  syncNow,           // 立即同步
+  refresh,           // 刷新数据
+} = useOfflineShelves({ enabled: true, autoSyncInterval: 30000 })
+```
+
+**功能特性**:
+- ✅ 本地优先 CRUD（离线时操作本地 IndexedDB）
+- ✅ 自动后台同步（30秒间隔，可配置）
+- ✅ 网络恢复时自动同步
+- ✅ 与 SyncEngine 集成（通过 syncStorage.addToSyncQueue）
+- ✅ 软删除支持（删除标记为 deleted=1，同步后清理）
+
+#### IndexedDB 数据库架构更新
+
+| 数据库 | Object Stores | 用途 |
+|--------|---------------|------|
+| `athena_sync` | sync_queue, reading_progress, version_fingerprints | 同步队列与阅读进度 |
+| `athena_notes` | notes, highlights | 笔记与高亮离线存储 |
+| `athena_books` | book_files, book_ocr, book_covers, book_meta | 书籍文件与元数据缓存 |
+| `athena_shelves` | shelves, shelf_items | **🆕 书架与书籍关联** |
+| `athena_ai_chat` | conversations | AI 对话历史 |
+
+---
+
+### App-First 架构完整性验证 ✅
+
+**验证日期**: 2025-12-08
+**构建状态**: ✅ `pnpm build` 通过
+
+#### 核心功能验证清单
+
+| Phase | 任务 | 文件 | 状态 | 代码行数 |
+|-------|------|------|------|----------|
+| **Phase 1** | useOnlineStatus Hook | `hooks/useOnlineStatus.ts` | ✅ | 169行 |
+| | OfflineIndicator 组件 | `components/OfflineIndicator.tsx` | ✅ | 162行 |
+| | athena_sync IndexedDB | `lib/syncStorage.ts` | ✅ | 581行 |
+| | 阅读进度离线缓存 | `hooks/useReadingProgress.ts` | ✅ | 349行 |
+| | Layout 集成 | `layouts/AppLayout.tsx` | ✅ | 已集成 |
+| **Phase 2** | SyncEngine 核心类 | `lib/syncEngine.ts` | ✅ | 406行 |
+| | SyncQueueManager | `lib/syncQueue.ts` | ✅ | 400行 |
+| | useSmartHeartbeat 持久化 | `hooks/useSmartHeartbeat.ts` | ✅ | 524行 |
+| | 后端心跳版本指纹 | `api/app/sync.py` | ✅ | 475行 |
+| **Phase 3** | athena_notes IndexedDB | `lib/notesStorage.ts` | ✅ | 605行 |
+| | NotesPage 页面 | `pages/NotesPage.tsx` | ✅ | 353行 |
+| | useOfflineNotes Hook | `hooks/useOfflineNotes.ts` | ✅ | 396行 |
+| | NoteConflictDialog | `components/NoteConflictDialog.tsx` | ✅ | 300行 |
+| **Phase 4** | Service Worker | `sw.ts` | ✅ | 327行 |
+| | UpdatePrompt | `components/UpdatePrompt.tsx` | ✅ | 145行 |
+| **Phase 5** | StorageManager | `components/StorageManager.tsx` | ✅ | 416行 |
+| | **🆕 athena_shelves IndexedDB** | `lib/shelvesStorage.ts` | ✅ | ~580行 |
+| | **🆕 useOfflineShelves Hook** | `hooks/useOfflineShelves.ts` | ✅ | ~350行 |
+
+#### 后续优化建议（可选功能）
+
+| 功能 | 描述 | 优先级 |
+|------|------|--------|
+| ShelfView 组件集成 | 将 ShelfView 改造为使用 useOfflineShelves | 🟠 建议 |
+| 离线词典 | Stardict 格式本地解析 | 🟢 可选 |
+| 离线 TTS | Web Speech API 本地朗读 | 🟢 可选 |
+| 数据导出/导入 | 完整本地数据备份 | 🟢 可选 |
+| LRU 自动清理 | 存储超阈值时自动清理 | 🟡 建议 |
+| E2E 离线测试 | Cypress 离线测试套件 | 🟡 建议 |
+
+---
+
+## 📋 历史更新 (2025-12-08 10:30)
+
+**修改文件**: `web/src/hooks/useSmartHeartbeat.ts`
+
+- 笔记/高亮队列改为从 IndexedDB 读取（原为内存 ref）
+- 同步结果自动更新 IndexedDB 中的同步状态
+- 保留阅读进度内存缓存以提高性能
+
+#### Phase 3: 笔记系统离线化 ✅
+
+**新增文件**: `web/src/lib/notesStorage.ts`
+
+- 新数据库 `athena_notes` (v1)
+- 两个 Object Store: `notes`, `highlights`
+- 完整 CRUD 操作
+- 服务端数据导入功能
+
+```typescript
+// 笔记操作
+await createNote(bookId, content, position, chapter)
+await updateNote(id, { content })
+await deleteNote(id)
+const notes = await getNotesByBook(bookId)
+
+// 高亮操作
+await createHighlight(bookId, text, startPos, endPos, color)
+await updateHighlightColor(id, '#FF0000')
+await deleteHighlight(id)
+const highlights = await getHighlightsByBook(bookId)
+
+// 同步辅助
+const unsynced = await getUnsyncedNotes()
+await markNoteSynced(id, serverId)
+await importFromServer(notes, highlights)
+```
+
+**新增文件**: `web/src/hooks/useOfflineNotes.ts`
+
+- 离线笔记/高亮管理 Hook
+- 本地优先策略
+- 自动后台同步
+- 网络恢复时自动同步
+
+```typescript
+const {
+  notes, createNote, updateNote, deleteNote,
+  highlights, createHighlight, updateHighlightColor, deleteHighlight,
+  syncStatus, unsyncedCount, syncNow,
+} = useOfflineNotes({ bookId })
+```
+
+#### Phase 4: Service Worker 增强 ✅
+
+**新增文件**: `web/src/sw.ts`
+
+- 自定义 Service Worker（使用 Workbox）
+- 缓存策略:
+  - 静态资源: CacheFirst（30天）
+  - 字体: CacheFirst（1年）
+  - 图片: CacheFirst（7天，自动清理）
+  - API 请求: NetworkFirst（1天缓存）
+  - 书籍内容: CacheFirst（90天，离线阅读核心）
+- 后台同步: 笔记/高亮/阅读进度提交支持 Background Sync
+- 推送通知预留
+
+**修改文件**: `web/vite.config.ts`
+
+- PWA 策略改为 `injectManifest`
+- 配置自定义 Service Worker
+- 增强 manifest（图标、快捷方式、分类）
+- 开发模式启用 PWA
+
+**新增文件**: `web/src/components/UpdatePrompt.tsx`
+
+- PWA 更新提示组件
+- 检测 Service Worker 更新
+- 优雅的更新提示 UI
+- 一键刷新更新
+
+```tsx
+<UpdatePrompt checkInterval={60 * 60 * 1000} />
+```
+
+#### Phase 5: 存储管理 ✅
+
+**新增文件**: `web/src/components/StorageManager.tsx`
+
+- 存储空间管理组件
+- 显示总使用量和配额
+- 分类显示（书籍、笔记、缓存、其他）
+- 存储警告（超过阈值显示）
+- LRU 缓存清理功能
+
+```tsx
+<StorageManager 
+  warningThreshold={0.8}
+  showBreakdown={true}
+  onCleanup={(freedBytes) => console.log('Freed:', freedBytes)}
+/>
+```
+
+#### 集成到 AppLayout ✅
+
+**修改文件**: `web/src/layouts/AppLayout.tsx`
+
+- 集成 `OfflineIndicator` 组件
+- 集成 `UpdatePrompt` 组件
+- 网络状态 toast 提示
+
+#### i18n 翻译更新 ✅
+
+**新增翻译键**:
+```json
+{
+  "pwa.updateAvailable": "发现新版本",
+  "pwa.updateDescription": "点击更新以获取最新功能和修复",
+  "pwa.updateNow": "立即更新",
+  "pwa.updateLater": "稀后",
+  "pwa.offlineReady": "应用已准备好离线使用",
+  "storage.title": "存储空间",
+  "storage.warning": "空间不足",
+  "storage.books": "书籍",
+  "storage.notes": "笔记",
+  "storage.cache": "缓存",
+  "storage.other": "其他",
+  "storage.cleanup": "清理缓存",
+  "storage.cleaning": "清理中...",
+  "storage.error": "无法获取存储信息"
+}
+```
+
+#### 完整验收状态
+
+| Phase | 任务 | 状态 |
+|-------|------|------|
+| **Phase 1** | 基础设施 | ✅ 100% |
+| 1.1 | `useOnlineStatus` Hook | ✅ |
+| 1.2 | `OfflineIndicator` 组件 | ✅ |
+| 1.3 | `athena_sync` IndexedDB | ✅ |
+| 1.4 | 阅读进度离线缓存 | ✅ |
+| 1.5 | Layout 集成 | ✅ |
+| **Phase 2** | 同步引擎 | ✅ 100% |
+| 2.1 | `SyncEngine` 核心类 | ✅ |
+| 2.2 | 心跳队列持久化 | ✅ |
+| **Phase 3** | 笔记系统离线化 | ✅ 100% |
+| 3.1 | `athena_notes` IndexedDB | ✅ |
+| 3.2 | `useOfflineNotes` Hook | ✅ |
+| **Phase 4** | Service Worker 增强 | ✅ 100% |
+| 4.1 | 自定义 `sw.ts` | ✅ |
+| 4.2 | `UpdatePrompt` 组件 | ✅ |
+| **Phase 5** | 存储管理 | ✅ 100% |
+| 5.1 | `StorageManager` 组件 | ✅ |
+
+#### 新增文件清单
+
+```
+web/src/
+├── hooks/
+│   ├── useOnlineStatus.ts      # 网络状态检测 Hook
+│   ├── useOfflineNotes.ts      # 离线笔记管理 Hook
+│   └── useSmartHeartbeat.ts    # 修改：IndexedDB 持久化
+├── components/
+│   ├── OfflineIndicator.tsx    # 离线状态指示器
+│   ├── UpdatePrompt.tsx        # PWA 更新提示
+│   └── StorageManager.tsx      # 存储空间管理
+├── lib/
+│   ├── syncStorage.ts          # 同步队列 IndexedDB
+│   ├── notesStorage.ts         # 笔记 IndexedDB
+│   └── syncEngine.ts           # 同步引擎核心类
+├── sw.ts                       # 自定义 Service Worker
+└── layouts/
+    └── AppLayout.tsx           # 修改：集成离线组件
+```
+
+---
+
+## 📋 后续优化建议
+
+| 功能 | 描述 | 优先级 |
+|------|------|--------|
+| 离线词典 | 本地词典数据支持离线查词 | 🟢 可选 |
+| 离线 TTS | 使用 Web Speech API 实现本地朗读 | 🟢 可选 |
+| 冲突解决 UI | 可视化的冲突解决界面 | 🟡 建议 |
+| 同步历史 | 显示同步记录和错误日志 | 🟡 建议 |
+
+---
+
+## 🔥 历史更新 (2025-12-07 18:30)
+
+### Phase 8: App-First 架构改造 - Phase 1 基础设施 ✅ 已完成
+
+**目标**: 建立离线感知能力和基础存储层
+
+#### 1. useOnlineStatus Hook ✅
+
+**新增文件**: `web/src/hooks/useOnlineStatus.ts`
+
+- 监听 `online`/`offline` 事件检测网络状态变化
+- 使用 `navigator.onLine` 获取初始状态
+- 提供 `isOnline`、`lastChangedAt`、`offlineDuration` 状态
+- 支持 `onOnline`/`onOffline` 回调
+- 包含 `formatOfflineDuration()` 工具函数
+
+```typescript
+const { isOnline, offlineDuration } = useOnlineStatus({
+  onOnline: () => toast.success('网络已恢复'),
+  onOffline: () => toast.warning('网络已断开'),
+})
+```
+
+#### 2. OfflineIndicator 组件 ✅
+
+**新增文件**: `web/src/components/OfflineIndicator.tsx`
+
+- 顶部固定橙色横幅，离线时显示
+- 使用 framer-motion 实现进入/退出动画
+- 显示离线持续时间和待同步项数量
+- Apple 风格的渐变橙色警告样式
+- 提供简洁版 `OfflineBadge` 组件
+
+```tsx
+<OfflineIndicator pendingCount={5} />
+```
+
+#### 3. athena_sync IndexedDB 存储 ✅
+
+**新增文件**: `web/src/lib/syncStorage.ts`
+
+- 新数据库 `athena_sync` (v1)
+- 三个 Object Store:
+  - `sync_queue`: 离线操作队列
+  - `reading_progress`: 阅读进度本地缓存
+  - `version_fingerprints`: 版本指纹（用于增量同步）
+- 提供完整的 CRUD 操作函数
+
+**关键接口**:
+```typescript
+// 同步队列
+addToSyncQueue(type, action, bookId, payload)
+getPendingSyncItems()
+getSyncQueueCount()
+removeSyncItem(id)
+
+// 阅读进度
+saveReadingProgressLocal(bookId, position, progress)
+getReadingProgressLocal(bookId)
+getUnsyncedReadingProgress()
+markReadingProgressSynced(bookId)
+
+// 版本指纹
+saveVersionFingerprint(bookId, fingerprint)
+getVersionFingerprint(bookId)
+```
+
+#### 4. 阅读进度离线缓存 ✅
+
+**修改文件**: `web/src/hooks/useReadingProgress.ts`
+
+- 实现本地优先策略（Local-First）
+- 首先从 IndexedDB 加载缓存数据
+- 在线时后台从服务器获取最新数据
+- 比较时间戳，使用更新的数据
+- 新增 `saveProgress()` 方法支持离线保存
+- 返回 `fromCache` 和 `isOnline` 状态
+
+```typescript
+const { progress, fromCache, isOnline, saveProgress } = useReadingProgress({
+  bookId: 'xxx',
+})
+
+// 离线时也能保存进度
+await saveProgress(position, 0.5)
+```
+
+#### 5. 集成到 AppLayout ✅
+
+**修改文件**: `web/src/layouts/AppLayout.tsx`
+
+- 集成 `OfflineIndicator` 组件
+- 使用 `useOnlineStatus` 监听网络变化
+- 网络恢复/断开时显示 toast 提示
+- 定期更新待同步项数量
+- 离线时自动调整主内容区域的 padding
+
+#### 6. i18n 翻译更新 ✅
+
+**修改文件**: 
+- `web/src/locales/zh-CN/common.json`
+- `web/src/locales/en-US/common.json`
+
+**新增翻译键**:
+```json
+{
+  "offline.mode": "离线模式",
+  "offline.sync_when_online": "您的操作将在恢复网络后同步",
+  "offline.pending_count": "{{count}} 项待同步",
+  "offline.duration": "已离线 {{duration}}",
+  "offline.badge": "离线",
+  "offline.reconnected": "网络已恢复",
+  "offline.reconnected_syncing": "网络已恢复，正在同步...",
+  "offline.disconnected": "网络已断开，进入离线模式",
+  "offline.progress_saved": "阅读进度已保存到本地"
+}
+```
 - 右上角显示阅读目标进度环 + 用户头像按钮
 - 进度环显示今日阅读时长/目标
 - 头像按钮点击打开账户菜单
@@ -271,7 +2374,7 @@ async def delete_shelf(shelf_id: str, user: dict = Depends(get_current_user), db
 
 ## 🔥 更早更新 (2025-12-05 23:30)
 
-### ADR-007: SHA256 全局去重与 OCR 复用机制 ✅ 已完成
+### ADR-008: SHA256 全局去重与 OCR 复用机制 ✅ 已完成
 
 完整实现了基于 SHA256 的全局去重、OCR 复用（假 OCR）、软删除/硬删除分层策略。
 
@@ -1917,3 +4020,42 @@ type BookStatus = 'cloud' | 'downloading' | 'ready' | 'reading' | 'completed'
 - ✅ 竖向卡片：纯封面 + 左下角进度 + 右下角三点
 - ✅ 所有卡片：shadow-md 阴影增强层次感
 
+
+
+### App-First 架构改造 - Phase 3 完成 ✅ (2025-12-13 18:30)
+
+**核心页面与组件已完全迁移至 PowerSync + Native IndexedDB 架构。**
+
+#### 完成内容
+
+**1. 核心页面重写 ✅**
+- **LibraryPage**: 移除 API 轮询，使用 `useBooksData` (Live Query) + `useLocalBookCache`。
+- **ReaderPage**: 移除 Heartbeat/Sync 逻辑，使用 `useProgressData` (Debounced Save) + 本地 OCR。
+- **NotesPage**: 使用 `useNotesData`，实现响应式笔记管理。
+
+**2. 存储层重构 ✅**
+- **bookStorage.ts**: 彻底重写，使用原生 IndexedDB (`athena-files`) 管理大文件（PDF/EPUB/Cover/OCR）。
+- **Upload Queue**: 在 `bookStorage` 中实现了离线上传队列支持。
+- **Deleted**: 删除了 `db.ts` (Dexie), `libraryStorage.ts`, `useOfflineNotes.ts` 等旧文件。
+
+**3. 组件适配 ✅**
+- **BookCard**: 更新为接受 `BookItem` 类型，移除旧的回调逻辑。
+- **BookCardMenu**: 重写为使用 `usePowerSync` 直接操作数据库，移除对旧 `db.ts` 的依赖。
+- **UploadManager**: 适配新的 `useUploadPostProcessing` (PowerSync 监控)。
+
+**4. Hook 优化 ✅**
+- **useUploadPostProcessing**: 重写为使用 PowerSync 监听书籍状态，替代 API 轮询。
+- **useBookUpload**: 适配新的 `bookStorage` 离线队列。
+
+#### 状态更新
+- **App-First → App-First**: 🚧 90% (主要迁移完成，待测试验证)
+- **Data Sync**: ✅ 100% (PowerSync 全面接管)
+
+#### 下一步计划
+- [ ] 全面测试 (E2E/Unit Tests)
+- [ ] 清理剩余的未使用文件
+- [ ] 验证离线上传流程
+
+**5. 代码清理 ✅**
+- **Deleted**: 删除了 `web/src/lib/repo` (Dexie Repos), `web/src/lib/sync*` (Old Sync Engine), `web/src/lib/*Storage.ts` (Old Storage Wrappers).
+- **Result**: `web/src/lib` 仅保留 `powersync/`, `bookStorage.ts`, `api.ts` 等核心文件。

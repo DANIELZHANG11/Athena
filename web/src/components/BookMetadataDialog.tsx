@@ -3,6 +3,10 @@
  * 
  * 书籍元数据编辑对话框
  * 允许用户修改书籍标题、作者等信息
+ * 
+ * **离线优先**：
+ * - 离线时保存到本地缓存并加入同步队列
+ * - 在线时立即同步到服务器
  */
 
 import { useState, useEffect } from 'react'
@@ -10,7 +14,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { FileText, Loader2, X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth'
+import { useBooksData } from '@/hooks/useBooksData'
 
 interface BookMetadataDialogProps {
   bookId: string
@@ -19,26 +23,6 @@ interface BookMetadataDialogProps {
   open: boolean
   onClose: () => void
   onSuccess?: (metadata: { title: string; author?: string }) => void
-}
-
-/** 更新元数据 API */
-async function updateMetadata(
-  bookId: string,
-  data: { title?: string; author?: string }
-): Promise<void> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch(`/api/v1/books/${bookId}/metadata`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || err.message || '更新失败')
-  }
 }
 
 export default function BookMetadataDialog({
@@ -55,6 +39,8 @@ export default function BookMetadataDialog({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const { updateBook } = useBooksData()
+
   // 重置表单当对话框打开时
   useEffect(() => {
     if (open) {
@@ -69,18 +55,25 @@ export default function BookMetadataDialog({
       setError(t('metadata.title_required'))
       return
     }
-    
+
     setSaving(true)
     setError(null)
-    
+
+    const newMetadata = {
+      title: title.trim(),
+      author: author.trim() || undefined,
+    }
+
     try {
-      await updateMetadata(bookId, {
-        title: title.trim(),
-        author: author.trim() || undefined,
-      })
-      onSuccess?.({ title: title.trim(), author: author.trim() || undefined })
+      // 使用 PowerSync 更新 (本地写入，自动同步)
+      await updateBook(bookId, newMetadata)
+
+      console.log('[BookMetadataDialog] Updated book metadata:', bookId)
+
+      onSuccess?.(newMetadata)
       onClose()
     } catch (e: any) {
+      console.error('[BookMetadataDialog] Failed to save metadata:', e)
       setError(e.message)
     } finally {
       setSaving(false)

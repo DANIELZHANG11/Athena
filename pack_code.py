@@ -1,101 +1,170 @@
 import os
 
-# --- 1. 针对你项目的“黑名单”配置 ---
+# ================= 配置区域 (针对雅典娜项目优化) =================
+
+OUTPUT_FILE = 'project_context_optimized.txt'
+
+# 核心源码目录 (白名单)
+# 脚本会把路径统一转换为 "/" 进行比对，所以这里用 "/" 即可
+CORE_DIRS = [
+    'web/src',          
+    'api/app',          
+    'contracts',        
+    'scripts',          
+    'docker', 
+    'alembic' # 经常会有数据库迁移脚本在这里
+]
+
+# 必须包含的关键配置文件
+CRITICAL_CONFIG_FILES = {
+    'package.json', 'tsconfig.json', 'vite.config.ts', 'next.config.js',
+    'pyproject.toml', 'requirements.txt', 'Dockerfile', 'docker-compose.yml',
+    '.env.example', 'alembic.ini'
+}
+
+# 绝对排除的目录 (黑名单)
 IGNORE_DIRS = {
-    # 你的罪魁祸首在这里：
-    '.mypy_cache', '.pytest_cache', '.git', 
-    # 常规忽略：
-    'node_modules', '__pycache__', 'dist', 'build', '.next', 
-    '.idea', '.vscode', 'venv', 'env', 'target', 'coverage'
+    'node_modules', 'venv', '.venv', 'env', '__pycache__', 
+    '.git', '.idea', '.vscode', '.next', 'dist', 'build', 
+    'coverage', 'htmlcov', 
+    'web/public', 'docs'
 }
 
-IGNORE_EXTS = {
-    # 图片、二进制、压缩包
-    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', 
-    '.exe', '.pyc', '.dll', '.so', '.o', 
-    # 字体、数据文件
-    '.map', '.svg', '.eot', '.ttf', '.woff', '.woff2', 
-    '.log', '.csv', '.sql', '.db', '.sqlite', '.xlsx',
-    # 巨大的缓存数据 (你的扫描结果里看到的那些)
-    '.data.json' 
+# 允许的文件后缀
+ALLOWED_EXTENSIONS = {
+    '.ts', '.tsx', '.js', '.jsx', '.css', '.scss', # 前端
+    '.py', # 后端
+    '.yml', '.yaml', '.json', '.toml', '.sh', '.ps1', '.sql', '.ini' # 配置
 }
 
-IGNORE_FILES = {
-    # 锁文件
-    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
-    # 脚本本身
-    'project_context_for_ai.txt', 'pack_code.py', 'check_size.py', 'pack_code_final.py'
+# 忽略的文件后缀
+IGNORE_EXTENSIONS = {
+    '.lock', '-lock.json', '.map', '.min.js', 
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', 
+    '.pdf', '.pyc', '.exe', '.dll', '.so'
 }
 
-OUTPUT_FILE = 'project_context_for_ai.txt'
+# 熔断限制
+MAX_FILE_SIZE_KB = 200       
+MAX_TOTAL_OUTPUT_MB = 5.0    
 
-# --- 2. 安全熔断配置 (即使漏网之鱼也不会撑爆) ---
-MAX_FILE_SIZE_KB = 50      # 单个文件超过 50KB 就不读了（你的文档270KB，会被跳过，建议单独发）
-MAX_LINES_PER_FILE = 400   # 每个文件最多读前 400 行
-MAX_TOTAL_OUTPUT_MB = 2.0  # 输出总文件不超过 2MB
+# =================================================================
+
+def normalize_path(path):
+    """
+    将路径统一转换为 POSIX 风格 (forward slashes)，并去除开头的 ./
+    例如: .\\web\\src\\App.tsx -> web/src/App.tsx
+    """
+    # 1. 替换反斜杠
+    p = path.replace('\\', '/')
+    # 2. 去除开头的 ./
+    if p.startswith('./'):
+        p = p[2:]
+    return p
+
+def is_relevant(clean_path):
+    """判断标准化后的路径是否需要"""
+    parts = clean_path.split('/')
+    filename = parts[-1]
+    ext = os.path.splitext(filename)[1].lower()
+
+    # 1. 检查是否在忽略目录中 (检查路径中的每一层)
+    for part in parts:
+        if part in IGNORE_DIRS:
+            return False
+
+    # 2. 检查关键配置文件 (优先级最高)
+    if filename in CRITICAL_CONFIG_FILES:
+        return True
+    
+    # 3. 排除锁文件
+    if filename.endswith('.lock') or 'lock' in filename:
+        return False
+    if ext in IGNORE_EXTENSIONS:
+        return False
+
+    # 4. 检查是否在核心目录中
+    # 只要 clean_path 以任何一个 CORE_DIRS 开头即可
+    in_core_dir = False
+    for core in CORE_DIRS:
+        if clean_path.startswith(core):
+            in_core_dir = True
+            break
+    
+    if not in_core_dir:
+        # 如果不在核心目录，也不在关键配置文件里，跳过
+        return False
+
+    # 5. 最后检查后缀
+    return ext in ALLOWED_EXTENSIONS
 
 def pack_project():
-    current_output_size = 0
-    skipped_count = 0
+    current_size = 0
+    file_count = 0
     
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
-        # 1. 写入精简版目录结构
-        outfile.write("Project Directory Structure:\n")
+        # --- 步骤 1: 生成精简的目录树 ---
+        outfile.write("Directory Structure:\n")
         for root, dirs, files in os.walk('.'):
+            # 过滤掉忽略的目录，防止 os.walk 进入
             dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
+            
             level = root.replace('.', '').count(os.sep)
             indent = ' ' * 4 * level
             outfile.write(f"{indent}{os.path.basename(root)}/\n")
+        
         outfile.write("\n" + "="*50 + "\n\n")
 
-        # 2. 遍历文件内容
+        # --- 步骤 2: 提取核心代码 ---
         for root, dirs, files in os.walk('.'):
             dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
             
             for file in files:
-                # 全局大小熔断
-                if current_output_size > MAX_TOTAL_OUTPUT_MB * 1024 * 1024:
-                    outfile.write(f"\n\n[STOPPED] Total size limit ({MAX_TOTAL_OUTPUT_MB}MB) reached.\n")
-                    break
-
-                if file in IGNORE_FILES: continue
-                ext = os.path.splitext(file)[1].lower()
-                if ext in IGNORE_EXTS: continue
-                
                 file_path = os.path.join(root, file)
                 
-                try:
-                    file_size = os.path.getsize(file_path)
-                    
-                    # 大文件跳过 (比如你的雅典娜文档)
-                    if file_size > MAX_FILE_SIZE_KB * 1024:
-                        print(f"Skipping large file: {file_path} ({file_size/1024:.1f} KB)")
-                        skipped_count += 1
-                        continue
-                    
-                    # 读取内容 (带行数限制)
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        lines = []
-                        for i, line in enumerate(f):
-                            if i >= MAX_LINES_PER_FILE:
-                                lines.append(f"\n... (File truncated, {MAX_LINES_PER_FILE}+ lines) ...\n")
-                                break
-                            lines.append(line)
-                        
-                        content = "".join(lines)
-                        
-                        header = f"\n\n{'='*50}\nFILE_PATH: {file_path}\n{'='*50}\n\n"
-                        write_data = header + content
-                        outfile.write(write_data)
-                        current_output_size += len(write_data.encode('utf-8'))
-                        
-                except Exception:
-                    pass # 忽略读取错误
+                # *** 关键修复：标准化路径 ***
+                clean_path = normalize_path(file_path)
+                
+                # 过滤逻辑
+                if not is_relevant(clean_path):
+                    continue
+                
+                # 熔断检查
+                if current_size > MAX_TOTAL_OUTPUT_MB * 1024 * 1024:
+                    outfile.write(f"\n\n[STOPPED] Global size limit ({MAX_TOTAL_OUTPUT_MB}MB) reached.\n")
+                    print(f"⚠️ 达到总大小限制 ({MAX_TOTAL_OUTPUT_MB}MB)，停止导出。")
+                    return
 
-    print(f"\n成功! 代码已打包至: {OUTPUT_FILE}")
-    print(f"最终文件大小: {os.path.getsize(OUTPUT_FILE)/1024/1024:.2f} MB")
-    if skipped_count > 0:
-        print(f"已自动跳过 {skipped_count} 个超过 {MAX_FILE_SIZE_KB}KB 的大文件（这是好事，节省了Token）")
+                try:
+                    fsize = os.path.getsize(file_path)
+                    if fsize > MAX_FILE_SIZE_KB * 1024:
+                        print(f"Skipping large file: {clean_path} ({fsize/1024:.1f} KB)")
+                        continue
+
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        
+                        # 针对 JSON 做截断
+                        if file_path.endswith('.json'):
+                            lines = content.splitlines()
+                            if len(lines) > 50:
+                                content = "\n".join(lines[:50]) + "\n... (JSON truncated) ..."
+
+                        header = f"\n\n{'='*50}\nFILE_PATH: {clean_path}\n{'='*50}\n\n"
+                        outfile.write(header + content)
+                        
+                        current_size += len(header) + len(content)
+                        file_count += 1
+                        # 打印进度 (每10个文件显示一次，避免刷屏)
+                        if file_count % 10 == 0:
+                            print(f"Packed {file_count} files...", end='\r')
+
+                except Exception as e:
+                    print(f"Error reading {clean_path}: {e}")
+
+    print(f"\n✅ 完成！核心代码已导出至: {OUTPUT_FILE}")
+    print(f"📊 文件数量: {file_count}")
+    print(f"📦 文件大小: {os.path.getsize(OUTPUT_FILE)/1024/1024:.2f} MB")
 
 if __name__ == '__main__':
     pack_project()

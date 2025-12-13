@@ -143,6 +143,14 @@ export function UploadPostProcessDialog({
 
     try {
       await api.post(`/books/${bookId}/ocr`)
+      
+      // 【关键】立即广播 OCR 开始事件，通知 LibraryPage 更新书籍状态为 pending
+      // 这确保书籍被立即锁定，防止用户在 OCR 期间打开阅读页面
+      window.dispatchEvent(new CustomEvent('ocr_started', {
+        detail: { bookId }
+      }))
+      console.log('[UploadPostProcess] OCR started, broadcasted ocr_started event for book:', bookId)
+      
       setStep('done')
       setTimeout(() => {
         onOpenChange(false)

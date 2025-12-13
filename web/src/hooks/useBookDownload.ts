@@ -43,6 +43,7 @@ export interface UseBookDownloadReturn {
   blobUrl: string | null    // 可用于阅读器的 Blob URL
   error: string | null
   isCached: boolean
+  cachedFormat: 'epub' | 'pdf' | null  // 缓存文件的实际格式
   download: () => Promise<void>
   cancel: () => void
   clearCache: () => Promise<void>
@@ -58,6 +59,7 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
   const [error, setError] = useState<string | null>(null)
   const [isCached, setIsCached] = useState(false)
   const [fileSize, setFileSize] = useState<number | null>(null)
+  const [cachedFormat, setCachedFormat] = useState<'epub' | 'pdf' | null>(null)
   
   const abortControllerRef = useRef<AbortController | null>(null)
   const blobUrlRef = useRef<string | null>(null)
@@ -105,9 +107,10 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
       // 先检查缓存
       const cached = await getBookFile(bookId)
       if (cached) {
-        console.log(`[BookDownload] Book ${bookId} found in cache, size: ${cached.size}`)
+        console.log(`[BookDownload] Book ${bookId} found in cache, size: ${cached.size}, format: ${cached.format}`)
         setIsCached(true)
         setFileSize(cached.size)
+        setCachedFormat(cached.format)  // 设置缓存文件的实际格式
         
         // 清理旧的 blob URL 并创建新的
         if (blobUrlRef.current) {
@@ -188,6 +191,7 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
       // 保存到 IndexedDB
       setStatus('saving')
       await saveBookFile(bookId, blob, format, etag)
+      setCachedFormat(format)  // 设置下载的格式
       
       // 创建 Blob URL
       if (blobUrlRef.current) {
@@ -269,6 +273,7 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
     blobUrl,
     error,
     isCached,
+    cachedFormat,
     download,
     cancel,
     clearCache,

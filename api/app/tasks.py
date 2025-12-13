@@ -17,6 +17,7 @@ BUCKET = os.getenv("MINIO_BUCKET", "athena")
 
 
 def _quick_confidence(key: str) -> tuple[bool, float]:
+    """Quick heuristic to guess whether a file is image based."""
     try:
         head = None
         if isinstance(key, str) and key.startswith("http"):
@@ -51,90 +52,69 @@ def _quick_confidence(key: str) -> tuple[bool, float]:
 
 
 def _optimize_cover_image(image_data: bytes, max_width: int = 400, quality: int = 80) -> tuple[bytes, str]:
-    """
-    优化封面图片：转换为 WebP 格式并压缩
-    封面固定尺寸为 400x600 (2:3 比例)
-    返回 (优化后的图片数据, content_type)
-    """
+    """Convert a cover image to a normalized WebP rendition."""
     try:
         from PIL import Image
-        
+
         img = Image.open(io.BytesIO(image_data))
-        
-        # 转换为 RGB 模式（WebP 不支持某些模式）
-        if img.mode in ('RGBA', 'LA', 'P'):
-            # 保留透明通道的转为 RGBA
-            img = img.convert('RGBA')
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # 固定尺寸: 400x600 (2:3 比例，与前端 BookCard 一致)
-        target_width = 400
-        target_height = 600
-        
-        # 计算裁剪区域以保持比例
+
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGBA")
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        target_width = max_width
+        target_height = int(max_width * 1.5)  # 2:3 ratio
         img_ratio = img.width / img.height
         target_ratio = target_width / target_height
-        
+
         if img_ratio > target_ratio:
-            # 图片太宽，需要裁剪左右
             new_width = int(img.height * target_ratio)
             left = (img.width - new_width) // 2
             img = img.crop((left, 0, left + new_width, img.height))
         elif img_ratio < target_ratio:
-            # 图片太高，需要裁剪上下
             new_height = int(img.width / target_ratio)
             top = (img.height - new_height) // 2
             img = img.crop((0, top, img.width, top + new_height))
-        
-        # 缩放到目标尺寸
-        img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        
-        # 转换为 WebP
+
+        resample = getattr(Image, "Resampling", Image).LANCZOS
+        img = img.resize((target_width, target_height), resample)
+
         output = io.BytesIO()
-        if img.mode == 'RGBA':
-            img.save(output, format='WEBP', quality=quality, lossless=False)
-        else:
-            img.save(output, format='WEBP', quality=quality, lossless=False)
-        
+        img.save(output, format="WEBP", quality=quality, lossless=False)
         webp_data = output.getvalue()
         print(f"[Cover] Optimized: {len(image_data)} -> {len(webp_data)} bytes (400x600 WebP)")
-        
         return webp_data, "image/webp"
     except Exception as e:
         print(f"[Cover] Failed to optimize image, using original: {e}")
-        # 回退到原始格式
-        if image_data[:8].startswith(b'\x89PNG'):
+        if image_data[:8].startswith(b"\x89PNG"):
             return image_data, "image/png"
         return image_data, "image/jpeg"
 
 
 def _extract_epub_metadata(epub_data: bytes) -> dict:
-    """从 EPUB 文件中提取元数据 (title, author)"""
+    """Extract title/author information from an EPUB file."""
     metadata = {"title": None, "author": None}
     try:
         with zipfile.ZipFile(io.BytesIO(epub_data)) as zf:
-            # 找到 OPF 文件
             opf_path = None
             for name in zf.namelist():
-                if name.endswith('.opf'):
+                if name.endswith(".opf"):
                     opf_path = name
                     break
-            
+
             if opf_path:
                 import re
-                opf_content = zf.read(opf_path).decode('utf-8', errors='ignore')
-                
-                # 提取 title
-                title_match = re.search(r'<dc:title[^>]*>([^<]+)</dc:title>', opf_content, re.IGNORECASE)
+
+                opf_content = zf.read(opf_path).decode("utf-8", errors="ignore")
+                title_match = re.search(r"<dc:title[^>]*>([^<]+)</dc:title>", opf_content, re.IGNORECASE)
                 if title_match:
                     metadata["title"] = title_match.group(1).strip()
-                
-                # 提取 author (creator)
-                author_match = re.search(r'<dc:creator[^>]*>([^<]+)</dc:creator>', opf_content, re.IGNORECASE)
+
+                author_match = re.search(r"<dc:creator[^>]*>([^<]+)</dc:creator>", opf_content, re.IGNORECASE)
                 if author_match:
                     metadata["author"] = author_match.group(1).strip()
-                
+
                 print(f"[Metadata] EPUB metadata extracted: title={metadata['title']}, author={metadata['author']}")
     except Exception as e:
         print(f"[Metadata] Failed to extract EPUB metadata: {e}")
@@ -142,13 +122,11 @@ def _extract_epub_metadata(epub_data: bytes) -> dict:
 
 
 def _extract_pdf_metadata(pdf_data: bytes) -> dict:
-    """
-    从 PDF 文件中提取元数据 (title, author, page_count)
-    同时检测 PDF 是否是图片型（无可提取文字）
-    """
+    """Extract metadata (title, author, page count) and a quick digitalization score."""
     metadata = {"title": None, "author": None, "page_count": None, "is_image_based": False, "digitalization_confidence": 1.0}
     try:
         import fitz  # PyMuPDF
+
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         pdf_meta = doc.metadata
         if pdf_meta:
@@ -156,51 +134,43 @@ def _extract_pdf_metadata(pdf_data: bytes) -> dict:
                 metadata["title"] = pdf_meta["title"].strip()
             if pdf_meta.get("author"):
                 metadata["author"] = pdf_meta["author"].strip()
-        
-        # 提取页数
+
         page_count = len(doc)
         metadata["page_count"] = page_count
-        
-        # ========== 检测是否是图片型 PDF ==========
-        # 采样前5页（或全部页面如果少于5页）检测是否有可提取的文字
+
         sample_pages = min(5, page_count)
         total_text_chars = 0
         total_cjk_chars = 0
-        
+
         import re
+
         for i in range(sample_pages):
             page = doc[i]
             text = page.get_text("text")
             if text:
-                # 统计有效字符（排除空白和控制字符）
                 clean_text = text.strip()
                 total_text_chars += len(clean_text)
-                # 统计 CJK 字符（中日韩文字）
-                total_cjk_chars += len(re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]', clean_text))
-        
-        # 判断逻辑：
-        # - 如果采样页面的平均可提取字符数少于 50，认为是图片型
-        # - 对于中文书籍，如果 CJK 字符占比极低也认为是图片型
+                total_cjk_chars += len(re.findall(r"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]", clean_text))
+
         avg_chars_per_page = total_text_chars / sample_pages if sample_pages > 0 else 0
-        
+
         if avg_chars_per_page < 50:
-            # 几乎没有可提取文字，是图片型 PDF
             metadata["is_image_based"] = True
             metadata["digitalization_confidence"] = 0.1
             print(f"[Metadata] PDF detected as IMAGE-BASED: avg {avg_chars_per_page:.1f} chars/page (threshold: 50)")
         elif avg_chars_per_page < 200:
-            # 文字很少，可能是部分图片型
             metadata["is_image_based"] = True
             metadata["digitalization_confidence"] = 0.3
             print(f"[Metadata] PDF detected as PARTIALLY IMAGE-BASED: avg {avg_chars_per_page:.1f} chars/page")
         else:
-            # 有足够的可提取文字，是数字型
             metadata["is_image_based"] = False
             metadata["digitalization_confidence"] = min(1.0, avg_chars_per_page / 500)
             print(f"[Metadata] PDF detected as DIGITAL: avg {avg_chars_per_page:.1f} chars/page")
-        
+
         doc.close()
-        print(f"[Metadata] PDF metadata extracted: title={metadata['title']}, author={metadata['author']}, pages={page_count}, is_image_based={metadata['is_image_based']}")
+        print(
+            f"[Metadata] PDF metadata extracted: title={metadata['title']}, author={metadata['author']}, pages={page_count}, is_image_based={metadata['is_image_based']}"
+        )
     except Exception as e:
         print(f"[Metadata] Failed to extract PDF metadata: {e}")
     return metadata
@@ -889,20 +859,26 @@ def extract_book_cover_and_metadata(book_id: str, user_id: str):
                     "is_image_based": metadata.get("is_image_based", False),
                     "digitalization_confidence": metadata.get("digitalization_confidence", 1.0),
                 }
-                asyncio.create_task(
-                    ws_broadcast(
-                        f"book:{book_id}",
-                        _j.dumps(event_data),
-                    )
+                # 【关键修复】使用 await 而不是 create_task，确保广播消息立即发送
+                await ws_broadcast(
+                    f"book:{book_id}",
+                    _j.dumps(event_data),
                 )
-            except Exception:
-                pass
+                print(f"[CoverMeta] WebSocket event broadcasted: COVER_AND_METADATA_EXTRACTED")
+            except Exception as e:
+                print(f"[CoverMeta] Failed to broadcast WebSocket event: {e}")
     
     asyncio.get_event_loop().run_until_complete(_run())
 
 
 @shared_task(name="tasks.analyze_book_type")
 def analyze_book_type(book_id: str, user_id: str):
+    """
+    【已废弃】此任务已被 extract_book_cover_and_metadata 取代
+    
+    保留此函数仅为向后兼容，实际 PDF 类型检测已整合到元数据提取流程中。
+    如果仍被调用，使用 _quick_confidence 快速检测并设置 is_digitalized 标志。
+    """
     import asyncio
 
     async def _run():
@@ -918,24 +894,33 @@ def analyze_book_type(book_id: str, user_id: str):
             if not row:
                 return
             key = row[0]
-            img, conf = _quick_confidence(key)
+            is_image_based, conf = _quick_confidence(key)
+            
+            # 【关键修复】设置 is_digitalized = true 以标记检测完成
             await conn.execute(
                 text(
-                    "UPDATE books SET initial_digitalization_confidence = :c, updated_at = now() WHERE id = cast(:id as uuid)"
+                    "UPDATE books SET is_digitalized = true, initial_digitalization_confidence = :c, updated_at = now() WHERE id = cast(:id as uuid)"
                 ),
                 {"c": conf, "id": book_id},
             )
+            print(f"[AnalyzeBookType] Book {book_id}: is_image_based={is_image_based}, confidence={conf:.2f}")
+        
         try:
             import json as _j
 
-            asyncio.create_task(
-                ws_broadcast(
-                    f"book:{book_id}",
-                    _j.dumps({"event": "ANALYZED", "confidence": conf}),
-                )
+            # 【关键修复】WebSocket 事件包含完整检测信息，使用 await 确保发送
+            await ws_broadcast(
+                f"book:{book_id}",
+                _j.dumps({
+                    "event": "ANALYZED",
+                    "confidence": conf,
+                    "is_image_based": is_image_based,
+                    "is_digitalized": True,
+                }),
             )
-        except Exception:
-            pass
+            print(f"[AnalyzeBookType] WebSocket event broadcasted: ANALYZED")
+        except Exception as e:
+            print(f"[AnalyzeBookType] Failed to broadcast WebSocket event: {e}")
         try:
             async with engine.begin() as conn2:
                 await conn2.execute(
@@ -945,7 +930,7 @@ def analyze_book_type(book_id: str, user_id: str):
                     {
                         "uid": user_id,
                         "act": "task_analyze_book_type",
-                        "det": _j.dumps({"book_id": book_id, "confidence": conf}),
+                        "det": _j.dumps({"book_id": book_id, "confidence": conf, "is_image_based": is_image_based}),
                     },
                 )
         except Exception:
@@ -1367,71 +1352,115 @@ def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple
 @shared_task(name="tasks.process_book_ocr")
 def process_book_ocr(book_id: str, user_id: str):
     """
-    处理书籍 OCR 任务（流水线模式）
+    处理书籍 OCR 任务（双层 PDF 生成模式）
+    
+    **架构重构说明**：
+    - 旧方案：生成 JSON，前端渲染透明 DOM（存在文字对齐问题）
+    - 新方案：后端生成双层 PDF (Invisible Text Layer)，前端直接使用 react-pdf 渲染
     
     优化策略：
     1. 使用生产者-消费者模式：CPU 图片转换和 OCR 识别并行执行
     2. 动态计算工作线程数，预留核心给其他任务
-    3. 批量处理，控制内存占用
-    4. 减少用户等待时间，提高资源利用率
+    3. 借助 OCRmyPDF-PaddleOCR 插件生成透明文字层（pikepdf + ContentStreamBuilder）
+    4. 生成的双层 PDF 替换原文件，前端无需额外处理
     
     流程:
     1. 更新状态为 processing
-    2. 下载 PDF 文件
+    2. 下载原始 PDF 文件
     3. 流水线处理：图片转换 → OCR（并行）
-    4. 保存 OCR 结果到 MinIO
-    5. 更新书籍状态为 completed
-    6. 触发搜索索引
+    4. OCRmyPDF 插件写入透明文字层，保持 PaddleOCR 原始坐标
+    5. 上传新的双层 PDF 到 MinIO (layered/{book_id}.pdf)
+    6. 更新数据库：minio_key 指向新文件，备份原始 key
+    7. 触发搜索索引
+    8. WebSocket 通知前端清理旧缓存
     
-    OCR 结果格式:
-    {
-        "pages": [
-            {
-                "page_num": 1,
-                "width": 1200,       # 渲染图片宽度（OCR 坐标基于此）
-                "height": 1600,      # 渲染图片高度
-                "pdf_width": 595.0,  # PDF 原始宽度 (points)
-                "pdf_height": 842.0, # PDF 原始高度 (points)
-                "dpi": 150,          # 渲染 DPI
-                "regions": [         # OCR 识别的文本区域
-                    {
-                        "text": "识别的文字",
-                        "box": [[x1,y1], [x2,y2], [x3,y3], [x4,y4]],  # 四点坐标
-                        "confidence": 0.95
-                    }
-                ],
-                "text": "该页全部文字..."
-            }
-        ],
-        "full_text": "全书文字...",
-        "total_pages": 100,
-        "processed_pages": 100,
-        "ocr_engine": "paddleocr",
-        "ocr_version": "3.x",
-        "pipeline_mode": true
-    }
+    双层 PDF 优势：
+    - 文字位置由 PDF 引擎精确控制，完美对齐
+    - 前端无需维护 OCR 层组件
+    - 支持所有 PDF 阅读器的标准文字选择
     """
     import asyncio
     
-    print(f"[OCR] Starting OCR task for book {book_id} (Pipeline Mode)")
+    print(f"[OCR] Starting OCR task for book {book_id} (Layered PDF Mode)")
+
+    def _embed_ocr_text_to_pdf_with_paddle_plugin(pdf_data: bytes, ocr_pages: list) -> bytes:
+        """
+        使用 OCRmyPDF-PaddleOCR 插件将 PaddleOCR 识别的文字嵌入 PDF 作为透明文字层
+        
+        核心优势（完全参照 OCRmyPDF-EasyOCR 实现）：
+        1. 使用 pikepdf + ContentStreamBuilder 精确控制 PDF 文本流
+        2. 使用 PaddleOCR 的精确多边形坐标（polygon）
+        3. 支持旋转文本（使用 Tm 文本矩阵）
+        4. 透明文字层（Rendering Mode 3）完美覆盖原图
+        5. 行业验证的坐标映射算法（从 OCRmyPDF-EasyOCR）
+        
+        Args:
+            pdf_data: 原始 PDF 二进制数据
+            ocr_pages: OCR 结果列表（PaddleOCR格式，包含精确坐标）
+        
+        Returns:
+            bytes: 嵌入文字层后的 PDF 二进制数据
+        """
+        import tempfile
+        import time as _time
+        from pathlib import Path
+        from app.services.ocrmypdf_paddle import create_layered_pdf_with_paddle
+        
+        start_time = _time.time()
+        print(f"[PaddleOCR Plugin] Starting to embed text layer using OCRmyPDF-PaddleOCR plugin...")
+        
+        try:
+            # 保存原始 PDF 到临时文件
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_in:
+                temp_in.write(pdf_data)
+                temp_in_path = temp_in.name
+            
+            # 输出文件路径
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_out:
+                temp_out_path = temp_out.name
+            
+            # 使用 PaddleOCR 插件生成双层 PDF
+            success = create_layered_pdf_with_paddle(
+                pdf_path=temp_in_path,
+                output_path=temp_out_path,
+                ocr_pages=ocr_pages
+            )
+            
+            if not success:
+                raise Exception("Failed to create layered PDF with PaddleOCR plugin")
+            
+            # 读取结果
+            with open(temp_out_path, 'rb') as f:
+                result_data = f.read()
+            
+            # 清理临时文件
+            import os
+            try:
+                os.remove(temp_in_path)
+                os.remove(temp_out_path)
+            except Exception:
+                pass
+            
+            elapsed = _time.time() - start_time
+            total_regions = sum(len(p.get('regions', [])) for p in ocr_pages)
+            print(f"[PaddleOCR Plugin] Successfully embedded {total_regions} text regions in {elapsed:.1f}s")
+            
+            return result_data
+            
+        except Exception as e:
+            import traceback
+            print(f"[PaddleOCR Plugin] Failed to embed text layer: {e}")
+            traceback.print_exc()
+            raise Exception(f"PaddleOCR Plugin text embedding failed: {e}")
 
     async def _run():
+        # 【关键修复】先获取书籍信息并更新状态为 processing，立即提交
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             
-            # 1. 更新状态为 processing
-            await conn.execute(
-                text("""
-                    UPDATE books 
-                    SET ocr_status = 'processing', updated_at = now() 
-                    WHERE id = cast(:id as uuid)
-                """),
-                {"id": book_id}
-            )
-            
-            # 2. 获取书籍信息
+            # 获取书籍信息
             res = await conn.execute(
                 text("SELECT minio_key, title FROM books WHERE id = cast(:id as uuid)"),
                 {"id": book_id},
@@ -1442,143 +1471,196 @@ def process_book_ocr(book_id: str, user_id: str):
                 return
             
             minio_key, book_title = row
-            print(f"[OCR] Processing: {book_title} ({minio_key})")
             
-            # 3. 下载 PDF
-            pdf_data = read_full(BUCKET, minio_key)
-            if not pdf_data:
-                print(f"[OCR] Failed to download PDF: {minio_key}")
-                await conn.execute(
-                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"id": book_id}
-                )
-                return
-            
-            print(f"[OCR] Downloaded PDF: {len(pdf_data)} bytes")
-            
-            # 4. 使用流水线模式处理 OCR
-            ocr = get_ocr()
-            
-            try:
-                ocr_pages, full_text, total_pages, processed_pages = _pipeline_ocr_process(
-                    pdf_data=pdf_data,
-                    ocr_instance=ocr,
-                    max_pages=0,  # 处理所有页面
-                    dpi=150,
-                    batch_size=20,  # 每批 20 页
-                    progress_callback=None,  # 可以后续添加进度回调
-                )
-            except Exception as e:
-                print(f"[OCR] Pipeline processing failed: {e}")
-                await conn.execute(
-                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"id": book_id}
-                )
-                return
-            
-            if not ocr_pages:
-                print(f"[OCR] No pages processed")
-                await conn.execute(
-                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"id": book_id}
-                )
-                return
-            
-            print(f"[OCR] Pipeline completed: {processed_pages}/{total_pages} pages")
-            
-            # 5. 构建完整 OCR 结果
-            ocr_result = {
-                "pages": ocr_pages,
-                "full_text": full_text,
-                "total_pages": total_pages,
-                "processed_pages": processed_pages,
-                "ocr_engine": "paddleocr",
-                "ocr_version": "3.x",
-                "pipeline_mode": True,
-            }
-            
-            # 6. 保存 OCR 结果到 MinIO
-            ocr_key = make_object_key(user_id, f"ocr-result-{book_id}.json")
-            upload_bytes(
-                BUCKET,
-                ocr_key,
-                json.dumps(ocr_result, ensure_ascii=False).encode("utf-8"),
-                "application/json",
-            )
-            print(f"[OCR] Saved OCR result to {ocr_key}")
-            
-            # 7. 更新书籍状态
-            # 【重要】OCR 完成后，保持 is_digitalized=true 但不修改 initial_digitalization_confidence
-            # confidence 应该保持低值（如 0.1），表示这是图片型 PDF
-            # 这样前端才能正确判断需要显示 OCR 层 
+            # 更新状态为 processing（此事务结束后立即提交）
             await conn.execute(
                 text("""
                     UPDATE books 
-                    SET ocr_status = 'completed',
-                        ocr_result_key = :ocr_key,
-                        is_digitalized = true,
+                    SET ocr_status = 'processing', updated_at = now() 
+                    WHERE id = cast(:id as uuid)
+                """),
+                {"id": book_id}
+            )
+        # 事务已提交，状态更新对前端可见
+        
+        original_minio_key = minio_key  # 保存原始 key 用于备份
+        print(f"[OCR] Processing: {book_title} ({minio_key})")
+        
+        # 【关键优化】下载和 OCR 处理在事务外进行，避免长事务
+        # 3. 下载 PDF
+        pdf_data = read_full(BUCKET, minio_key)
+        if not pdf_data:
+            print(f"[OCR] Failed to download PDF: {minio_key}")
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+            return
+        
+        print(f"[OCR] Downloaded PDF: {len(pdf_data)} bytes")
+        
+        # 4. 使用流水线模式处理 OCR
+        ocr = get_ocr()
+        
+        try:
+            ocr_pages, full_text, total_pages, processed_pages = _pipeline_ocr_process(
+                pdf_data=pdf_data,
+                ocr_instance=ocr,
+                max_pages=0,  # 处理所有页面
+                dpi=150,
+                batch_size=20,  # 每批 20 页
+                progress_callback=None,  # 可以后续添加进度回调
+            )
+        except Exception as e:
+            print(f"[OCR] Pipeline processing failed: {e}")
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+            return
+        
+        if not ocr_pages:
+            print(f"[OCR] No pages processed")
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+            return
+        
+        print(f"[OCR] Pipeline completed: {processed_pages}/{total_pages} pages")
+        
+        # 5. 【核心】生成双层 PDF（使用 OCRmyPDF-PaddleOCR 插件）
+        print(f"[OCR] Generating layered PDF with PaddleOCR Plugin (OCRmyPDF-EasyOCR style)...")
+        try:
+            layered_pdf_data = _embed_ocr_text_to_pdf_with_paddle_plugin(pdf_data, ocr_pages)
+            print(f"[OCR] Layered PDF generated: {len(layered_pdf_data)} bytes")
+        except Exception as e:
+            print(f"[OCR] Failed to generate layered PDF: {e}")
+            import traceback
+            traceback.print_exc()
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+            return
+        
+        # 6. 上传双层 PDF 到 MinIO
+        layered_pdf_key = f"users/{user_id}/layered/{book_id}.pdf"
+        try:
+            upload_bytes(BUCKET, layered_pdf_key, layered_pdf_data, "application/pdf")
+            print(f"[OCR] Uploaded layered PDF: {layered_pdf_key}")
+        except Exception as e:
+            print(f"[OCR] Failed to upload layered PDF: {e}")
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
+                await conn.execute(
+                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
+                    {"id": book_id}
+                )
+            return
+        
+        # 7. 备份原始 PDF 文件
+        backup_key = f"users/{user_id}/backups/{book_id}_original.pdf"
+        try:
+            # 先备份原始文件，然后更新 minio_key 指向双层 PDF
+            from .storage import copy_object
+            
+            # 备份原文件（如果还没备份过）
+            try:
+                read_head(BUCKET, backup_key)
+                print(f"[OCR] Backup already exists: {backup_key}")
+            except Exception:
+                # 备份不存在，创建备份
+                upload_bytes(BUCKET, backup_key, pdf_data, "application/pdf")
+                print(f"[OCR] Created backup: {backup_key}")
+        except Exception as e:
+            print(f"[OCR] Warning: Failed to create backup: {e}")
+            # 备份失败不影响后续流程
+        
+        # 8. 更新数据库记录
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            
+            # 更新书籍记录：指向双层PDF，并标记OCR完成
+            await conn.execute(
+                text("""
+                    UPDATE books 
+                    SET 
+                        minio_key = :layered_key,
+                        ocr_status = 'completed',
+                        ocr_text = :ocr_text,
                         updated_at = now()
                     WHERE id = cast(:id as uuid)
                 """),
-                {"id": book_id, "ocr_key": ocr_key}
+                {
+                    "id": book_id,
+                    "layered_key": layered_pdf_key,
+                    "ocr_text": full_text[:50000] if full_text else "",  # 限制大小
+                }
             )
-            print(f"[OCR] Updated book status to completed")
             
-            # 8. 触发搜索索引
-            try:
-                # 转换为搜索索引格式
-                all_regions = []
-                for page_data in ocr_pages:
-                    for region in page_data.get("regions", []):
-                        region_with_page = region.copy()
-                        region_with_page["page"] = page_data["page_num"]
-                        region_with_page["page_width"] = page_data["width"]
-                        region_with_page["page_height"] = page_data["height"]
-                        all_regions.append(region_with_page)
-                
-                from .search_sync import index_book_content
-                index_book_content(book_id, user_id, all_regions)
-                print(f"[OCR] Triggered search indexing for book {book_id}")
-            except Exception as e:
-                print(f"[OCR] Failed to trigger search indexing: {e}")
-            
-            # 9. WebSocket 通知
-            try:
-                import json as _j
-                asyncio.create_task(
-                    ws_broadcast(
-                        f"book:{book_id}",
-                        _j.dumps({
-                            "event": "OCR_COMPLETED",
-                            "book_id": book_id,
-                            "total_pages": total_pages,
-                            "processed_pages": processed_pages,
-                        }),
-                    )
-                )
-            except Exception:
-                pass
-            
-            # 10. 审计日志
-            try:
-                await conn.execute(
-                    text(
-                        "INSERT INTO audit_logs(id, owner_id, action, details) VALUES (gen_random_uuid(), cast(:uid as uuid), :act, cast(:det as jsonb))"
-                    ),
-                    {
-                        "uid": user_id,
-                        "act": "ocr_completed",
-                        "det": json.dumps({
-                            "book_id": book_id,
-                            "total_pages": total_pages,
-                            "processed_pages": processed_pages,
-                            "pipeline_mode": True,
-                        }),
-                    },
-                )
-            except Exception:
-                pass
-
+            print(f"[OCR] Successfully completed OCR for book {book_id}")
+            print(f"[OCR]   Original: {original_minio_key}")
+            print(f"[OCR]   Backup: {backup_key}")
+            print(f"[OCR]   Layered PDF: {layered_pdf_key}")
+        
+        # 9. 触发搜索索引（关键！使书籍内容可搜索）
+        try:
+            from .search_sync import index_book_content
+            # 将 OCR 结果转换为搜索索引需要的格式
+            # ocr_pages 格式: [{"page_num": 1, "regions": [{"text": "...", "page": 1}, ...], ...}]
+            search_regions = []
+            for page_info in ocr_pages:
+                page_num = page_info.get("page_num", 1)
+                for region in page_info.get("regions", []):
+                    search_regions.append({
+                        "text": region.get("text", ""),
+                        "page": page_num
+                    })
+            index_book_content(book_id, user_id, search_regions)
+            print(f"[OCR] Triggered search indexing for book {book_id} with {len(search_regions)} regions")
+        except Exception as e:
+            print(f"[OCR] Warning: Failed to index book content for search: {e}")
+            # 搜索索引失败不影响整体流程
+        
+        # 10. 通过 WebSocket 通知前端
+        try:
+            await ws_broadcast(
+                f"book:{book_id}",
+                json.dumps({
+                    "event": "OCR_COMPLETED",
+                    "book_id": book_id,
+                    "ocr_status": "completed",
+                    "layered_pdf_key": layered_pdf_key,
+                    "message": "OCR processing completed successfully"
+                })
+            )
+        except Exception as e:
+            print(f"[OCR] Warning: Failed to broadcast WebSocket message: {e}")
+            # WebSocket 失败不影响整体流程
+        
+    
+    # 调用异步运行函数
     try:
         asyncio.get_event_loop().run_until_complete(_run())
     except Exception as e:
@@ -1586,16 +1668,16 @@ def process_book_ocr(book_id: str, user_id: str):
         import traceback
         traceback.print_exc()
         # 更新状态为失败
-        import asyncio as _asyncio
         async def _mark_failed():
             async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                )
                 await conn.execute(
                     text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
                     {"id": book_id}
                 )
-        _asyncio.get_event_loop().run_until_complete(_mark_failed())
-
-
+        asyncio.get_event_loop().run_until_complete(_mark_failed())
 @shared_task(name="tasks.deep_analyze_book")
 def deep_analyze_book(book_id: str, user_id: str):
     import asyncio

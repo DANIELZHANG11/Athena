@@ -28,6 +28,22 @@
 
 > **[待补充] 阅读器高亮色板 (需在 figma.css 中新增)**
 > *   `--highlight-yellow`: `#FFCC00` (Idea/Insight)
+
+## 3. 离线体验规范 (Offline Experience)
+
+### 3.1 状态指示器
+*   **离线状态**: 顶部显示黄色 Banner "网络已断开，正在使用离线模式"。
+*   **PowerSync 状态**: 右上角 `PowerSyncIndicator` 胶囊：`synced` (绿色点)、`syncing` (蓝色旋转)、`error` (红色)。状态文案分别为 "已同步", "正在同步", "同步受阻"。
+*   **冲突提示**: 当 PowerSync 下发 `conflict_copy` 时弹出 Toast + Badge，引导用户合并。
+
+### 3.2 功能降级 (Graceful Degradation)
+*   **AI 功能**: 按钮置灰 (Disabled)，Tooltip 提示 "需要网络连接"。
+*   **搜索**: 仅搜索本地已缓存内容，搜索框下方提示 "离线模式：仅搜索本地"。
+*   **图片加载**: 加载失败时显示本地占位符 (Placeholder)。
+
+### 3.3 冲突解决 UI
+*   **自动解决**: 不显示 UI (如阅读进度 LWW)。
+*   **手动解决**: 弹出模态框 (Modal)，展示 "服务器版本" vs "本地版本" 对比，提供 [保留本地] [保留服务器] [保留两者] 选项。
 > *   `--highlight-green`: `#34C759` (Fact/Data)
 > *   `--highlight-blue`: `#007AFF` (Quote/Beautiful)
 
@@ -80,7 +96,7 @@
 *   `z-100`: **Modal** (对话框, 抽屉)
 *   `z-200`: **Toast** (全局通知)
 
-## 3. 组件规范 (Component Specs)
+## 4. 组件规范 (Component Specs)
 
 ### 3.1 已有基础组件 (Base Components)
 *直接复用 `web/src/components/ui/` 下的组件*
@@ -219,7 +235,7 @@
         *   `converting`: Calibre 格式转换中
         *   `ocr`: OCR 文字识别中
 
-    **6. Dedup Card (秒传成功状态) [NEW - ADR-007]**
+    **6. Dedup Card (秒传成功状态) [NEW - ADR-008]**
     *   **场景**: SHA256 全局去重命中，秒传成功时短暂显示。
     *   **尺寸**: 与 Grid Standard Card 完全相同。
     *   **视觉构造**:
@@ -288,7 +304,7 @@ idle → hashing → checking → uploading/dedup → completing → done
 - 进度条直接跳到 100%，使用绿色填充
 - 0.5s 后自动进入 `completing` 状态
 
-## 4. 移动端与 PWA 适配 (Mobile & PWA)
+## 5. 移动端与 PWA 适配 (Mobile & PWA)
 
 ### 4.1 移动端优先 (Mobile First)
 *   **断点 (Breakpoints)**:
@@ -304,7 +320,7 @@ idle → hashing → checking → uploading/dedup → completing → done
     1.  应用变为 **灰度模式 (Grayscale)** 或顶部显示 "Offline Mode" 橙色条。
     2.  所有需联网操作 (AI, Upload) 按钮置灰，点击提示 "离线不可用"。
 
-## 5. 图标系统 (Iconography)
+## 6. 图标系统 (Iconography)
 
 **库**: 必须使用 `lucide-react`，统一 `stroke-width={1.5}` (常规) 或 `2` (强调)。
 
@@ -317,7 +333,7 @@ idle → hashing → checking → uploading/dedup → completing → done
 | **更多操作** | `MoreHorizontal` | 严禁使用三个点图片 |
 | **菜单** | `Menu` | 移动端左上角 |
 
-## 6. 质量门禁 (Quality Gates)
+## 7. 质量门禁 (Quality Gates)
 *   **A11Y**: 所有组件必须通过 `axe-core` 扫描，无 Serious/Critical 级错误。
 *   **对比度**: 文本与背景对比度 ≥ 4.5:1 (WCAG AA)。
 *   **代码检查**: 禁止在 TSX/JSX 中写死 Hex 颜色值（如 `className="bg-[#F5F5F5]"`），必须使用 Tailwind 类名（如 `bg-secondary-background`）。

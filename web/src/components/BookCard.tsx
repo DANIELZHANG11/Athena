@@ -5,6 +5,7 @@
  * - 支持 `default`/`hero`/`grid`/`list` 四种变体
  * - 动态显示下载/阅读/处理中/OCR 状态
  * - 提供更多菜单以执行删除、元数据确认、OCR 触发等操作
+ * - OCR 处理中的书籍会被锁定，禁止进入阅读页面
  */
 import { Cloud, Check, MoreHorizontal, BookOpen, Loader2, Scan } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -13,14 +14,19 @@ import { useState, useEffect } from 'react'
 import { extractDominantColor, getLuminance } from '@/lib/color-utils'
 import { ScrollText } from '@/components/ui/ScrollText'
 import { useTranslation } from 'react-i18next'
+import { toast } from '@/components/ui/sonner'
+import { BookItem } from '@/hooks/useBooksData'
 
 export type BookStatus = 'cloud' | 'downloading' | 'ready' | 'reading' | 'completed' | 'processing' | 'converting' | 'ocr'
 
 export interface BookCardProps {
+  /** 书籍对象 (可选，如果提供则优先使用其中的属性) */
+  book?: BookItem
+  
   /** 书籍 ID */
   id?: string
   /** 书籍标题 */
-  title: string
+  title?: string
   /** 作者 */
   author?: string
   /** 封面图片 URL */
@@ -59,6 +65,14 @@ export interface BookCardProps {
   variant?: 'default' | 'hero' | 'grid' | 'list'
   /** 自定义类名 */
   className?: string
+  /** 缓存状态 (兼容 LibraryPage 传入的 cacheStatus) */
+  cacheStatus?: BookStatus
+  /** 视图模式 (兼容 LibraryPage 传入的 viewMode) */
+  viewMode?: 'grid' | 'list' | 'shelf'
+  /** 是否在线 (兼容 LibraryPage 传入的 isOnline) */
+  isOnline?: boolean
+  /** 下载回调 (兼容 LibraryPage 传入的 onDownload) */
+  onDownload?: () => void
 }
 
 // 智能反色：根据封面亮度决定图标颜色
@@ -131,30 +145,46 @@ function StatusIcon({ status, coverColor }: { status: BookStatus; coverColor?: s
   }
 }
 
-export default function BookCard({
-  id,
-  title,
-  author,
-  coverUrl,
-  coverColor,
-  progress = 0,
-  status = 'ready',
-  isFinished = false,
-  processingText,
-  downloadUrl,
-  onClick,
-  onSyncClick,
-  onMoreClick,
-  onDeleted,
-  onFinishedChange,
-  onMetadataChange,
-  onOcrTrigger,
-  ocrStatus,
-  isImageBased = false,
-  variant = 'default',
-  className,
-}: BookCardProps) {
+export default function BookCard(props: BookCardProps) {
   const { t } = useTranslation('common')
+  
+  // 优先使用 book 对象中的属性，如果不存在则使用 props 中的属性
+  const { book } = props
+  
+  const id = props.id || book?.id
+  const title = props.title || book?.title || ''
+  const author = props.author || book?.author
+  const coverUrl = props.coverUrl || book?.coverUrl
+  const progress = props.progress ?? book?.progress ?? 0
+  const isFinished = props.isFinished ?? book?.isFinished ?? false
+  const ocrStatus = props.ocrStatus ?? book?.ocrStatus
+  const isImageBased = props.isImageBased ?? book?.isImageBased
+  const downloadUrl = props.downloadUrl || book?.downloadUrl
+  
+  // 兼容性处理：status 可能是 props.status 或 props.cacheStatus
+  const status = props.status || props.cacheStatus || 'ready'
+  
+  // 兼容性处理：variant 可能是 props.variant 或 props.viewMode (需映射)
+  let variant = props.variant || 'default'
+  if (props.viewMode === 'list') variant = 'list'
+  if (props.viewMode === 'grid') variant = 'grid'
+  if (props.viewMode === 'shelf') variant = 'grid' // Shelf view uses grid cards usually
+  
+  // 兼容性处理：onSyncClick 可能是 props.onSyncClick 或 props.onDownload
+  const onSyncClick = props.onSyncClick || props.onDownload
+
+  const {
+    coverColor,
+    processingText,
+    onClick,
+    onMoreClick,
+    onDeleted,
+    onFinishedChange,
+    onMetadataChange,
+    onOcrTrigger,
+    className,
+  } = props
+
   // 状态用于存储提取的主色调 (仅用于 list/hero 变体)
   const [dominantColor, setDominantColor] = useState(coverColor || '#6B7280')
 
@@ -173,15 +203,26 @@ export default function BookCard({
   const showProgress = !isCompleted && progress > 0 && status === 'reading'
   const showCloudIcon = status === 'cloud' || status === 'downloading'
   const isProcessing = status === 'processing' || status === 'converting' || status === 'ocr'
-  // OCR 正在处理中
+  // OCR 正在处理中（包括 pending 和 processing 状态）
   const isOcrProcessing = ocrStatus === 'pending' || ocrStatus === 'processing'
   
   // 处理卡片点击：如果是云状态且有同步回调，则触发同步而不跳转
   const handleCardClick = () => {
+    console.log('[BookCard] Click:', { bookId: id, ocrStatus, isOcrProcessing, status, isProcessing })
+    
     // 处理中、下载中、格式转换中不响应点击
     if (isProcessing || status === 'downloading') {
+      console.log('[BookCard] Blocked: processing or downloading')
       return
     }
+    
+    // 【锁定机制】OCR 处理中的书籍禁止进入阅读页面
+    if (isOcrProcessing) {
+      console.log('[BookCard] Blocked: OCR in progress')
+      toast.info(t('book_status.ocr_in_progress', '正在进行文字识别，请稍候...'))
+      return
+    }
+    
     if (status === 'cloud' && onSyncClick) {
       onSyncClick()
     } else {

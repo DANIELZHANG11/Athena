@@ -12,7 +12,21 @@ import { cn } from './utils'
 function Sheet(props: React.ComponentProps<typeof DialogPrimitive.Root>) { return <DialogPrimitive.Root data-slot="sheet" {...props} /> }
 function SheetTrigger(props: React.ComponentProps<typeof DialogPrimitive.Trigger>) { return <DialogPrimitive.Trigger data-slot="sheet-trigger" {...props} /> }
 function SheetPortal(props: React.ComponentProps<typeof DialogPrimitive.Portal>) { return <DialogPrimitive.Portal data-slot="sheet-portal" {...props} /> }
-function SheetOverlay(props: React.ComponentProps<typeof DialogPrimitive.Overlay>) { return <DialogPrimitive.Overlay data-slot="sheet-overlay" className={cn('fixed inset-0 z-50 bg-black/50', props.className)} {...props} /> }
+
+// 使用 forwardRef 修复警告
+const SheetOverlay = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Overlay>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Overlay 
+    ref={ref}
+    data-slot="sheet-overlay" 
+    className={cn('fixed inset-0 z-50 bg-black/50', className)} 
+    {...props} 
+  />
+))
+SheetOverlay.displayName = 'SheetOverlay'
+
 function SheetContent({ className, side = 'right', ...props }: React.ComponentProps<typeof DialogPrimitive.Content> & { side?: 'left' | 'right' | 'top' | 'bottom' }) {
   // 根据方向设置位置样式
   const positionStyles = {

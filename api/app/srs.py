@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import text
@@ -8,6 +8,11 @@ from .auth import require_user
 from .db import engine
 
 router = APIRouter(prefix="/api/v1/srs", tags=["srs"])
+
+
+def _now_utc() -> datetime:
+    """获取当前 UTC 时间（带时区信息）"""
+    return datetime.now(timezone.utc)
 
 
 def _schedule(ease: float, reps: int, interval: int, grade: int):
@@ -39,7 +44,7 @@ async def create_card(body: dict = Body(...), auth=Depends(require_user)):
         await conn.execute(
             text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
         )
-        next_at = datetime.utcnow() + timedelta(days=1)
+        next_at = _now_utc() + timedelta(days=1)
         await conn.execute(
             text(
                 "INSERT INTO srs_reviews(id, owner_id, front, back, deck_name, next_review_at) VALUES (cast(:id as uuid), current_setting('app.user_id')::uuid, :f, :b, :d, :n)"
@@ -101,7 +106,7 @@ async def answer(id: str, body: dict = Body(...), auth=Depends(require_user)):
         if not row:
             raise HTTPException(status_code=404, detail="not_found")
         ease, reps, interval = _schedule(float(row[0]), int(row[1]), int(row[2]), grade)
-        next_at = datetime.utcnow() + timedelta(days=interval)
+        next_at = _now_utc() + timedelta(days=interval)
         await conn.execute(
             text(
                 "UPDATE srs_reviews SET ease_factor = :e, repetitions = :r, interval_days = :i, last_grade = :g, next_review_at = :n, updated_at = now() WHERE id = cast(:id as uuid)"

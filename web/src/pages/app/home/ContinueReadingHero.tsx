@@ -26,40 +26,64 @@ type Props = {
 
 /**
  * 从图片 URL 提取主色调
- * 支持跨域图片和带 token 的 API 请求
+ * 
+ * 跨域处理策略:
+ * 1. 本地 API 请求：不设置 crossOrigin（通过代理访问）
+ * 2. 外部 URL（如 S3）：设置 crossOrigin="anonymous"
+ *    - 需要 S3 配置正确的 CORS 头（Access-Control-Allow-Origin）
+ *    - 如果 CORS 失败，回退到默认颜色
+ * 
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
  */
 function extractDominantColor(imageUrl: string): Promise<string> {
+  const DEFAULT_COLOR = '#6B7280' // 灰色后备色
+  
   return new Promise((resolve) => {
     const img = new Image()
-    // 对于同源 API 请求，不设置 crossOrigin
-    // 对于外部 URL（如 S3 预签名 URL），需要设置 crossOrigin
+    
+    // 判断是否为同源请求
     const isLocalApi = imageUrl.startsWith('/api/') || imageUrl.startsWith(window.location.origin)
+    
+    // 外部 URL 需要设置 crossOrigin，但可能因 CORS 配置问题失败
     if (!isLocalApi) {
       img.crossOrigin = 'anonymous'
     }
-    console.log('[Hero ColorExtract] Loading:', imageUrl, 'crossOrigin:', !isLocalApi)
     
+    // 超时保护：5秒内未完成则使用默认颜色
     const timeoutId = setTimeout(() => {
       console.log('[Hero ColorExtract] Timeout for:', imageUrl)
-      resolve('#6B7280')
+      resolve(DEFAULT_COLOR)
     }, 5000)
     
     img.onload = () => {
       clearTimeout(timeoutId)
       try {
         const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
         if (!ctx) {
-          resolve('#6B7280')
+          resolve(DEFAULT_COLOR)
           return
         }
+        
         // 采样整个图片的中心区域
         canvas.width = 50
         canvas.height = 75
         ctx.drawImage(img, 0, 0, 50, 75)
-        const imageData = ctx.getImageData(5, 10, 40, 55)
+        
+        // 尝试读取像素数据（可能因 CORS 失败抛出安全错误）
+        let imageData: ImageData
+        try {
+          imageData = ctx.getImageData(5, 10, 40, 55)
+        } catch (securityError) {
+          // CORS 限制导致无法读取像素（不透明响应）
+          console.warn('[Hero ColorExtract] CORS blocked pixel read, using default color')
+          resolve(DEFAULT_COLOR)
+          return
+        }
+        
         const data = imageData.data
         let r = 0, g = 0, b = 0, count = 0
+        
         // 跳过太暗或太亮的像素
         for (let i = 0; i < data.length; i += 4) {
           const pr = data[i]
@@ -73,22 +97,25 @@ function extractDominantColor(imageUrl: string): Promise<string> {
             count++
           }
         }
+        
         if (count === 0) count = 1
         r = Math.round(r / count)
         g = Math.round(g / count)
         b = Math.round(b / count)
-        console.log('[Hero ColorExtract] Extracted:', `rgb(${r}, ${g}, ${b})`)
+        
         resolve(`rgb(${r}, ${g}, ${b})`)
       } catch (e) {
         console.warn('[Hero ColorExtract] Canvas error:', e)
-        resolve('#6B7280')
+        resolve(DEFAULT_COLOR)
       }
     }
-    img.onerror = (e) => {
+    
+    img.onerror = () => {
       clearTimeout(timeoutId)
-      console.warn('[Hero ColorExtract] Image load error:', e)
-      resolve('#6B7280')
+      console.warn('[Hero ColorExtract] Image load error for:', imageUrl)
+      resolve(DEFAULT_COLOR)
     }
+    
     img.src = imageUrl
   })
 }

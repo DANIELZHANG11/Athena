@@ -1,5 +1,14 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { Home, Library, Bot, Search } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { OfflineIndicator } from '@/components/OfflineIndicator'
+import { UpdatePrompt } from '@/components/UpdatePrompt'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
+import { getSyncQueueCount } from '@/lib/syncStorage'
+import { toast } from '@/components/ui/sonner'
+import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
+import { motion } from 'framer-motion'
 
 /**
  * 应用区布局（登录后）
@@ -9,19 +18,104 @@ import { Home, Library, Bot, Search } from 'lucide-react'
  * - 顶部 header 已移除，个人信息入口由各页面自行处理
  * - 使用 `Outlet` 承载子路由页面
  * - `NavItem` 支持选中状态的椭圆背景与加粗图标
+ * - 集成离线状态指示器
  */
 export default function AppLayout() {
+  const { t } = useTranslation('common')
   const loc = useLocation()
   const active = (p: string) => loc.pathname.startsWith(p)
   
-  // 导航项组件 - 仅图标，选中时加粗线条 + 椭圆背景
+  // 待同步项数量
+  const [pendingCount, setPendingCount] = useState(0)
+  
+  // 网络状态监听，在线/离线切换时显示 toast
+  const { isOnline } = useOnlineStatus({
+    onOnline: () => {
+      toast.success(t('offline.reconnected_syncing', '网络已恢复，正在同步...'))
+    },
+    onOffline: () => {
+      toast.warning(t('offline.disconnected', '网络已断开，进入离线模式'))
+    },
+  })
+  
+  // 定期更新待同步项数量
+  useEffect(() => {
+    const updatePendingCount = async () => {
+      try {
+        const count = await getSyncQueueCount()
+        setPendingCount(count)
+      } catch (e) {
+        console.error('[AppLayout] Failed to get sync queue count:', e)
+      }
+    }
+    
+    // 立即更新一次
+    updatePendingCount()
+    
+    // 每 5 秒更新一次
+    const interval = setInterval(updatePendingCount, 5000)
+    
+    return () => clearInterval(interval)
+  }, [])
+
+  // 判断是否在阅读页面
+  const isReaderPage = loc.pathname.startsWith('/app/read/')
+  const [isNavVisible, setIsNavVisible] = useState(!isReaderPage)
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // 阅读页面交互显示逻辑
+  useEffect(() => {
+    if (!isReaderPage) {
+      setIsNavVisible(true)
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+      return
+    }
+
+    // 进入阅读页，默认隐藏
+    setIsNavVisible(false)
+
+    const showNav = () => {
+      setIsNavVisible(true)
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = setTimeout(() => {
+        setIsNavVisible(false)
+      }, 3000) // 3秒无操作后隐藏
+    }
+
+    // 监听全局交互
+    window.addEventListener('mousemove', showNav)
+    window.addEventListener('touchstart', showNav)
+    window.addEventListener('click', showNav)
+    window.addEventListener('scroll', showNav)
+
+    return () => {
+      window.removeEventListener('mousemove', showNav)
+      window.removeEventListener('touchstart', showNav)
+      window.removeEventListener('click', showNav)
+      window.removeEventListener('scroll', showNav)
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    }
+  }, [isReaderPage])
+  
+  // 导航项组件
   const NavItem = ({ to, icon: Icon, isActive }: { to: string, icon: typeof Home, isActive: boolean }) => (
     <NavLink to={to} className="flex items-center justify-center p-2">
-      <div className={`relative flex items-center justify-center transition-all duration-fast ${isActive ? 'px-5 py-2 rounded-full bg-gray-200/80 dark:bg-gray-700/80' : ''}`}>
+      <div className={cn(
+        "relative flex items-center justify-center transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        // 基础样式：圆形/椭圆，阴影，背景
+        // 移除边框 (border border-gray-100 dark:border-gray-700)
+        "bg-white dark:bg-gray-800 shadow-md hover:shadow-xl",
+        // 形状：移动端圆形，桌面端椭圆
+        "w-12 h-12 rounded-full md:w-24 md:h-12",
+        // 选中状态：移除蓝色光环，增加轻微缩放
+        isActive ? "scale-105 shadow-lg" : "scale-100"
+      )}>
         <Icon 
-          className="w-7 h-7" 
+          className="w-6 h-6 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]" 
+          // 选中：黑色(Label色)，未选中：灰色
           color={isActive ? 'var(--label)' : 'var(--secondary-label)'} 
-          strokeWidth={isActive ? 2.5 : 1.5}
+          // 选中：加粗线条 (3)
+          strokeWidth={isActive ? 3 : 1.5}
         />
       </div>
     </NavLink>
@@ -29,18 +123,40 @@ export default function AppLayout() {
   
   return (
     <div className="bg-system-background min-h-screen font-ui">
-      <main className="bg-system-background pb-16">
+      {/* 离线状态指示器 */}
+      <OfflineIndicator pendingCount={pendingCount} />
+      
+      {/* PWA 更新提示 */}
+      <UpdatePrompt />
+      
+      {/* 阅读页面不需要 pb-24，因为导航栏是沉浸式隐藏的 */}
+      <main className={cn(
+        'bg-system-background',
+        !isOnline && 'pt-10',
+        !isReaderPage && 'pb-24'
+      )}>
         <Outlet />
       </main>
-      <nav className="fixed bottom-0 left-0 right-0 border-t z-50" style={{ paddingBottom: 'env(safe-area-inset-bottom)', background: 'var(--system-background)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderTopColor: 'rgba(0,0,0,0.1)' }}>
-        {/* 与页面内容 max-w-4xl px-4 保持一致，实现左右对齐 */}
-        <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+
+      <motion.nav 
+        initial={false}
+        animate={{ y: isNavVisible ? 0 : '100%' }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="fixed bottom-0 left-0 right-0 z-50 pointer-events-none"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {/* 
+           容器：
+           - 移除背景色和模糊，改为透明
+           - 内部元素 pointer-events-auto 恢复点击
+        */}
+        <div className="max-w-4xl mx-auto px-6 h-24 flex items-center justify-between pointer-events-auto">
           <NavItem to="/app/home" icon={Home} isActive={active('/app/home')} />
           <NavItem to="/app/library" icon={Library} isActive={active('/app/library')} />
           <NavItem to="/app/ai-conversations" icon={Bot} isActive={active('/app/ai') || active('/app/ai-conversations')} />
           <NavItem to="/app/search" icon={Search} isActive={active('/app/search')} />
         </div>
-      </nav>
+      </motion.nav>
     </div>
   )
 }

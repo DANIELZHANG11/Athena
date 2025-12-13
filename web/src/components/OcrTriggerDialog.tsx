@@ -108,6 +108,12 @@ export default function OcrTriggerDialog({
     try {
       const result = await triggerOcr(bookId)
       
+      // 【关键】立即广播 OCR 开始事件，确保书籍被锁定
+      window.dispatchEvent(new CustomEvent('ocr_started', {
+        detail: { bookId }
+      }))
+      console.log('[OcrTriggerDialog] OCR triggered, broadcasted ocr_started event for book:', bookId)
+      
       // 如果是 instant_completed，显示假处理动画
       if (result.status === 'instant_completed' && result.estimatedSeconds) {
         setTriggering(false)

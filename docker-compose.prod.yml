@@ -1,0 +1,119 @@
+# =========================================================================
+# Athena 生产环境 Docker Compose 配置（带独立 Nginx + FRP）
+# =========================================================================
+# 说明：
+# - 此配置用于生产环境部署
+# - 包含独立的 Nginx 反向代理和 FRP 内网穿透
+# - 使用方法：docker-compose -f docker-compose.prod.yml up -d
+# =========================================================================
+
+services:
+  # Nginx 反向代理（替代 Traefik）
+  nginx:
+    build:
+      context: ./docker/nginx
+    container_name: athena_nginx
+    restart: unless-stopped
+    ports:
+      - "48080:80"    # HTTP
+      - "48443:443"   # HTTPS（生产环境使用）
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web/dist:/usr/share/nginx/html:ro  # 前端静态文件
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - api
+      - powersync
+    networks:
+      - athena-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # FRP 客户端（内网穿透）
+  frpc:
+    build:
+      context: ./docker/frpc
+    container_name: athena_frpc
+    restart: unless-stopped
+    volumes:
+      - ./docker/frpc/frpc.toml:/etc/frp/frpc.toml:ro
+    depends_on:
+      - nginx
+    networks:
+      - athena-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # API 服务（FastAPI）
+  api:
+    build:
+      context: ./api
+    container_name: athena_api
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.local
+      - .env.infisical
+    environment:
+      ES_URL: http://opensearch:9200
+      REDIS_URL: redis://valkey:6379
+      REDIS_HOST: valkey
+      REDIS_PORT: 6379
+      SENTRY_DSN: ""
+      DATABASE_URL: postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
+      CELERY_BROKER_URL: redis://valkey:6379/0
+      CELERY_BACKEND_URL: redis://valkey:6379/1
+      MINIO_PUBLIC_ENDPOINT: http://localhost:48333
+      MINIO_ENDPOINT: seaweed:8333
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: athena
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_USE_SSL: ${SMTP_USE_SSL}
+      PAY_FAKE_WEBHOOK_SECRET: devsecret
+    depends_on:
+      - pgbouncer
+      - valkey
+      - opensearch
+    networks:
+      - athena-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./api:/app
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # 其他服务继承自 docker-compose.yml...
+  # 这里只列出生产环境特有的服务
+  # 其他服务使用: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+volumes:
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/athena/nginx_logs
+
+networks:
+  athena-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

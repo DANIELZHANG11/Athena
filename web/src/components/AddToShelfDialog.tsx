@@ -25,6 +25,12 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
+import {
+  addBookToShelf as addBookToShelfLocal,
+  removeBookFromShelf as removeBookFromShelfLocal,
+  getAllShelves as getAllShelvesLocal,
+  getBookShelfIds as getBookShelfIdsLocal,
+} from '@/lib/shelvesStorage'
 
 // ================== 类型定义 ==================
 
@@ -46,31 +52,74 @@ interface AddToShelfDialogProps {
 
 // ================== API 函数 ==================
 
-/** 获取用户的所有书架 */
+/** 获取用户的所有书架 - 优先从本地存储读取 */
 async function fetchShelves(): Promise<Shelf[]> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch('/api/v1/shelves', {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    throw new Error('Failed to fetch shelves')
+  // 先从本地存储获取（确保离线时也能工作）
+  const localShelves = await getAllShelvesLocal()
+  
+  // 如果在线，同时从服务器获取并合并
+  if (navigator.onLine) {
+    try {
+      const token = useAuthStore.getState().accessToken
+      const res = await fetch('/api/v1/shelves', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const serverShelves = data.data?.items || []
+        // 合并：服务器数据为主，但保留本地未同步的书架
+        const serverIds = new Set(serverShelves.map((s: Shelf) => s.id))
+        const localOnly = localShelves.filter(s => s.localId && !serverIds.has(s.id))
+        return [
+          ...serverShelves,
+          ...localOnly.map(s => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            book_count: s.bookCount,
+            created_at: new Date(s.createdAt).toISOString(),
+          }))
+        ]
+      }
+    } catch (e) {
+      console.warn('[AddToShelfDialog] Failed to fetch shelves from server:', e)
+    }
   }
-  const data = await res.json()
-  return data.data?.items || []
+  
+  // 离线或服务器失败时，使用本地数据
+  return localShelves.map(s => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    book_count: s.bookCount,
+    created_at: new Date(s.createdAt).toISOString(),
+  }))
 }
 
-/** 获取书籍所属的书架 ID 列表 */
+/** 获取书籍所属的书架 ID 列表 - 优先从本地存储读取 */
 async function fetchBookShelves(bookId: string): Promise<string[]> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch(`/api/v1/books/${bookId}/shelves`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    // 可能没有实现此接口，返回空数组
-    return []
+  // 先从本地存储获取
+  const localShelfIds = await getBookShelfIdsLocal(bookId)
+  
+  // 如果在线，同时从服务器获取并合并
+  if (navigator.onLine) {
+    try {
+      const token = useAuthStore.getState().accessToken
+      const res = await fetch(`/api/v1/books/${bookId}/shelves`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const serverIds = (data.data?.items || []).map((s: Shelf) => s.id)
+        // 合并本地和服务器的书架 ID
+        return [...new Set([...serverIds, ...localShelfIds])]
+      }
+    } catch (e) {
+      console.warn('[AddToShelfDialog] Failed to fetch book shelves from server:', e)
+    }
   }
-  const data = await res.json()
-  return (data.data?.items || []).map((s: Shelf) => s.id)
+  
+  return localShelfIds
 }
 
 /** 创建新书架 - 返回 { id: string } */
@@ -94,31 +143,45 @@ async function createShelf(name: string, description?: string): Promise<{ id: st
 
 /** 添加书籍到书架 */
 async function addBookToShelf(shelfId: string, bookId: string): Promise<void> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch(`/api/v1/shelves/${shelfId}/items`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ book_id: bookId }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || err.detail || 'Failed to add book to shelf')
+  // 先更新本地存储（立即可见）
+  await addBookToShelfLocal(shelfId, bookId)
+  
+  // 然后同步到服务器（如果在线）
+  if (navigator.onLine) {
+    const token = useAuthStore.getState().accessToken
+    const res = await fetch(`/api/v1/shelves/${shelfId}/items`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ book_id: bookId }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      // 服务器失败不回滚本地（离线优先），但记录错误
+      console.warn('[AddToShelfDialog] Server sync failed:', err.message || err.detail)
+    }
   }
 }
 
 /** 从书架移除书籍 */
 async function removeBookFromShelf(shelfId: string, bookId: string): Promise<void> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch(`/api/v1/shelves/${shelfId}/items/${bookId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || err.detail || 'Failed to remove book from shelf')
+  // 先更新本地存储（立即可见）
+  await removeBookFromShelfLocal(shelfId, bookId)
+  
+  // 然后同步到服务器（如果在线）
+  if (navigator.onLine) {
+    const token = useAuthStore.getState().accessToken
+    const res = await fetch(`/api/v1/shelves/${shelfId}/items/${bookId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      // 服务器失败不回滚本地（离线优先），但记录错误
+      console.warn('[AddToShelfDialog] Server sync failed:', err.message || err.detail)
+    }
   }
 }
 

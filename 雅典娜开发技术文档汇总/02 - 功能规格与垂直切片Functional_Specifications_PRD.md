@@ -3,12 +3,23 @@
 ## 1. 核心功能概览
 - User & Auth（登录/注册/JWT）
 - Books & Shelves（上传/列表/OCR 触发/书架）
-- Reader Core（阅读器与进度同步/心跳）
+- Reader Core（阅读器与 PowerSync 进度同步）
 - Notes & Highlights（笔记/高亮/标签/搜索）
 - AI Knowledge Engine（RAG 对话/流式输出）
 - Billing & Account（充值/配额/只读锁逻辑）
 
 说明：接口定义以 05 号文档（API 契约）为准；数据库结构以 04 号文档（DB）为准。响应格式以《00_AI_Coding_Constitution_and_Rules.md》的错误码 Schema 为准；成功响应以 05 契约为准（通常为 `{ data: ... }`）。
+
+### 1.1 App-First 实施原则
+
+1. **数据总线**：所有业务数据必须遵循 `UI → SQLite (PowerSync SDK) → PowerSync Service → PostgreSQL` 的闭环。前端组件禁止直接依赖 REST API 渲染。
+2. **本地优先写入**：CUD 操作通过 PowerSync Repository 写入本地 SQLite 并由 SDK 自动上传，REST API 仅保留鉴权、计费、AI SSE、上传初始化等场景。
+3. **Feature Flag**：`APP_FIRST_ENABLED` 控制 Dexie/PowerSync 双路运行，确保灰度发布与快速回滚。
+4. **冲突策略**：阅读进度使用 LWW，笔记/高亮采用 Conflict Copy，书架/设置字段按列合并。
+5. **端差异化**：
+  * Mobile：通过 `capacitor-community/sqlite` 调用原生 SQLite 引擎。
+  * Web：通过 `sqlite-wasm` + OPFS 提供一致体验。
+6. **观测与回滚**：PowerSync Service 必须接入 Prometheus/Grafana，并提供双写校验脚本以对比 Dexie 与 SQLite 数据。
 
 ## 2. 垂直切片详情（Vertical Slices）
 
@@ -58,7 +69,7 @@
 - `books`：
   - 字段：`id (UUID, PK)`、`user_id (UUID, FK)`、`title (TEXT)`、`author (TEXT)`、`language (TEXT)`、`original_format (TEXT)`、`minio_key (TEXT)`、`size (BIGINT)`、`is_digitalized (BOOL)`、`initial_digitalization_confidence (FLOAT)`、`source_etag (TEXT)`、`meta (JSONB)`、`digitalize_report_key (TEXT)`、`cover_image_key (TEXT)`、`converted_epub_key (TEXT)`、`updated_at (TIMESTAMPTZ)`。
   - 权限字段：`user_id`（RLS）。
-  - **新增字段（SHA256 去重 ADR-007）**：
+  - **新增字段（SHA256 去重 ADR-008）**：
     - `content_sha256 (VARCHAR(64))`：文件内容 SHA256 哈希，用于全局去重
     - `storage_ref_count (INTEGER, DEFAULT 1)`：存储引用计数，初始值 1 代表原书自己
     - `canonical_book_id (UUID, FK books.id)`：去重引用指向的原始书籍 ID，非空表示是引用书
@@ -99,50 +110,21 @@
 计算 SHA256 指纹 (content_sha256)
     ↓
 POST /books/upload_init { content_sha256, filename, size }
-    ├─ 检查配额 → 403 QUOTA_EXCEEDED
-    ├─ 检查全局去重 (相同 SHA256)
-    │   ├─ 命中自己 → 返回已有书籍 ID
-    │   └─ 命中全局 → 返回 dedup_available: true
-    └─ 无命中 → 返回 { key, upload_url }
     ↓
-┌─────────────────────┬───────────────────────────────────────┐
-│ dedup_available     │ 正常上传流程                          │
-├─────────────────────┼───────────────────────────────────────┤
-│ POST /books/dedup_  │ PUT upload_url (S3 直传)              │
-│      reference      │       ↓                               │
-│       ↓             │ POST /books/upload_complete           │
-│ 创建引用书籍记录     │       ↓                               │
-│ (共享存储，秒传)     │ 创建书籍记录，触发后台任务链           │
-│       ↓             │       ↓                               │
-│ 检查原书 OCR 状态    │ ┌─────────────────────────────────────┐
-│ ├─ 已 OCR → 可复用   │ │         后台任务链 (Celery)          │
-│ └─ 未 OCR → 同原书   │ ├─────────────────────────────────────┤
-└─────────────────────┴─┤ 1. tasks.convert_to_epub            │
-                        │    ├─ 仅对 MOBI/AZW3/FB2 等格式触发  │
-                        │    ├─ 通过共享卷与 Calibre 容器交互  │
-                        │    ├─ 转换成功后删除原始文件         │
-                        │    └─ 更新 minio_key → 新 EPUB       │
-                        ├─────────────────────────────────────┤
-                        │ 2. tasks.extract_book_cover         │
-                        │    ├─ 从 EPUB/PDF 提取封面           │
-                        │    ├─ 转换为 WebP (400×600, 80%)    │
-                        │    └─ 更新 cover_image_key          │
-                        ├─────────────────────────────────────┤
-                        │ 3. tasks.extract_book_metadata      │
-                        │    ├─ 从 EPUB 提取 dc:title/creator │
-                        │    ├─ 从 PDF 提取 metadata          │
-                        │    └─ 智能更新 title/author         │
-                        ├─────────────────────────────────────┤
-                        │ 4. tasks.initial_book_analysis      │
-                        │    ├─ 检测书籍类型（文字/图片型）    │
-                        │    ├─ 更新 is_digitalized 字段      │
-                        │    └─ 根据类型决定后续处理流程       │
-                        └─────────────────────────────────────┘
+PUT 直传 S3 (If distinct)
     ↓
-书籍可阅读 (WebSocket 通知前端刷新)
+POST /books/upload_complete
+    ↓
+Server Processing (Calibre, etc.)
+    ↓
+Server Updates `books` table (PostgreSQL)
+    ↓
+PowerSync Pushes update to Client `books` table (SQLite)
+    ↓
+UI Reacts to SQLite change (Book appears in Library)
 ```
 
-#### B.1.1 SHA256 全局去重机制（ADR-007）
+#### B.1.1 SHA256 全局去重机制（ADR-008）
 
 **核心原则**：
 1. **存储去重**：相同文件只存储一份，通过引用计数管理
@@ -256,7 +238,7 @@ POST /api/v1/books/dedup_reference
 1. **向量索引是免费服务**，对所有书籍自动执行
 2. **OCR 是收费/限额服务**，由用户主动触发
 3. 图片型 PDF 未经 OCR 前，无法生成向量索引
-4. **OCR 结果可复用**：相同文件只需一次真实 OCR（ADR-007）
+4. **OCR 结果可复用**：相同文件只需一次真实 OCR（ADR-008）
 
 **书籍类型判断**：
 | 类型 | 判断条件 | 后续处理 |
@@ -280,7 +262,7 @@ is_image_based = (
 ```
 初检发现图片型 PDF (is_digitalized = true, confidence < 0.8)
     ↓
-服务端发送 WebSocket/心跳 事件到前端
+PowerSync Service 推送 `ocr_detection` 事件到客户端
     ↓
 前端弹出提示对话框：
 ┌──────────────────────────────────────────────────────────────┐
@@ -372,7 +354,7 @@ ALTER TABLE books ADD COLUMN ocr_requested_at TIMESTAMPTZ;
 ALTER TABLE books ADD COLUMN ocr_result_key TEXT;  -- OCR 结果 JSON 的 S3 Key
 ALTER TABLE books ADD COLUMN vector_indexed_at TIMESTAMPTZ;
 
--- SHA256 去重相关字段（ADR-007）
+-- SHA256 去重相关字段（ADR-008）
 ALTER TABLE books ADD COLUMN content_sha256 VARCHAR(64);
 ALTER TABLE books ADD COLUMN storage_ref_count INTEGER DEFAULT 1;
 ALTER TABLE books ADD COLUMN canonical_book_id UUID REFERENCES books(id);
@@ -405,7 +387,7 @@ CREATE INDEX idx_books_canonical_book_id ON books(canonical_book_id) WHERE canon
 ```
 元数据提取任务完成
     ↓
-服务端发送 WebSocket/心跳 事件: metadata_extracted
+PowerSync Service 推送 `metadata_extracted` 事件
     ↓
 前端弹出元数据确认对话框（根据提取结果显示不同内容）
 
@@ -544,7 +526,7 @@ const menuItems = [
 - [x] 元数据智能提取与标题更新逻辑
 - [x] RLS 策略与只读锁拦截测试通过
 - [x] 前端上传组件与状态管理对齐
-- [x] **SHA256 全局去重机制实现与测试（ADR-007）**
+- [x] **SHA256 全局去重机制实现与测试（ADR-008）**
 - [x] **秒传接口 dedup_reference 实现**
 - [x] **OCR 复用（假 OCR）机制实现**
 - [x] **软删除/硬删除分层策略实现**
@@ -556,46 +538,36 @@ const menuItems = [
 ### 2.3 Reader Core
 
 #### A. 数据库模型（Database Schema）
-- 依赖：`books` 内容与对象存储。
-- `reading_sessions`：
-  - 字段：`id (UUID, PK)`、`user_id (UUID, FK users.id)`、`book_id (UUID, FK books.id)`、`last_position (TEXT)`、`progress (FLOAT)`、`updated_at (TIMESTAMPTZ)`、`version (INT)`。
-  - 权限字段：`user_id`；并发字段：`version`（乐观锁）。
+- **Core Principle**: **App-First & Local-First**. 
+- **Server Database**: `reading_sessions` (PostgreSQL) - Source of Truth for "Last Read Position" across devices.
+- **Local Database**: `reading_progress` (SQLite) - The only DB the UI interacts with directly.
+- **Sync**: PowerSync syncs `reading_sessions` (Server) <--> `reading_progress` (Local).
 
 #### B. 后端逻辑与 API 契约（Backend & Contract）
-- 端点：
-  - `POST /reading-sessions`（创建或查找当前书籍的阅读会话）
-  - `POST /reading-sessions/{id}/heartbeat`（心跳：上报位置与进度）
-- 心跳 Payload：`{ position: string, progress: number, timestamp: string }`
-- 规则：
-  - 心跳更新 `reading_sessions.last_position/progress/updated_at`，返回最新版本（弱 ETag 可选）。
-  - 离线心跳缓存允许，服务端按时间序处理并去重；超频上报进行节流。
-  - ReaderHeartBeat 不受只读锁影响，允许继续更新 `last_position` 与 `progress`。
-> Status: Contract Available；Backend = To Implement（按此流程对齐）。
-
+- **Sync Architecture (PowerSync)**:
+  - 后端不提供直接的 Restful API 给阅读器 UI。
+  - **Reading Progress** 通过 PowerSync 流式写入 PostgreSQL `reading_sessions` 表。
+  - **Heartbeat**: 传统的 RESTful 心跳 API (`POST /heartbeat`) **被废弃**，改为本地写入 SQLite，由 PowerSync 后台自动同步。
+  
 #### C. 前端组件契约（Frontend Contract）
 - 组件：`Reader`
-  - Props：
+  - Props:
     ```ts
     interface ReaderProps {
       bookId: string
-      initialLocation?: string
-      onLocationChange?: (loc: string) => void
-      onHighlightCreate?: (hl: { cfi: string; text: string; color: string }) => void
+      initialLocation?: string // From SQLite
     }
     ```
-  - 心跳交互：
-    - 在线：优先使用 `navigator.sendBeacon('/api/v1/reading-sessions/{id}/heartbeat', payload)`；无 `sendBeacon` 时使用 `fetch`（`keepalive: true`）。
-    - 离线：写入 IndexedDB `reading_heartbeats` 队列；恢复网络后按时间序批量上报并清理。
-  - 并发：遇到 409（版本冲突）拉取最新版本并重放未提交心跳；UI 显示轻量提示不打断阅读。
-> Status: Frontend = To Implement（按此契约实现心跳与缓存）。
-
+  - **Interaction**:
+    - **Page Turn**: Writes `cfi` to SQLite `reading_progress` table immediately.
+    - **Sync**: PowerSync SDK watches SQLite changes and pushes to server automatically.
+    - **Offline**: No extra logic needed; SQLite is always available.
+  
 ### ✔ Definition of Done (DoD)
-- [ ] API 契约与心跳 Payload 对齐
-- [ ] 版本并发与 409 重放逻辑测试覆盖
-- [ ] 离线 IndexedDB 队列与批量上报用例
-- [ ] ETag/弱缓存策略校验
-- [ ] RLS 与多租户隔离测试
-- [ ] 无视只读锁的心跳规则验证
+- [ ] SQLite Schema defined for `reading_progress`
+- [ ] PowerSync Sync Rules configured for `reading_sessions`
+- [ ] Reader component reading/writing from/to SQLite
+- [ ] Conflict resolution (LWW) verified via PowerSync configuration
 
 ---
 
@@ -608,25 +580,17 @@ const menuItems = [
 - 权限字段：`user_id`；并发字段：`version`。
 
 #### B. 后端逻辑与 API 契约（Backend & Contract）
-- 端点：`POST /notes`、`GET /notes`、`POST /tags`、`GET /tags`、`PATCH /tags/{id}`。
-- 规则：
-  - 只读锁阻断写入；创建携带 `Idempotency-Key`；更新携带 `If-Match` 弱 ETag`；索引联动。
-  - 软删除：仅标记 `deleted_at`，不物理删除；默认查询过滤 `deleted_at IS NULL`。
-  - 同步与前端处理：当服务端返回 410/404 表示条目不可用时，前端移除本地缓存并标记“已删除”。
+- **PowerSync Surface**：`download_config` 同步 `notes`, `highlights`, `tags`, `note_tags`, `highlight_tags`；`upload_config` 允许携带 `device_id`, `_updated_at`, `_deleted` 字段的 UPSERT。
+- **REST 端点**：`/api/v1/notes/*`, `/api/v1/highlights/*`, `/api/v1/tags/*` 仅保留下列用途：管理员工具、外部集成、PowerSync 失效时的应急回退。
+- **一致性规则**：
+  - 只读锁依旧通过 RLS/触发器阻断写入；PowerSync 上传失败会返回对应的 4xx 代码。
+  - 软删除依赖 `_deleted` + `_deleted_at` 字段；服务端接收删除后通过 PowerSync 下发。
+  - 冲突：笔记/高亮采用 Conflict Copy（由触发器写 `conflict_of`）。
 
 #### C. 前端组件契约（Frontend Contract）
 - 组件：`NoteEditor`
-  - Props：
-    ```ts
-    interface NoteEditorProps {
-      bookId: string
-      initialContent?: string
-      initialTags?: string[]
-      onSaved: (note: { id: string; content: string; tags: string[] }) => void
-      onError: (code: 'readonly' | 'invalid' | 'conflict' | 'unknown') => void
-    }
-    ```
-  - 交互：保存→API→成功更新列表；409 冲突提示并拉取最新 ETag。
+  - Props 同上。
+  - 交互：保存→写 SQLite (`notes` 表)→PowerSync 自动同步；在 `onError` 中只处理本地验证或 PowerSync 失败事件。
 - 组件：`TagPicker`
   - Props：
     ```ts
@@ -638,8 +602,8 @@ const menuItems = [
     ```
 
 ### ✔ Definition of Done (DoD)
-- [ ] API 契约覆盖 Notes/Tags CRUD 与搜索
-- [ ] 软删除与 410/404 前端处理用例
+- [ ] PowerSync 下载/上传规则涵盖 Notes/Tags CRUD 与搜索所需字段
+- [ ] 软删除与 `_deleted` 投递及前端处理用例
 - [ ] `tsv` 索引生成与检索测试覆盖
 - [ ] ETag/Idempotency 一致性校验
 - [ ] RLS 与多租户隔离测试

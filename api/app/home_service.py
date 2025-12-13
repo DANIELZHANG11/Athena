@@ -8,9 +8,10 @@
 
 说明：
 - 仅新增注释，不改动统计与查询逻辑
+- 使用带时区的 datetime，避免使用已废弃的 datetime.utcnow()
 """
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel
@@ -73,12 +74,19 @@ async def _ensure_defaults(conn, user_id: str):
 
 
 def _tz_now(tz_name: str | None) -> datetime:
+    """
+    获取指定时区的当前时间
+    
+    注意: 不再使用已废弃的 datetime.utcnow()
+    回退时使用带时区信息的 UTC 时间
+    """
     try:
         from zoneinfo import ZoneInfo
 
         return datetime.now(ZoneInfo(tz_name or "UTC"))
     except Exception:
-        return datetime.utcnow()
+        # 回退到 UTC（带时区信息）
+        return datetime.now(timezone.utc)
 
 
 def _week_range(d: date) -> tuple[date, date]:

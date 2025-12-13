@@ -1,7 +1,7 @@
 # 05 - API 契约与协议 (API Contracts & Protocols)
 
-> **版本**: v1.0
-> **最后更新**: 2025-11-28
+> **版本**: v1.1
+> **最后更新**: 2025-12-13
 > **SSOT (Single Source of Truth)**: 具体的 Request/Response Schema 以 `contracts/api/v1/*.yaml` (OpenAPI) 文件为唯一事实来源。本文档仅作为核心协议与交互逻辑的开发者手册。
 
 ## 1. 接口设计规范 (Interface Design Specifications)
@@ -30,21 +30,131 @@
 | Code (detail) | HTTP Status | Description |
 | :--- | :--- | :--- |
 | `unauthorized` | 401 | 认证失败或 Token 过期 |
+| `forbidden` | 403 | 权限不足 |
+| `not_found` | 404 | 资源不存在 |
 | `missing_if_match` | 428 | 缺少 `If-Match` 头（针对乐观锁资源） |
 | `invalid_if_match` | 400 | `If-Match` 格式错误（需为 `W/"<version>"`） |
 | `version_conflict` | 409 | 资源版本冲突（乐观锁检查失败） |
-| `readonly_mode_quota_exceeded` | 403 | **Trap (软锁)**: 存储或书籍配额超限，账户进入只读模式 |
-| `upload_forbidden_quota_exceeded` | 403 | **Hook (硬锁)**: 上传动作因配额超限被拒绝 |
+| `quota_exceeded` | 403 | 存储或书籍配额超限，账户进入只读模式 |
+| `upload_forbidden_quota_exceeded` | 403 | 上传动作因配额超限被拒绝 |
+| `ocr_quota_exceeded` | 403 | OCR 配额不足 |
+| `ocr_max_pages_exceeded` | 400 | 书籍页数超过 2000 页限制 |
+| `ocr_in_progress` | 409 | OCR 任务正在处理中 |
+| `already_digitalized` | 400 | 书籍已是文字型，无需 OCR |
 | `missing_filename` | 400 | 上传初始化时缺少文件名 |
 | `missing_key` | 400 | 上传完成时缺少 S3 Object Key |
-| `http_error` | Varies | 未知 HTTP 错误（Wrapper） |
+| `canonical_not_found` | 404 | 秒传时原书不存在 |
+| `device_id_required` | 400 | 同步操作缺少设备 ID |
+| `rate_limited` | 429 | 请求频率过高 |
 | `internal_error` | 500 | 服务器内部错误 |
 
 ---
 
-## 3. 特殊交互协议 (Special Protocols)
+## 3. 同步接口 (Sync API) - [DEPRECATED]
 
-### 3.1 幂等性设计 (Idempotency)
+> **STATUS**: **DEPRECATED**. Replaced by PowerSync Protocol.
+> The legacy REST-based sync APIs (`/sync/initial`, `/sync/pull`, `/sync/push`) are no longer used. Data synchronization is handled transparently by the PowerSync SDK and Service.
+
+### 3.A PowerSync 访问协议（New）
+- **Endpoint**: `wss://sync.athena.app/stream`（生产） / `ws://localhost:8090/stream`（本地）。
+- **Auth**: 与 REST 相同的 `Authorization: Bearer <JWT>`，PowerSync Service 会验证并在连接上下文中注入 `user_id`、`device_id`。
+- **Metadata**: 客户端在 `connect()` 时需传入：
+  ```json
+  {
+    "client": "web|ios|android",
+    "sdk_version": "1.2.0",
+    "device_id": "uuid",
+    "schema_version": 3
+  }
+  ```
+- **Backpressure**: SDK 自动处理；Service 端暴露 `stream_lag_ms` 指标供监控。
+- **错误映射**: PowerSync 错误码映射至 REST 错误：`permission_denied -> 403`, `validation_failed -> 400`, `conflict -> 409`。
+
+### [DEPRECATED] 3.1 初始全量同步 (Initial Sync)
+*(Legacy content preserved for reference, do not implement)*
+
+
+用于新设备首次登录时一次性下载所有必须同步的业务数据。
+
+*   **Endpoint**: `GET /api/v1/sync/initial`
+*   **Query Params**:
+    *   `offset`: Integer (分页偏移量，用于断点续传)
+    *   `limit`: Integer (每次请求数量，默认 50)
+    *   `category`: String (数据类别: 'metadata' | 'covers' | 'notes' | 'all')
+*   **Headers**:
+    *   `Range`: 封面图片等大文件支持断点续传
+*   **Response**: 
+    ```json
+    {
+      "data": {
+        "books": [...],        // 书籍元数据
+        "progress": [...],     // 阅读进度
+        "shelves": [...],      // 书架
+        "settings": {...},     // 用户设置
+        "readerSettings": [...], // 每本书的阅读器设置（完整快照）
+        "notes": [...],        // 笔记
+        "highlights": [...],   // 高亮
+        "aiHistory": [...],    // AI对话历史（离线只读）
+        "billing": [...]       // 账单记录（离线只读）
+      },
+      "pagination": {
+        "offset": 0,
+        "limit": 50,
+        "total": 150,
+        "hasMore": true
+      },
+      "timestamp": 1733650000
+    }
+    ```
+
+**首次同步策略（完全体确认）**：
+| 配置项 | 决策 | 说明 |
+| :--- | :--- | :--- |
+| 下载方式 | 一次性下载 | 显示进度条，一次性下载全部数据 |
+| 断点续传 | 必须支持 | 服务器分包传输，支持 HTTP Range |
+| 封面图片 | 必须下载 | 全部封面纳入首次同步 |
+| 不同步项 | 书籍文件/OCR/向量 | 按需下载 |
+
+### 3.2 增量拉取 (Pull Changes)
+*   **Endpoint**: `GET /api/v1/sync/pull`
+*   **Query Params**: `last_synced_at` (Timestamp)
+*   **Response**:
+    ```json
+    {
+      "changes": {
+        "books": { "created": [], "updated": [], "deleted": [] },
+        "notes": { ... }
+      },
+      "timestamp": 1733650000
+    }
+    ```
+
+### 3.3 增量推送 (Push Changes)
+*   **Endpoint**: `POST /api/v1/sync/push`
+*   **Body**:
+    ```json
+    {
+      "changes": [
+        { "table": "notes", "op": "create", "data": { ... } },
+        { "table": "progress", "op": "update", "data": { ... } }
+      ]
+    }
+    ```
+*   **Conflict Handling**: 服务端检测冲突并返回解决结果。
+    *   阅读进度：LWW（始终以最新 `_updatedAt` 为准）
+    *   笔记/高亮：智能合并（内容相同保留最新；不同则生成两版本）
+    *   删除 vs 修改：以修改为准（数据不丢失优先）
+
+### [DEPRECATED] 3.4 资源断点续传
+*   **Endpoint**: `GET /api/v1/sync/covers/{book_id}`
+*   **Headers**: `Range: bytes=0-1024`
+*   **Response**: `206 Partial Content`
+
+---
+
+## 4. 特殊交互协议 (Special Protocols)
+
+### 4.1 幂等性设计 (Idempotency)
 防止网络重试导致的数据重复创建。
 
 *   **Header**: `Idempotency-Key: <UUID>`
@@ -55,7 +165,7 @@
     3.  **Hit**: 直接返回缓存的 Response Body (HTTP 200)。
     4.  **Miss**: 执行业务逻辑 -> 缓存结果 -> 返回。
 
-### 3.2 乐观并发控制 (Optimistic Concurrency)
+### 4.2 乐观并发控制 (Optimistic Concurrency)
 解决多端同时修改同一资源（如笔记、标签）的冲突问题。
 
 *   **Header**: `If-Match: W/"<version>"` (Weak ETag format)
@@ -68,8 +178,8 @@
         *   若 DB `version > 1`: 更新失败，抛出 `409 Conflict (version_conflict)`。
     4.  **Resolve**: Client 收到 409 后，应重新拉取最新数据，合并冲突后重试。
 
-### 3.3 文件上传协议 (Direct Upload)
-采用 S3 Presigned URL 模式，文件流不经过 API Server。支持 **SHA256 全局去重**（ADR-007）。
+### 4.3 文件上传协议 (Direct Upload)
+采用 S3 Presigned URL 模式，文件流不经过 API Server。支持 **SHA256 全局去重**（ADR-008）。
 
 *   **流程**:
     1.  **Init**: `POST /api/v1/books/upload_init`
@@ -87,7 +197,7 @@
 *   **SHA256 全局去重**: 相同文件只存储一份，通过 `content_sha256` 实现全局去重和秒传。
 *   **服务端备用计算**: 若客户端未提供 `content_sha256`（移动端可能失败），服务端在 `upload_complete` 时从 S3 读取文件计算。
 
-### 3.4 AI 流式响应 (SSE)
+### 4.4 AI 流式响应 (SSE)
 基于 Server-Sent Events 标准。
 
 *   **Endpoint**: `GET /api/v1/ai/stream`
@@ -99,7 +209,7 @@
     3.  **End**: 连接关闭 (Client 收到 EOF 或后端关闭)
 *   **Cache**: 支持 Redis 缓存（基于 Prompt Hash），缓存命中时会以极快速度重放 SSE 流。
 
-### 3.5 实时同步 (WebSocket)
+### 4.5 实时同步 (WebSocket)
 用于笔记与文档的协同编辑。
 
 *   **Endpoint**: `ws://api.athena.app/ws/notes/{note_id}`
@@ -112,16 +222,16 @@
 
 ---
 
-## 4. 核心接口索引 (Key Endpoints Index)
+## 5. 核心接口索引 (Key Endpoints Index)
 
 > 完整 Schema 请查阅 `contracts/api/v1/` 下的 YAML 文件。
 
-### 4.1 Auth & User (`auth.yaml`)
+### 5.1 Auth & User (`auth.yaml`)
 *   `POST /api/v1/auth/email/send_code`: 发送验证码
 *   `POST /api/v1/auth/email/verify_code`: 登录/注册 (获取 Token)
 *   `GET /api/v1/auth/me`: 获取当前用户信息
 
-### 4.2 Books (`books.yaml`)
+### 5.2 Books (`books.yaml`)
 *   `GET /api/v1/books`: 书籍列表 (Cursor Pagination)
 *   `POST /api/v1/books/upload_init`: 上传初始化 (支持 SHA256 去重检查)
 *   `POST /api/v1/books/upload_complete`: 上传完成 (服务端备用 SHA256 计算)
@@ -130,7 +240,7 @@
 *   `PATCH /api/v1/books/{id}`: 更新书籍元数据 (支持 `If-Match`)
 *   `DELETE /api/v1/books/{id}`: 删除书籍 (软删除/硬删除分层策略)
 
-### 4.3 Notes & Highlights (`notes.yaml`, `highlights.yaml`, `tags.yaml`)
+### 5.3 Notes & Highlights (`notes.yaml`, `highlights.yaml`, `tags.yaml`)
 *   `GET /api/v1/notes`: 笔记列表
 *   `POST /api/v1/notes`: 创建笔记 (支持 `Idempotency-Key`)
 *   `PATCH /api/v1/notes/{id}`: 更新笔记 (支持 `If-Match`)
@@ -138,29 +248,31 @@
 *   `GET /api/v1/tags`: 标签列表
 *   `POST /api/v1/tags`: 创建标签
 
-### 4.4 AI (`ai.yaml`)
+### 5.4 AI (`ai.yaml`)
 *   `GET /api/v1/ai/stream`: AI 对话流 (SSE) - *注: 目前设计为 GET，未来可能迁移至 POST*
 *   `GET /api/v1/ai/conversations`: 对话历史列表
 
-### 4.5 Realtime Docs (`realtime.py`)
+### 5.5 Realtime Docs (`realtime.py`)
 *   `WS /ws/notes/{note_id}`: 笔记/文档实时同步通道
 
-### 4.6 Billing (`billing.yaml`) [待完善]
+### 5.6 Billing (`billing.yaml`) [待完善]
 *   `GET /api/v1/billing/plans`: 获取订阅方案
 *   `POST /api/v1/billing/checkout`: 创建支付会话
 
-### 4.7 Books Metadata (`books.yaml`)
+### 5.7 Books Metadata (`books.yaml`)
 *   `PATCH /api/v1/books/{id}/metadata`: 更新书籍元数据（书名、作者）
 *   `GET /api/v1/books/{id}`: 书籍详情（包含 `metadata_confirmed` 状态）
 
 ---
 
-## 5. 智能心跳同步协议 (Smart Heartbeat Sync Protocol)
+## 6. 智能心跳同步协议 (Smart Heartbeat Sync Protocol) - [DEPRECATED]
 
-> **状态**: PROPOSED（待实施）
-> **关联 ADR**: `03 - 系统架构与ADR` ADR-006
+> **STATUS**: **DEPRECATED**.
+> **Reason**: PowerSync uses a streaming protocol over WebSocket/HTTP stream, rendering this custom heartbeat protocol obsolete.
+> **Replacement**: PowerSync SDK automatically handles keep-alive and sync.
 
-### 5.1 协议概述
+### [DEPRECATED] 6.1 协议概述
+*(Legacy content preserved for reference, do not implement)*
 
 智能心跳同步协议用于解决多端数据同步问题，核心设计理念：
 
@@ -407,15 +519,15 @@ export function useHeartbeat(bookId: string) {
 
 ---
 
-## 6. OCR 服务触发接口
+## 7. OCR 服务触发接口
 
 > **设计原则**：OCR 是收费/限额服务，由用户主动触发，而非上传后自动执行。
 
-### 6.1 触发 OCR 处理
+### 7.1 触发 OCR 处理
 
 #### `POST /api/v1/books/{book_id}/ocr`
 
-用户主动请求对图片型 PDF 进行 OCR 处理。支持 **OCR 复用（假 OCR）**（ADR-007）。
+用户主动请求对图片型 PDF 进行 OCR 处理。支持 **OCR 复用（假 OCR）**（ADR-008）。
 
 **Request Headers**:
 ```
@@ -566,7 +678,7 @@ function OcrPromptDialog({ book, onClose }: { book: Book; onClose: () => void })
 
 ---
 
-## 7. 笔记/高亮冲突处理接口
+## 8. 笔记/高亮冲突处理接口
 
 ### 7.1 获取冲突副本列表
 
@@ -617,7 +729,7 @@ function OcrPromptDialog({ book, onClose }: { book: Book; onClose: () => void })
 
 ---
 
-## 8. 书籍元数据管理接口
+## 9. 书籍元数据管理接口
 
 ### 8.1 更新书籍元数据
 
@@ -778,7 +890,7 @@ BOOK_CONTEXT_PROMPT = """
 
 ---
 
-## 9. SHA256 全局去重接口 (ADR-007)
+## 10. SHA256 全局去重接口 (ADR-008)
 
 ### 9.1 秒传接口
 
@@ -835,7 +947,7 @@ Content-Type: application/json
 
 #### `DELETE /api/v1/books/{book_id}`
 
-删除书籍，采用**软删除/硬删除分层策略**（ADR-007）。
+删除书籍，采用**软删除/硬删除分层策略**（ADR-008）。
 
 **Request Headers**:
 ```
@@ -895,3 +1007,81 @@ Authorization: Bearer <access_token>
 > - 当多个用户共享同一文件时，删除不应影响其他用户
 > - 只有最后一个用户删除时，才物理清理公共数据
 > - 私人数据始终立即删除，保护用户隐私
+## 11. 数据同步协议 (Data Sync Protocol)
+
+> **新增日期**: 2025-12-08
+> **用途**: 支持 App-First 架构的增量同步与冲突解决。
+
+### 10.1 增量拉取 (Pull)
+
+#### `POST /api/v1/sync/pull`
+
+获取自上次同步点以来的所有变更。
+
+**Request Body**:
+```json
+{
+  "lastPulledAt": 1700000000000,  // 上次同步时间戳 (ms)
+  "limit": 100                    // 单次拉取条数限制
+}
+```
+
+**Response 200**:
+```json
+{
+  "changes": {
+    "books": {
+      "created": [],
+      "updated": [ { "id": "...", "title": "...", "_updatedAt": 1700000001000 } ],
+      "deleted": [ "book-uuid-1" ]
+    },
+    "notes": { ... },
+    "highlights": { ... },
+    "progress": { ... }
+  },
+  "timestamp": 1700000002000,     // 当前服务器时间戳 (用于下次 lastPulledAt)
+  "hasMore": false                // 是否还有更多数据
+}
+```
+
+### 10.2 增量推送 (Push)
+
+#### `POST /api/v1/sync/push`
+
+提交本地产生的变更队列。
+
+**Request Body**:
+```json
+{
+  "mutations": [
+    {
+      "id": "uuid-v4",            // 变更 ID (幂等键)
+      "type": "note",
+      "action": "create",
+      "entityId": "note-uuid-1",
+      "payload": { ... },
+      "createdAt": 1700000000000
+    }
+  ]
+}
+```
+
+**Response 200**:
+```json
+{
+  "processed": [ "uuid-v4" ],     // 成功处理的变更 ID
+  "conflicts": [                  // 发生冲突的变更
+    {
+      "mutationId": "uuid-v5",
+      "error": "version_conflict",
+      "serverState": { ... }      // 服务器当前状态 (供客户端合并)
+    }
+  ]
+}
+```
+
+### 10.3 冲突解决机制
+
+1.  **乐观锁**: 每个实体包含 `_updatedAt` 字段。
+2.  **LWW (Last-Write-Wins)**: 对于 `reading_progress` 和 `user_settings`，服务器直接接受最新时间戳的数据。
+3.  **Conflict Copy**: 对于 `notes` 和 `highlights`，如果检测到服务器端版本更新（`server._updatedAt > mutation.createdAt`），则拒绝写入，返回冲突。客户端需提示用户或自动创建副本。

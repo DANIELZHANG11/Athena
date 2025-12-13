@@ -4,32 +4,31 @@
  * 说明：
  * - 展示今日阅读分钟与目标进度环
  * - 支持打开模态使用轮盘选择器调整目标
- * - 通过 API `PATCH /api/v1/home/goals` 更新目标
+ * - 通过回调 onGoalUpdate 更新目标
  */
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
-import { useAuthStore } from '@/stores/auth'
 import { Settings2, ChevronUp, ChevronDown } from 'lucide-react'
 
 type Props = {
   todaySeconds: number;
   goalMinutes: number;
-  onGoalUpdate?: () => void;
+  onGoalUpdate: (minutes: number) => Promise<void> | void;
 }
 
 // 轮盘式数字选择器组件 - 稳定版本，支持触摸滑动
-function WheelPicker({ 
-  value, 
-  onChange, 
-  min = 1, 
-  max = 1440, 
+function WheelPicker({
+  value,
+  onChange,
+  min = 1,
+  max = 1440,
   step = 5,
-}: { 
-  value: number; 
-  onChange: (v: number) => void; 
-  min?: number; 
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
   max?: number;
   step?: number;
 }) {
@@ -42,12 +41,12 @@ function WheelPicker({
   useEffect(() => {
     valueRef.current = value
   }, [value])
-  
+
   // 快捷按钮调整
   const increment = useCallback(() => {
     onChange(Math.min(max, value + step))
   }, [value, max, step, onChange])
-  
+
   const decrement = useCallback(() => {
     onChange(Math.max(min, value - step))
   }, [value, min, step, onChange])
@@ -56,11 +55,11 @@ function WheelPicker({
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
+
     const currentVal = valueRef.current
     const delta = e.deltaY > 0 ? -step : step
     const newValue = Math.max(min, Math.min(max, currentVal + delta))
-    
+
     if (newValue !== currentVal) {
       onChange(newValue)
     }
@@ -78,7 +77,7 @@ function WheelPicker({
     const deltaY = touchStartY.current - e.touches[0].clientY
     const deltaSteps = Math.round(deltaY / 30) // 每30px一个step
     const newValue = Math.max(min, Math.min(max, touchStartValue.current + deltaSteps * step))
-    
+
     if (newValue !== valueRef.current) {
       onChange(newValue)
     }
@@ -108,14 +107,14 @@ function WheelPicker({
   return (
     <div className="flex flex-col items-center gap-1">
       {/* 上箭头 */}
-      <button 
+      <button
         type="button"
         onClick={increment}
         className="p-2 md:p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:scale-95"
       >
         <ChevronUp className="w-5 h-5 md:w-6 md:h-6 text-system-blue" />
       </button>
-      
+
       {/* 数字滚动区域 */}
       <div
         ref={containerRef}
@@ -123,7 +122,7 @@ function WheelPicker({
       >
         {/* 中间高亮框 */}
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-10 md:h-14 border-y-2 border-system-blue/30 pointer-events-none" />
-        
+
         {/* 数字显示区域 */}
         <div className="py-4 md:py-6 px-6 md:px-10">
           <div className="flex flex-col items-center justify-center gap-2 md:gap-3">
@@ -131,12 +130,12 @@ function WheelPicker({
             <div className="text-lg md:text-2xl font-medium text-gray-300 dark:text-gray-600 h-6 md:h-8 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
               {prevValue ?? ''}
             </div>
-            
+
             {/* 当前数值 */}
             <div className="text-3xl md:text-5xl font-bold text-system-blue h-10 md:h-14 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
               {value}
             </div>
-            
+
             {/* 下一个数值 */}
             <div className="text-lg md:text-2xl font-medium text-gray-300 dark:text-gray-600 h-6 md:h-8 flex items-center justify-center tabular-nums min-w-[60px] md:min-w-[80px]">
               {nextValue ?? ''}
@@ -144,9 +143,9 @@ function WheelPicker({
           </div>
         </div>
       </div>
-      
+
       {/* 下箭头 */}
-      <button 
+      <button
         type="button"
         onClick={decrement}
         className="p-2 md:p-3 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:scale-95"
@@ -162,7 +161,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
   const [showAdjust, setShowAdjust] = useState(false)
   const [newGoal, setNewGoal] = useState(goalMinutes)
   const [updating, setUpdating] = useState(false)
-  
+
   // 当弹窗打开时，同步当前目标值
   useEffect(() => {
     if (showAdjust) {
@@ -216,17 +215,8 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
   const handleUpdate = async () => {
     setUpdating(true)
     try {
-      const at = useAuthStore.getState().accessToken || localStorage.getItem('access_token') || ''
-      await fetch('/api/v1/home/goals', {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${at}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ daily_minutes: parseInt(String(newGoal)) })
-      })
+      await onGoalUpdate(newGoal)
       setShowAdjust(false)
-      onGoalUpdate?.()
     } catch (e) {
       console.error(e)
     } finally {
@@ -266,7 +256,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
         <Modal className="flex flex-col items-center">
           <div className="w-full max-w-[280px] md:max-w-sm">
             <h3 className="text-base md:text-lg font-bold mb-4 md:mb-6 text-center">{t('home.adjust_daily_goal')}</h3>
-            
+
             <div className="flex flex-col items-center gap-3 md:gap-4">
               {/* 轮盘选择器 */}
               <WheelPicker
@@ -276,28 +266,27 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
                 max={1440}
                 step={5}
               />
-              
+
               <div className="text-base md:text-lg text-secondary-label">
                 {t('common.min')}
               </div>
-              
+
               {/* 快捷预设按钮 */}
               <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center mt-1 md:mt-2">
                 {[15, 30, 60, 90, 120].map((mins) => (
                   <button
                     key={mins}
                     onClick={() => setNewGoal(mins)}
-                    className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm font-medium transition-colors ${
-                      newGoal === mins
+                    className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm font-medium transition-colors ${newGoal === mins
                         ? 'bg-system-blue text-white'
                         : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
+                      }`}
                   >
                     {mins}
                   </button>
                 ))}
               </div>
-              
+
               <div className="flex gap-2 md:gap-3 w-full mt-3 md:mt-4">
                 <Button variant="outline" className="flex-1 text-sm" onClick={() => setShowAdjust(false)}>
                   {t('common.cancel')}

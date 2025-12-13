@@ -25,7 +25,7 @@ export default function WeeklyActivity({ days, goalMinutes }: Props) {
   
   // 周一到周日 - 中文显示完整，英文显示首字母
   const weekDaysEn = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-  const weekDaysZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  const weekDaysZh = ['一', '二', '三', '四', '五', '六', '日']
 
   // 获取今天的日期字符串 (YYYY-MM-DD) - 使用用户本地时区
   const todayStr = useMemo(() => {
@@ -35,6 +35,14 @@ export default function WeeklyActivity({ days, goalMinutes }: Props) {
     const day = String(now.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }, [])
+  
+  // 调试日志
+  console.log('[WeeklyActivity] render:', { 
+    days, 
+    goalMinutes, 
+    todayStr,
+    daysWithStatus: days.map(d => ({ date: d.date, min: d.minutes, status: d.status }))
+  })
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-[20px] p-6 border border-gray-100 dark:border-gray-700 shadow-lg flex flex-col transition-transform duration-fast hover:scale-[1.02]">

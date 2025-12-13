@@ -1,0 +1,80 @@
+# =========================================================================
+# Athena FRP 客户端配置文件（生产环境）
+# =========================================================================
+# 说明：
+# - 此配置用于生产环境的内网穿透
+# - 与 WxLibrary 的 FRP 配置独立，使用不同的代理名称和域名
+# - 建议使用独立的 auth token
+# =========================================================================
+
+# FRP 服务器配置
+serverAddr = "154.40.32.146"
+serverPort = 7000
+auth.method = "token"
+auth.token = "athena_frp_token_2024"  # 建议修改为独立的 token
+
+# === 连接稳定性优化 ===
+transport.dialServerTimeout = 90
+transport.dialServerKeepAlive = 600
+transport.poolCount = 5
+
+# === 心跳机制优化 ===
+transport.heartbeatInterval = 15
+transport.heartbeatTimeout = 90
+
+# === 重连机制优化 ===
+loginFailExit = false
+
+# === 日志配置 ===
+log.level = "info"
+log.maxDays = 7
+
+# =========================================================================
+# HTTP 代理 - Athena Web 入口
+# =========================================================================
+[[proxies]]
+name = "athena-web"
+type = "http"
+localIP = "nginx"        # Docker 网络内的 Nginx 服务名
+localPort = 80           # Nginx 内部端口
+customDomains = ["athena.yourdomain.com"]  # 修改为实际域名
+
+# =========================================================================
+# HTTPS 代理 - Athena Web 入口（SSL）
+# =========================================================================
+[[proxies]]
+name = "athena-web-ssl"
+type = "https"
+localIP = "nginx"
+localPort = 443
+customDomains = ["athena.yourdomain.com"]  # 修改为实际域名
+
+# =========================================================================
+# HTTP 代理 - API 子域名（可选）
+# =========================================================================
+[[proxies]]
+name = "athena-api"
+type = "http"
+localIP = "nginx"
+localPort = 80
+customDomains = ["api.athena.yourdomain.com"]  # 修改为实际域名
+
+# =========================================================================
+# WebSocket 代理 - PowerSync 实时同步（如果需要直接暴露）
+# =========================================================================
+# [[proxies]]
+# name = "athena-powersync"
+# type = "tcp"
+# localIP = "powersync"
+# localPort = 8090
+# remotePort = 58090  # FRP 服务器上的端口
+
+# =========================================================================
+# 监控端口（可选，仅开发/测试环境）
+# =========================================================================
+# [[proxies]]
+# name = "athena-grafana"
+# type = "http"
+# localIP = "grafana"
+# localPort = 3000
+# customDomains = ["grafana.athena.yourdomain.com"]

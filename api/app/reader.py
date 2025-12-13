@@ -47,112 +47,8 @@ async def start(body: dict = Body(...), auth=Depends(require_user)):
     return {"status": "success", "data": {"session_id": sid}}
 
 
-@router.post("/heartbeat")
-async def heartbeat(body: dict = Body(...), auth=Depends(require_user)):
-    user_id, _ = auth
-    sid = body.get("session_id")
-    delta_ms = int(body.get("delta_ms") or 0)
-    progress = float(body.get("progress") or 0)
-    last_location = body.get("last_location") or None
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-        )
 
-        res = await conn.execute(
-            text(
-                "SELECT last_heartbeat FROM reading_sessions WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
-            ),
-            {"id": sid},
-        )
-        prev = res.fetchone()
-        now_ts = datetime.now(timezone.utc)
-        prev_ts = prev[0] if prev and prev[0] else now_ts
-        await conn.execute(
-            text(
-                "UPDATE reading_sessions SET total_ms = total_ms + :d, last_heartbeat = now() WHERE id = cast(:id as uuid) AND user_id = current_setting('app.user_id')::uuid"
-            ),
-            {"d": delta_ms, "id": sid},
-        )
-        
-        # 更新每日阅读时间 - 使用 UPSERT 模式确保数据正确写入
-        if prev_ts.date() == now_ts.date():
-            # 同一天：先尝试插入，再更新
-            await conn.execute(
-                text(
-                    """INSERT INTO reading_daily(user_id, day, total_ms)
-                       VALUES (current_setting('app.user_id')::uuid, current_date, :d)
-                       ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
-                ),
-                {"d": delta_ms},
-            )
-        else:
-            midnight = datetime.combine(
-                now_ts.date(), datetime.min.time(), tzinfo=timezone.utc
-            )
-            ms_prev = int(max(0, (midnight - prev_ts).total_seconds() * 1000))
-            ms_now = max(0, delta_ms - ms_prev)
-            if ms_prev > 0:
-                await conn.execute(
-                    text(
-                        """INSERT INTO reading_daily(user_id, day, total_ms)
-                           VALUES (current_setting('app.user_id')::uuid, (current_date - INTERVAL '1 day')::date, :d)
-                           ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
-                    ),
-                    {"d": ms_prev},
-                )
-            if ms_now > 0:
-                await conn.execute(
-                    text(
-                        """INSERT INTO reading_daily(user_id, day, total_ms)
-                           VALUES (current_setting('app.user_id')::uuid, current_date, :d)
-                           ON CONFLICT (user_id, day) DO UPDATE SET total_ms = reading_daily.total_ms + :d"""
-                    ),
-                    {"d": ms_now},
-                )
-        import json as _j
 
-        loc = (
-            _j.dumps(last_location)
-            if isinstance(last_location, (dict, list))
-            else last_location
-        )
-        await conn.execute(
-            text(
-                "INSERT INTO reading_progress(user_id, book_id, progress, updated_at, last_location) SELECT current_setting('app.user_id')::uuid, s.book_id, :p, now(), cast(:loc as jsonb) FROM reading_sessions s WHERE s.id = cast(:id as uuid) ON CONFLICT (user_id, book_id) DO UPDATE SET progress = EXCLUDED.progress, updated_at = now(), last_location = COALESCE(EXCLUDED.last_location, reading_progress.last_location)"
-            ),
-            {"id": sid, "p": progress, "loc": loc},
-        )
-        
-        # 更新连续阅读天数 (Streak)
-        # 只要当天有阅读记录就计入 streak，无需达到目标
-        await conn.execute(
-            text(
-                """
-                INSERT INTO user_streaks(user_id, current_streak, longest_streak, last_read_date)
-                VALUES (current_setting('app.user_id')::uuid, 1, 1, current_date)
-                ON CONFLICT (user_id) DO UPDATE SET
-                    current_streak = CASE
-                        -- 如果昨天已阅读，streak +1
-                        WHEN user_streaks.last_read_date = current_date - INTERVAL '1 day' THEN user_streaks.current_streak + 1
-                        -- 如果今天已经更新过，保持不变
-                        WHEN user_streaks.last_read_date = current_date THEN user_streaks.current_streak
-                        -- 否则重置为 1
-                        ELSE 1
-                    END,
-                    longest_streak = GREATEST(
-                        user_streaks.longest_streak,
-                        CASE
-                            WHEN user_streaks.last_read_date = current_date - INTERVAL '1 day' THEN user_streaks.current_streak + 1
-                            WHEN user_streaks.last_read_date = current_date THEN user_streaks.current_streak
-                            ELSE 1
-                        END
-                    ),
-                    last_read_date = current_date
-                """
-            ),
-        )
-    return {"status": "success"}
 
 
 @router.get("/sessions")
@@ -283,14 +179,8 @@ async def alias_progress(auth=Depends(require_user)):
     return await get_progress(auth)
 
 
-@alias.post("/{session_id}/heartbeat")
-async def alias_heartbeat(
-    session_id: str, body: dict = Body(...), auth=Depends(require_user)
-):
-    b = dict(body or {})
-    b["session_id"] = session_id
-    await heartbeat(b, auth)
-    return Response(status_code=204)
+
+
 
 
 @alias.post("/{session_id}/end")

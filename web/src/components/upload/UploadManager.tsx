@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import { useBookUpload, UploadResult, UploadErrorCode } from '@/hooks/useBookUpload'
 import { useUploadPostProcessing } from '@/hooks/useUploadPostProcessing'
+import { useAuthStore } from '@/stores/auth'
 import UploadDropzone from './UploadDropzone'
 import UploadProgress from './UploadProgress'
 import { UploadPostProcessDialog } from '@/components/UploadPostProcessDialog'
@@ -63,12 +64,21 @@ export default function UploadManager({
   // 后处理监控 hook
   const { startMonitoring, stopMonitoring } = useUploadPostProcessing({
     pollInterval: 2000,
-    maxPollCount: 30,
+    maxPollCount: 60,  // 增加到 60 次（2分钟），给后端足够的处理时间
     onStatusUpdate: (status) => {
-      console.log('[UploadManager] Processing status update:', status)
+      console.log('[UploadManager] Processing status update:', {
+        bookId: status.bookId,
+        hasCover: status.hasCover,
+        metadataExtracted: status.metadataExtracted,
+        metadataConfirmed: status.metadataConfirmed,
+        isImageBasedPdf: status.isImageBasedPdf,
+        lastUploadRef: lastUploadRef.current?.id,
+        dialogShown: dialogShownRef.current,
+      })
       
       // 如果对话框已显示，只更新图片 PDF 状态
       if (dialogShownRef.current) {
+        console.log('[UploadManager] Dialog already shown, skipping...')
         if (status.isImageBasedPdf && postProcessData && !postProcessData.isImageBasedPdf) {
           setPostProcessData(prev => prev ? {
             ...prev,
@@ -79,13 +89,26 @@ export default function UploadManager({
         return
       }
       
-      // 元数据提取任务完成且尚未确认 → 弹出对话框
-      if (status.metadataExtracted && !status.metadataConfirmed && lastUploadRef.current) {
-        console.log('[UploadManager] Metadata extraction complete, showing dialog')
+      // 检查是否应该弹出对话框
+      // 条件：1) 有封面或元数据已提取  2) 元数据未确认  3) 有上传记录
+      const hasProcessingResult = status.metadataExtracted || status.hasCover
+      const needsConfirmation = !status.metadataConfirmed
+      const hasUploadRecord = !!lastUploadRef.current
+      
+      console.log('[UploadManager] Dialog conditions:', {
+        hasProcessingResult,
+        needsConfirmation,
+        hasUploadRecord,
+      })
+      
+      const shouldShowDialog = hasProcessingResult && needsConfirmation && hasUploadRecord
+      
+      if (shouldShowDialog) {
+        console.log('[UploadManager] ✅ Showing metadata confirmation dialog!')
         dialogShownRef.current = true
         setPostProcessData({
           bookId: status.bookId,
-          bookTitle: status.title || lastUploadRef.current.title,
+          bookTitle: status.title || lastUploadRef.current!.title,
           needsMetadataConfirm: true,
           extractedTitle: status.extractedTitle,
           extractedAuthor: status.extractedAuthor,
@@ -116,16 +139,26 @@ export default function UploadManager({
   
   // 轮询检查转换状态
   const pollConversionStatus = useCallback(async (bookId: string, title: string) => {
+    console.log(`[UploadManager] pollConversionStatus called for ${bookId}, lastUploadRef:`, lastUploadRef.current?.id)
     try {
-      const res = await fetch(`/api/books/${bookId}`)
+      // 使用正确的 API 路径并添加认证
+      const token = useAuthStore.getState().accessToken
+      if (!token) {
+        console.log('[UploadManager] No access token available')
+        return
+      }
+      const res = await fetch(`/api/v1/books/${bookId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
       if (!res.ok) {
         console.log(`[UploadManager] Failed to fetch book status: ${res.status}`)
         return
       }
-      const book = await res.json()
-      console.log(`[UploadManager] Polling conversion status for ${bookId}:`, book.conversion_status)
+      const response = await res.json()
+      const book = response.data  // API 返回 { status, data: {...} }
+      console.log(`[UploadManager] Polling conversion status for ${bookId}:`, book?.conversion_status)
       
-      if (book.conversion_status === 'completed') {
+      if (book?.conversion_status === 'completed') {
         // 转换完成，停止轮询并开始监控元数据提取
         console.log(`[UploadManager] Conversion completed for ${bookId}, starting metadata monitoring`)
         if (conversionPollRef.current) {
@@ -143,7 +176,7 @@ export default function UploadManager({
         lastUploadRef.current = { id: bookId, title }
         dialogShownRef.current = false
         startMonitoring(bookId, title)
-      } else if (book.conversion_status === 'failed') {
+      } else if (book?.conversion_status === 'failed') {
         // 转换失败，停止轮询
         console.log(`[UploadManager] Conversion failed for ${bookId}`)
         if (conversionPollRef.current) {
@@ -220,13 +253,18 @@ export default function UploadManager({
       const directFormats = ['epub', 'pdf']
       const needsConversion = !directFormats.includes(originalFormat)
       
+      console.log(`[UploadManager] Upload success! bookId=${result.id}, format=${originalFormat}, needsConversion=${needsConversion}`)
+      
       // 保存上传信息（包含格式信息）
       lastUploadRef.current = { id: result.id, title: result.title, format: originalFormat }
       dialogShownRef.current = false  // 重置对话框显示标记
       
+      console.log(`[UploadManager] Set lastUploadRef to:`, lastUploadRef.current)
+      
       // 【关键】只有 EPUB/PDF 格式才立即开始监控元数据提取
       // 其他格式（AZW3/MOBI等）需要先完成 Calibre 转换，转换完成后会自动触发元数据提取
       if (!needsConversion) {
+        console.log(`[UploadManager] Starting immediate metadata monitoring for ${result.id}`)
         startMonitoring(result.id, result.title)
       } else {
         console.log(`[UploadManager] Format ${originalFormat} needs conversion, starting conversion monitoring`)

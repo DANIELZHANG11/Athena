@@ -7,7 +7,7 @@ services:
       - --entrypoints.web.address=:80
       - --api.insecure=true
     ports:
-      - "80:80"
+      - "48080:80"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -60,65 +60,11 @@ services:
     depends_on:
       - pgbouncer
     ports:
-      - "8000:8000"
+      - "48000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./api:/app
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
-  prometheus:
-    image: zukubq0aouv2k2.xuanyuan.run/prom/prometheus:latest
-    command: [ "--config.file=/etc/prometheus/prometheus.yml" ]
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
-    depends_on:
-      - api
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
-  grafana:
-    image: zukubq0aouv2k2.xuanyuan.run/grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    depends_on:
-      - prometheus
-      - loki
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
-  loki:
-    image: grafana/loki:2.9.0
-    ports:
-      - "3100:3100"
-    command: [ "-config.file=/etc/loki/local-config.yaml" ]
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
-  jaeger:
-    image: jaegertracing/all-in-one:1.56
-    ports:
-      - "16686:16686"
-      - "6831:6831/udp"
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    depends_on:
-      - api
     logging:
       driver: json-file
       options:
@@ -169,8 +115,8 @@ services:
     image: zukubq0aouv2k2.xuanyuan.run/chrislusf/seaweedfs:latest
     command: [ "server", "-s3", "-s3.port=8333", "-s3.allowedOrigins=*", "-dir=/data" ]
     ports:
-      - "8333:8333"
-      - "8888:8888"
+      - "48333:8333"
+      - "48888:8888"
     volumes:
       - seaweed_data:/data
     logging:
@@ -188,7 +134,7 @@ services:
       - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
+      - "49200:9200"
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     healthcheck:
@@ -222,6 +168,42 @@ services:
         max-file: "3"
 
   # -------------------------------------------------------------------------
+  # PowerSync Service (App-First 同步引擎)
+  # @see 09 - APP-FIRST架构改造计划.md - Phase 1
+  # -------------------------------------------------------------------------
+  powersync:
+    image: zukubq0aouv2k2.xuanyuan.run/journeyapps/powersync-service:latest
+    ports:
+      - "${POWERSYNC_PORT:-48090}:8090"
+      - "49091:9090"  # Prometheus metrics
+    environment:
+      # 数据库连接（直连 PostgreSQL，不经过 PgBouncer）
+      - POWERSYNC_DATABASE_URL=postgresql://athena:${POSTGRES_PASSWORD}@postgres:5432/athena
+      # JWT 认证密钥
+      - POWERSYNC_JWT_SECRET=${POWERSYNC_JWT_SECRET:-dev_powersync_secret}
+      # 上传控制
+      - POWERSYNC_UPLOAD_ENABLED=${POWERSYNC_UPLOAD_ENABLED:-true}
+      # 日志级别
+      - POWERSYNC_LOG_LEVEL=${POWERSYNC_LOG_LEVEL:-info}
+    volumes:
+      - ./docker/powersync/powersync.yaml:/config/powersync.yaml:ro
+      - ./docker/powersync/sync_rules.yaml:/config/sync_rules.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # -------------------------------------------------------------------------
   # Tolgee (Translation Platform)
   # -------------------------------------------------------------------------
   tolgee_db:
@@ -238,7 +220,7 @@ services:
   tolgee:
     image: tolgee/tolgee:latest
     ports:
-      - "8085:8080"
+      - "48085:8080"
     environment:
       TOLGEE_DB_URL: jdbc:postgresql://tolgee_db:5432/tolgee
       TOLGEE_DB_USER: tolgee
@@ -262,8 +244,8 @@ services:
       - calibre_books:/books
       - ./scripts/calibre-convert-watcher.sh:/scripts/convert-watcher.sh:ro
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "48081:8080"
+      - "48082:8081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     logging:
@@ -341,17 +323,91 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+# =========================================================================
+# 数据卷配置 - SSD + HDD 混合存储方案
+# =========================================================================
+# 存储策略说明：
+# 1. 高性能需求（随机读写频繁）-> SSD (/home/vitiana/Athena/data_ssd/)
+#    - PostgreSQL: 数据库事务日志，IOPS 敏感
+#    - OpenSearch: 全文索引，查询性能要求高
+#    - Valkey (Redis): AOF 持久化，写入频繁
+#    - HuggingFace Cache: 模型加载时间敏感
+#
+# 2. 大容量需求（顺序读写为主）-> bcache HDD (/data/athena/)
+#    - SeaweedFS: 对象存储，大文件存储
+#    - Calibre: 电子书库，大文件存储
+#    - Tolgee: 低频访问的翻译数据库
+#
+# 性能测试结果：
+#   - SSD 顺序写: 932 MB/s, 随机读 4K: 11,200 IOPS
+#   - bcache 顺序写: 575 MB/s (writearound 模式)
+# =========================================================================
+
 volumes:
+  # --- 高性能存储（SSD）---
   pg_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/vitiana/Athena/data_ssd/postgres
+  
   valkey_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/vitiana/Athena/data_ssd/valkey
+  
+  opensearch_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/vitiana/Athena/data_ssd/opensearch
+  
+  hf_cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/vitiana/Athena/data_ssd/hf_cache
+  
+  # --- 大容量存储（bcache HDD）---
   seaweed_data:
-  calibre_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/athena/seaweed
+  
   calibre_books:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/athena/calibre_books
+  
+  calibre_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/athena/calibre_config
+  
   tolgee_postgres_data:
-  opensearch_data:       # OpenSearch 向量索引数据
-  hf_cache:              # HuggingFace 模型缓存 (BGE-M3)
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/athena/tolgee
 
 
 networks:
   athena-network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

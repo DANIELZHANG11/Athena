@@ -1,0 +1,219 @@
+# PowerSync 同步规则配置
+# @see https://docs.powersync.com/self-hosted/sync-rules
+# @see 09 - APP-FIRST架构改造计划.md - Phase 1
+#
+# 定义哪些数据同步到客户端，以及如何过滤
+
+# 版本号（用于客户端检测规则变化）
+version: 1
+
+# 同步规则定义
+tables:
+  # ============ 书籍元数据 ============
+  - name: books
+    # 客户端只能看到自己的书籍
+    row_filter: |
+      user_id = :user_id
+    
+    # 同步的列（排除大型二进制数据）
+    columns:
+      - id
+      - user_id
+      - title
+      - author
+      - cover_url
+      - file_type
+      - file_size
+      - content_sha256
+      - storage_key
+      - metadata_extracted
+      - metadata_confirmed
+      - pdf_type
+      - ocr_status
+      - ocr_version
+      - conversion_status
+      - converted_epub_key
+      - created_at
+      - updated_at
+      - deleted_at
+    
+    # 冲突策略：LWW (Last Write Wins)
+    conflict_resolution: lww
+  
+  # ============ 阅读进度 ============
+  - name: reading_progress
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - book_id
+      - device_id
+      - progress
+      - last_position
+      - last_location
+      - updated_at
+    
+    # 阅读进度使用 LWW，以最新设备为准
+    conflict_resolution: lww
+  
+  # ============ 阅读会话 ============
+  - name: reading_sessions
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - book_id
+      - device_id
+      - is_active
+      - total_ms
+      - created_at
+      - updated_at
+    
+    conflict_resolution: lww
+  
+  # ============ 笔记 ============
+  - name: notes
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - book_id
+      - device_id
+      - content
+      - page_number
+      - position_cfi
+      - color
+      - is_deleted
+      - deleted_at
+      - created_at
+      - updated_at
+    
+    # 笔记使用冲突副本策略
+    conflict_resolution: conflict_copy
+  
+  # ============ 高亮 ============
+  - name: highlights
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - book_id
+      - device_id
+      - text
+      - page_number
+      - position_start_cfi
+      - position_end_cfi
+      - color
+      - is_deleted
+      - deleted_at
+      - created_at
+      - updated_at
+    
+    # 高亮使用冲突副本策略
+    conflict_resolution: conflict_copy
+  
+  # ============ 书签 ============
+  - name: bookmarks
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - book_id
+      - device_id
+      - title
+      - page_number
+      - position_cfi
+      - is_deleted
+      - deleted_at
+      - created_at
+      - updated_at
+    
+    conflict_resolution: lww
+  
+  # ============ 书架 ============
+  - name: shelves
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - name
+      - description
+      - cover_url
+      - sort_order
+      - is_deleted
+      - deleted_at
+      - created_at
+      - updated_at
+    
+    # 书架使用 LWW + Merge
+    conflict_resolution: lww
+  
+  # ============ 书架书籍关联 ============
+  - name: shelf_books
+    row_filter: |
+      EXISTS (SELECT 1 FROM shelves s WHERE s.id = shelf_id AND s.user_id = :user_id)
+    
+    columns:
+      - id
+      - shelf_id
+      - book_id
+      - sort_order
+      - added_at
+    
+    conflict_resolution: lww
+  
+  # ============ 用户设置 ============
+  - name: user_settings
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - device_id
+      - settings_json
+      - updated_at
+    
+    conflict_resolution: lww
+
+  # ============ 阅读统计 ============
+  - name: reading_stats
+    row_filter: |
+      user_id = :user_id
+    
+    columns:
+      - id
+      - user_id
+      - date
+      - total_seconds
+      - pages_read
+      - books_finished
+      - updated_at
+    
+    # 统计数据只读，服务端计算
+    read_only: true
+
+# 全局设置
+global:
+  # 软删除字段
+  soft_delete:
+    enabled: true
+    column: is_deleted
+    timestamp_column: deleted_at
+  
+  # 时间戳字段
+  timestamp:
+    created: created_at
+    updated: updated_at

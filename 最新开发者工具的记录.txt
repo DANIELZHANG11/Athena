@@ -1,190 +1,426 @@
-[Reader] Book info loaded: {id: '563f330e-c577-4845-8d80-9b03a21be5a0', title: '小说的艺术', format: 'pdf', size: 12770834}
-api.ts:63 [API] Response: 200 /reading-sessions/progress
-useReadingProgress.ts:54 [ReadingProgress] Found progress for book: 563f330e-c577-4845-8d80-9b03a21be5a0 {progress: 0.051643192488262914, lastLocation: {…}, lastLocationType: 'object'}
-ReaderPage.tsx:309 [Reader] Restoring progress: {progress: 0.051643192488262914, lastLocation: {…}}
-ReaderPage.tsx:328 [Reader] Setting PDF page: 11
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-ReaderPage.tsx:229 [Reader] Session started: 6e6c6fc6-a471-4cdc-8b77-1391103d417e
-useReaderHeartbeat.ts:132 [Heartbeat] Stopping for session: 33b5a3ee-fffc-45a5-8efb-9066d4d95257
-useReaderHeartbeat.ts:116 [Heartbeat] Starting for session: 6e6c6fc6-a471-4cdc-8b77-1391103d417e
-ReaderPage.tsx:243 [Reader] PDF type: {isImageBased: true}
-useSmartHeartbeat.ts:377 [SmartHeartbeat] Page visible, restoring heartbeat frequency
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-content_script.js:7165 Content limit: 612032839.68
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '6e6c6fc6-a471-4cdc-8b77-1391103d417e', delta_ms: 5391, progress: 0.051643192488262914, last_location: '{"page":11}'}
-api.ts:17 [API] Request: POST /reading-sessions/6e6c6fc6-a471-4cdc-8b77-1391103d417e/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-useReaderHeartbeat.ts:132 [Heartbeat] Stopping for session: 6e6c6fc6-a471-4cdc-8b77-1391103d417e
-useSmartHeartbeat.ts:407 [SmartHeartbeat] Stopping for book: 563f330e-c577-4845-8d80-9b03a21be5a0
-LibraryPage.tsx:87 [LibraryPage] Fetching books list...
-AuthGuard.tsx:17 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/library'}
-AuthGuard.tsx:43 [AuthGuard] Token valid
-api.ts:17 [API] Request: GET /books {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/6e6c6fc6-a471-4cdc-8b77-1391103d417e/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 5391 ms, progress: 0.051643192488262914
-api.ts:63 [API] Response: 200 /books
-LibraryPage.tsx:89 [LibraryPage] Books response: {status: 'success', data: {…}}
-LibraryPage.tsx:107 [LibraryPage] Loaded 14 books
-bookStorage.ts:184 [BookStorage] Found cached book 563f330e-c577-4845-8d80-9b03a21be5a0, size: 12770834 bytes
-bookStorage.ts:184 [BookStorage] Found cached book ba363592-8330-4111-ac54-77e180b35160, size: 51441284 bytes
-bookStorage.ts:184 [BookStorage] Found cached book a6500ee5-1c66-439d-ae81-a4c95a77e780, size: 23602436 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 0c149585-bb6f-43aa-979a-3dd6f4a49279, size: 22515535 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 958388eb-5512-4f4c-a8ac-31e76ae96ef5, size: 10596449 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 8d08adbd-131d-4b17-a4c6-81853f3e0b08, size: 33665748 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 52fb1dd5-6958-4742-85b2-4c74142754b6, size: 235877 bytes
-bookStorage.ts:186 [BookStorage] Book bf95fe62-8bb9-4bc4-b08e-6b4c1e7f656c not found in cache
-bookStorage.ts:186 [BookStorage] Book 7b7c4068-9da3-44fe-b4a7-fcd40112ba2f not found in cache
-bookStorage.ts:186 [BookStorage] Book 361b7e3b-fda7-4990-8bc6-1fe001156e09 not found in cache
-bookStorage.ts:184 [BookStorage] Found cached book e05a8bba-c16e-4bb1-8c5c-dfbe27dad225, size: 512200 bytes
-bookStorage.ts:184 [BookStorage] Found cached book d0e0c365-016f-4516-8b01-eb2a8230b726, size: 8352389 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 9cb5470c-02d5-4bfd-8808-7306d0abb668, size: 2164086 bytes
-bookStorage.ts:184 [BookStorage] Found cached book 374def7e-4aa4-4f13-873e-08c0cc217b36, size: 18781152 bytes
-content_script.js:7165 Content limit: 612032839.68
-ReaderPage.tsx:269 [Reader] OCR useEffect triggered: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', isImageBasedPdf: false, ocrStatus: {…}}
-AuthGuard.tsx:17 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/read/563f330e-c577-4845-8d80-9b03a21be5a0'}
-AuthGuard.tsx:43 [AuthGuard] Token valid
-api.ts:17 [API] Request: GET /reading-sessions/progress {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-bookStorage.ts:415 [BookStorage] Found OCR data for 563f330e-c577-4845-8d80-9b03a21be5a0, 3457 regions
-ReaderPage.tsx:269 [Reader] OCR useEffect triggered: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', isImageBasedPdf: false, ocrStatus: {…}}
-api.ts:63 [API] Response: 200 /reading-sessions/progress
-useReadingProgress.ts:54 [ReadingProgress] Found progress for book: 563f330e-c577-4845-8d80-9b03a21be5a0 {progress: 0.051643192488262914, lastLocation: {…}, lastLocationType: 'object'}
-ReaderPage.tsx:309 [Reader] Restoring progress: {progress: 0.051643192488262914, lastLocation: {…}}
-ReaderPage.tsx:328 [Reader] Setting PDF page: 11
-ReaderPage.tsx:206 [Reader] Book info loaded: {id: '563f330e-c577-4845-8d80-9b03a21be5a0', title: '小说的艺术', format: 'pdf', size: 12770834}
-useSmartHeartbeat.ts:399 [SmartHeartbeat] Starting for book: 563f330e-c577-4845-8d80-9b03a21be5a0
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-bookStorage.ts:184 [BookStorage] Found cached book 563f330e-c577-4845-8d80-9b03a21be5a0, size: 12770834 bytes
-useBookDownload.ts:108 [BookDownload] Book 563f330e-c577-4845-8d80-9b03a21be5a0 found in cache, size: 12770834
-ReaderPage.tsx:141 [Reader] Book ready from IndexedDB: blob:http://localhost:5173/aa8aeedc-266a-4c0b-98d4-415a81492854
-ReaderPage.tsx:229 [Reader] Session started: 406bab6b-1b6c-45ee-8e5b-7a739633b9c5
-useReaderHeartbeat.ts:116 [Heartbeat] Starting for session: 406bab6b-1b6c-45ee-8e5b-7a739633b9c5
-ReaderPage.tsx:243 [Reader] PDF type: {isImageBased: true}
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-ReaderPage.tsx:269 [Reader] OCR useEffect triggered: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', isImageBasedPdf: true, ocrStatus: {…}}
-ReaderPage.tsx:280 [Reader] OCR data loaded from cache, enabling OCR layer
-ReaderPage.tsx:444 [Reader] PDF loaded, pages: 213
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 2261, progress: 0.051643192488262914, last_location: '{"page":11}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 2261 ms, progress: 0.051643192488262914
-content_script.js:7165 Content limit: 612032839.68
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-2content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 27744, progress: 0.051643192488262914, last_location: '{"page":11}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 27744 ms, progress: 0.051643192488262914
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-content_script.js:7165 Content limit: 612032839.68
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-2content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 30005, progress: 0.056338028169014086, last_location: '{"page":12}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 30005 ms, progress: 0.056338028169014086
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 811, progress: 0.056338028169014086, last_location: '{"page":12}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 811 ms, progress: 0.056338028169014086
-content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 9676, progress: 0.1267605633802817, last_location: '{"page":27}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 9676 ms, progress: 0.1267605633802817
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-2content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 19516, progress: 0.1267605633802817, last_location: '{"page":27}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 19516 ms, progress: 0.1267605633802817
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 7484, progress: 0.1596244131455399, last_location: '{"page":34}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 7484 ms, progress: 0.1596244131455399
-content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 2031, progress: 0.1643192488262911, last_location: '{"page":35}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 2031 ms, progress: 0.1643192488262911
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-2content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 20483, progress: 0.1643192488262911, last_location: '{"page":35}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 20483 ms, progress: 0.1643192488262911
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-content_script.js:7165 Content limit: 612032839.68
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 18061, progress: 0.17370892018779344, last_location: '{"page":37}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 18061 ms, progress: 0.17370892018779344
-2content_script.js:7165 Content limit: 612032839.68
-useReaderHeartbeat.ts:79 [Heartbeat] Sending: {sessionId: '406bab6b-1b6c-45ee-8e5b-7a739633b9c5', delta_ms: 11933, progress: 0.17370892018779344, last_location: '{"page":37}'}
-api.ts:17 [API] Request: POST /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 204 /reading-sessions/406bab6b-1b6c-45ee-8e5b-7a739633b9c5/heartbeat
-useReaderHeartbeat.ts:81 [Heartbeat] Sent successfully, delta: 11933 ms, progress: 0.17370892018779344
-useSmartHeartbeat.ts:239 [SmartHeartbeat] Sending: {bookId: '563f330e-c577-4845-8d80-9b03a21be5a0', hasUpdates: false}
-api.ts:17 [API] Request: POST /sync/heartbeat {hasToken: true, isAuthenticated: true}
-api.ts:46 [API] Using existing token
-api.ts:63 [API] Response: 200 /sync/heartbeat
-useSmartHeartbeat.ts:286 [SmartHeartbeat] Pull required: {ocr: {…}, metadata: {…}}
+INFO:     172.18.0.1:35464 - "GET /api/v1/books/6c77a458-5655-429a-8961-7dd630ba018b/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzMyNjQsImV4cCI6MTc2NTM3Njg2NH0.6o8JZUWgESU9H-o1EatvHqGy5v_gHVo7ppNk2_chOjs HTTP/1.1" 200 OK
+
+[Upload Init] No dedup hit, creating new upload for 中国早期小说生成史论-陈洪.pdf
+
+INFO:     172.18.0.1:45554 - "POST /api/v1/books/upload_init HTTP/1.1" 200 OK
+
+[Upload] Created book cbac95da-97b9-4690-a089-d89445cb74ef for user f4cf77dc-7a50-41f5-9089-9570aecc5d8b, SHA256=333b9d7aba59b2f6..., title=中国早期小说生成史论-陈洪
+
+INFO:     172.18.0.1:45558 - "POST /api/v1/books/upload_complete HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:45572 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:45582 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:45586 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57144 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57152 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57166 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57166 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57170 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57176 - "GET /api/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 404 Not Found
+
+INFO:     172.18.0.1:57178 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:57180 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzMyNjQsImV4cCI6MTc2NTM3Njg2NH0.6o8JZUWgESU9H-o1EatvHqGy5v_gHVo7ppNk2_chOjs HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:55152 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr/quota HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:55154 - "POST /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:49660 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:49676 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:42722 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:42734 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46058 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46068 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:54150 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:53084 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36896 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36910 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36912 - "GET /api/v1/reading-sessions/progress HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36920 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36936 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36924 - "POST /api/v1/reading-sessions/start HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36946 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:36962 - "POST /api/v1/reading-sessions/ceaee024-28a2-4bbc-96b2-edcc384a4752/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:45472 - "POST /api/v1/reading-sessions/ceaee024-28a2-4bbc-96b2-edcc384a4752/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:45478 - "POST /api/v1/reading-sessions/ceaee024-28a2-4bbc-96b2-edcc384a4752/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:45490 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:59154 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:59158 - "POST /api/v1/auth/refresh HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:59162 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48500 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48504 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48514 - "GET /api/v1/books/6c77a458-5655-429a-8961-7dd630ba018b/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48524 - "GET /api/v1/books/082c5770-1db4-448d-9213-c0b3dde4496a/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48528 - "GET /api/v1/books/26cfe292-1566-4a02-92ad-47fcd0523925/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48540 - "GET /api/v1/books/550c77e8-a4c4-446f-a2a2-f9cbaca83a53/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48546 - "GET /api/v1/books/093ae518-3a93-4f25-bba2-d34afb6da865/cover?
+
+INFO:     172.18.0.1:44180 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:38604 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:38610 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:53832 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:53840 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:38996 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:39006 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48552 - "GET /api/v1/reading-sessions/progress HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48546 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48556 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48570 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48566 - "POST /api/v1/reading-sessions/start HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48572 - "GET /api/v1/books/cbac95da-97b9-4690-a089-d89445cb74ef/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:48586 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:36082 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:36090 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:52540 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:52544 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:50346 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:50358 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46212 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:53296 - "POST /api/v1/reading-sessions/946e265b-a297-45b5-9dbb-5e576cdc45d2/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:46482 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+[2025-12-10 14:22:53,048: WARNING/ForkPoolWorker-2] Model files already exist. Using cached files. To redownload, please delete the directory manually: `/root/.paddlex/official_models/PP-OCRv5_mobile_rec`.
+
+[2025-12-10 14:22:54,121: WARNING/ForkPoolWorker-2] [OCR Pipeline] PDF has 370 pages, will process 370 pages
+
+[2025-12-10 14:22:54,222: WARNING/ForkPoolWorker-2] [OCR Pipeline] Using 6 workers for image conversion
+
+[2025-12-10 14:22:54,222: WARNING/ForkPoolWorker-2] [OCR Pipeline] Starting pipeline processing...
+
+[2025-12-10 14:23:32,983: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 10/370 pages (2%)
+
+[2025-12-10 14:23:37,423: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 20/370 pages (5%)
+
+[2025-12-10 14:23:40,961: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 30/370 pages (8%)
+
+[2025-12-10 14:23:45,332: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 40/370 pages (10%)
+
+[2025-12-10 14:23:48,262: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 50/370 pages (13%)
+
+[2025-12-10 14:23:52,767: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 60/370 pages (16%)
+
+[2025-12-10 14:23:55,818: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 70/370 pages (18%)
+
+[2025-12-10 14:24:00,337: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 80/370 pages (21%)
+
+[2025-12-10 14:24:03,688: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 90/370 pages (24%)
+
+[2025-12-10 14:24:08,161: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 100/370 pages (27%)
+
+[2025-12-10 14:24:11,130: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 110/370 pages (29%)
+
+[2025-12-10 14:24:15,814: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 120/370 pages (32%)
+
+[2025-12-10 14:24:18,915: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 130/370 pages (35%)
+
+[2025-12-10 14:24:23,339: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 140/370 pages (37%)
+
+[2025-12-10 14:24:26,167: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 150/370 pages (40%)
+
+[2025-12-10 14:24:30,611: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 160/370 pages (43%)
+
+[2025-12-10 14:24:33,579: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 170/370 pages (45%)
+
+[2025-12-10 14:24:38,220: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 180/370 pages (48%)
+
+[2025-12-10 14:24:41,141: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 190/370 pages (51%)
+
+[2025-12-10 14:24:45,982: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 200/370 pages (54%)
+
+[2025-12-10 14:24:48,962: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 210/370 pages (56%)
+
+[2025-12-10 14:24:53,696: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 220/370 pages (59%)
+
+[2025-12-10 14:24:56,672: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 230/370 pages (62%)
+
+[2025-12-10 14:25:01,331: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 240/370 pages (64%)
+
+[2025-12-10 14:25:04,346: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 250/370 pages (67%)
+
+[2025-12-10 14:25:09,333: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 260/370 pages (70%)
+
+[2025-12-10 14:25:12,410: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 270/370 pages (72%)
+
+[2025-12-10 14:25:16,862: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 280/370 pages (75%)
+
+[2025-12-10 14:25:19,809: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 290/370 pages (78%)
+
+[2025-12-10 14:25:24,422: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 300/370 pages (81%)
+
+[2025-12-10 14:25:27,261: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 310/370 pages (83%)
+
+[2025-12-10 14:25:30,874: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 320/370 pages (86%)
+
+[2025-12-10 14:25:33,516: WARNING/ForkPoolWorker-2] [OCR Pipeline] Image conversion completed for 370 pages
+
+[2025-12-10 14:25:33,853: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 330/370 pages (89%)
+
+[2025-12-10 14:25:36,575: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 340/370 pages (91%)
+
+[2025-12-10 14:25:39,593: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 350/370 pages (94%)
+
+[2025-12-10 14:25:42,464: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 360/370 pages (97%)
+
+[2025-12-10 14:25:45,281: WARNING/ForkPoolWorker-2] [OCR Pipeline] Progress: 370/370 pages (100%)
+
+[2025-12-10 14:25:45,315: WARNING/ForkPoolWorker-2] [OCR Pipeline] Completed in 171.1s, avg 0.46s per page
+
+[2025-12-10 14:25:45,316: WARNING/ForkPoolWorker-2] [OCR] Pipeline completed: 370/370 pages
+
+[2025-12-10 14:25:45,316: WARNING/ForkPoolWorker-2] [OCR] Generating layered PDF with invisible text layer...
+
+[2025-12-10 14:25:53,732: WARNING/ForkPoolWorker-2] [OCR] Layered PDF generated: 50432363 bytes
+
+[2025-12-10 14:25:54,214: WARNING/ForkPoolWorker-2] [OCR] Failed to upload layered PDF: An error occurred (InvalidRequest) when calling the PutObject operation: Invalid Request
+
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]
+
+Fetching 6 files:  17%|#6        | 1/6 [00:00<00:04,  1.16it/s]
+
+Fetching 6 files:  67%|######6   | 4/6 [00:00<00:00,  5.17it/s]
+
+Fetching 6 files: 100%|##########| 6/6 [00:06<00:00,  1.36s/it]
+
+Fetching 6 files: 100%|##########| 6/6 [00:06<00:00,  1.12s/it]
+
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]
+
+Fetching 6 files:  17%|#6        | 1/6 [00:00<00:03,  1.61it/s]
+
+Fetching 6 files:  33%|###3      | 2/6 [00:00<00:01,  2.13it/s]
+
+Fetching 6 files:  83%|########3 | 5/6 [00:02<00:00,  1.92it/s]
+
+Fetching 6 files: 100%|##########| 6/6 [00:02<00:00,  2.30it/s]
+
+
+[Upload Init] No dedup hit, creating new upload for 红屋骑士-大仲马.azw3
+
+INFO:     172.18.0.1:40484 - "POST /api/v1/books/upload_init HTTP/1.1" 200 OK
+
+[Upload] Created book e3e5c69d-d64c-4897-b21a-6e45756d9155 for user f4cf77dc-7a50-41f5-9089-9570aecc5d8b, SHA256=4bfcfee569e65f8b..., title=红屋骑士-大仲马
+
+[Upload] Non-EPUB/PDF format (azw3), triggering Calibre conversion...
+
+INFO:     172.18.0.1:40492 - "POST /api/v1/books/upload_complete HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40494 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:40510 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40524 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:56662 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:56674 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:56690 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:56698 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:56710 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:46306 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:46322 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46336 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46338 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:46346 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:46358 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:44770 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:44774 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:44776 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:44790 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:39974 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 401 Unauthorized
+
+INFO:     172.18.0.1:39982 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155/content?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmNGNmNzdkYy03YTUwLTQxZjUtOTA4OS05NTcwYWVjYzVkOGIiLCJzaWQiOiI2YmRlMzY2My0wMGQyLTRiNzAtODkxMy1hZmU4OWU1ZDY0OWYiLCJpYXQiOjE3NjUzNzY1NjcsImV4cCI6MTc2NTM4MDE2N30.rMVEN7pqFOIysl_XIf-i0FkYY68ebINBFXU_UdvQ3PM HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:39988 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155/ocr HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40006 - "GET /api/v1/books/e3e5c69d-d64c-4897-b21a-6e45756d9155 HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:39994 - "GET /api/v1/reading-sessions/progress HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40016 - "POST /api/v1/sync/heartbeat HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40012 - "POST /api/v1/reading-sessions/start HTTP/1.1" 200 OK
+
+INFO:     172.18.0.1:40022 - "POST /api/v1/reading-sessions/be26709c-0313-4c86-9a28-13dea8f66162/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:36282 - "POST /api/v1/reading-sessions/be26709c-0313-4c86-9a28-13dea8f66162/heartbeat HTTP/1.1" 204 No Content
+
+INFO:     172.18.0.1:36286 - "GET /api/v1/books HTTP/1.1" 200 OK
+
+[2025-12-10 14:29:24,248: WARNING/ForkPoolWorker-2] [Metadata] EPUB metadata extracted: title=深度学习与围棋, author=马克斯·帕佩拉
+
+[2025-12-10 14:29:24,248: WARNING/ForkPoolWorker-2] [CoverMeta] Will update author to: 马克斯·帕佩拉
+
+[2025-12-10 14:29:24,248: WARNING/ForkPoolWorker-2] [CoverMeta] Will update title to: '深度学习与围棋'
+
+[2025-12-10 14:29:24,250: WARNING/ForkPoolWorker-2] [CoverMeta] Updated book: 4c56bb2a-8a6e-49a6-a977-621aa192e92c
+
+[2025-12-10 14:29:48,242: INFO/MainProcess] Task search.index_book[bc0d8cf7-b5ee-4cb4-9fcc-6605847afc70] received
+
+[2025-12-10 14:29:48,244: INFO/MainProcess] Task tasks.analyze_book_type[db7f5575-141e-4a02-9f0e-c3ae90c34a89] received
+
+[2025-12-10 14:29:48,245: INFO/MainProcess] Task tasks.extract_book_cover_and_metadata[97164468-6c64-434e-9cb3-4063bf8deac3] received
+
+[2025-12-10 14:29:48,506: INFO/ForkPoolWorker-1] Task tasks.analyze_book_type[db7f5575-141e-4a02-9f0e-c3ae90c34a89] succeeded in 0.2610281510005734s: None
+
+[2025-12-10 14:29:48,508: WARNING/ForkPoolWorker-1] [CoverMeta] Extracting cover and metadata for: 88b6a910-14c5-4396-a838-4df8c7bbedd7 (format: epub)
+
+[2025-12-10 14:29:48,519: WARNING/ForkPoolWorker-1] [CoverMeta] Downloaded 1421086 bytes
+
+[2025-12-10 14:29:49,730: WARNING/ForkPoolWorker-1] [Cover] Optimized: 372215 -> 7630 bytes (400x600 WebP)
+
+[2025-12-10 14:29:49,810: WARNING/ForkPoolWorker-1] [CoverMeta] Uploaded cover: users/f4cf77dc-7a50-41f5-9089-9570aecc5d8b/35fa4627-1b48-4685-b4e5-b75d29713eab/covers/88b6a910-14c5-4396-a838-4df8c7bbedd7.webp (7630 bytes)
+
+[2025-12-10 14:29:49,811: WARNING/ForkPoolWorker-1] [Metadata] EPUB metadata extracted: title=文学与电影改编研究, author=章颜
+
+[2025-12-10 14:29:49,811: WARNING/ForkPoolWorker-1] [CoverMeta] Will update author to: 章颜
+
+[2025-12-10 14:29:49,811: WARNING/ForkPoolWorker-1] [CoverMeta] Will update title to: '文学与电影改编研究'
+
+[2025-12-10 14:29:49,812: WARNING/ForkPoolWorker-1] [CoverMeta] Updated book: 88b6a910-14c5-4396-a838-4df8c7bbedd7
+
+[2025-12-10 14:29:49,871: INFO/ForkPoolWorker-1] Task tasks.extract_book_cover_and_metadata[97164468-6c64-434e-9cb3-4063bf8deac3] succeeded in 1.3646844089998922s: None
+
+[2025-12-10 14:30:55,528: INFO/MainProcess] Task search.index_book[5ebfba5a-807d-4668-a2be-2bafa533cf90] received
+
+[2025-12-10 14:30:55,529: INFO/MainProcess] Task tasks.analyze_book_type[388180bf-be8f-45a8-8242-88f106adafc6] received
+
+[2025-12-10 14:30:55,530: INFO/MainProcess] Task tasks.convert_to_epub[ec4559d0-4d2a-46db-b304-5d0bf7713600] received
+
+[2025-12-10 14:30:55,792: INFO/ForkPoolWorker-1] Task tasks.analyze_book_type[388180bf-be8f-45a8-8242-88f106adafc6] succeeded in 0.26253933800035156s: None
+
+[2025-12-10 14:30:55,795: WARNING/ForkPoolWorker-1] [Convert] Status updated to 'processing' for book: e3e5c69d-d64c-4897-b21a-6e45756d9155
+
+[2025-12-10 14:30:55,886: WARNING/ForkPoolWorker-1] [Convert] Converting azw3 to EPUB: 红屋骑士-大仲马
+
+[2025-12-10 14:30:55,899: WARNING/ForkPoolWorker-1] [Convert] Wrote source file: /calibre_books/input-d8fc401b.azw3 (884031 bytes)
+
+[2025-12-10 14:30:55,899: WARNING/ForkPoolWorker-1] [Convert] Created conversion request: /calibre_books/convert-d8fc401b.request
+
+[2025-12-10 14:31:07,900: WARNING/ForkPoolWorker-1] [Convert] Conversion completed!
+
+[2025-12-10 14:31:07,900: WARNING/ForkPoolWorker-1] [Convert] Read converted EPUB: 502864 bytes
+
+[2025-12-10 14:31:07,988: WARNING/ForkPoolWorker-1] [Convert] Uploaded converted EPUB: users/f4cf77dc-7a50-41f5-9089-9570aecc5d8b/c2585d14-5a5e-4f34-9bbf-1258bf98de9a/converted/e3e5c69d-d64c-4897-b21a-6e45756d9155.epub
+
+[2025-12-10 14:31:08,087: WARNING/ForkPoolWorker-1] [Convert] Deleted original file from S3: users/f4cf77dc-7a50-41f5-9089-9570aecc5d8b/f0dd4aa6-d6a1-490e-8f47-5178dc886707/红屋骑士-大仲马.azw3
+
+[2025-12-10 14:31:08,089: WARNING/ForkPoolWorker-1] [Convert] Updated book with converted EPUB, status='completed': e3e5c69d-d64c-4897-b21a-6e45756d9155
+
+[2025-12-10 14:31:08,128: WARNING/ForkPoolWorker-1] [Convert] Triggering cover and metadata extraction for: e3e5c69d-d64c-4897-b21a-6e45756d9155
+
+[2025-12-10 14:31:08,160: INFO/MainProcess] Task tasks.extract_book_cover_and_metadata[b2dc4cd4-8b75-46cd-8b8a-d966c2e04080] received
+
+[2025-12-10 14:31:08,160: INFO/ForkPoolWorker-1] Task tasks.convert_to_epub[ec4559d0-4d2a-46db-b304-5d0bf7713600] succeeded in 12.367480943000373s: None
+
+[2025-12-10 14:31:08,163: WARNING/ForkPoolWorker-2] [CoverMeta] Using converted EPUB
+
+[2025-12-10 14:31:08,163: WARNING/ForkPoolWorker-2] [CoverMeta] Extracting cover and metadata for: e3e5c69d-d64c-4897-b21a-6e45756d9155 (format: epub)
+
+[2025-12-10 14:31:08,175: WARNING/ForkPoolWorker-2] [CoverMeta] Downloaded 502864 bytes
+
+[2025-12-10 14:31:08,208: WARNING/ForkPoolWorker-2] [Cover] Optimized: 114883 -> 11098 bytes (400x600 WebP)
+
+[2025-12-10 14:31:08,418: WARNING/ForkPoolWorker-2] [CoverMeta] Uploaded cover: users/f4cf77dc-7a50-41f5-9089-9570aecc5d8b/c956efbd-c53a-4773-9d42-330fd0bd7f26/covers/e3e5c69d-d64c-4897-b21a-6e45756d9155.webp (11098 bytes)
+
+[2025-12-10 14:31:08,419: WARNING/ForkPoolWorker-2] [Metadata] EPUB metadata extracted: title=红屋骑士, author=大仲马
+
+[2025-12-10 14:31:08,419: WARNING/ForkPoolWorker-2] [CoverMeta] Will update author to: 大仲马
+
+[2025-12-10 14:31:08,419: WARNING/ForkPoolWorker-2] [CoverMeta] Will update title to: '红屋骑士'
+
+[2025-12-10 14:31:08,420: WARNING/ForkPoolWorker-2] [CoverMeta] Updated book: e3e5c69d-d64c-4897-b21a-6e45756d9155
+
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]
+
+Fetching 6 files:  17%|#6        | 1/6 [00:00<00:04,  1.16it/s]
+
+Fetching 6 files:  67%|######6   | 4/6 [00:00<00:00,  5.17it/s]
+
+Fetching 6 files: 100%|##########| 6/6 [00:06<00:00,  1.36s/it]
+
+Fetching 6 files: 100%|##########| 6/6 [00:06<00:00,  1.12s/it]
+
+Fetching 6 files:   0%|          | 0/6 [00:00<?, ?it/s]
+
+Fetching 6 files:  17%|#6        | 1/6 [00:00<00:03,  1.61it/s]
+
+Fetching 6 files:  33%|###3      | 2/6 [00:00<00:01,  2.13it/s]
+
+Fetching 6 files:  83%|########3 | 5/6 [00:02<00:00,  1.92it/s]
+
+Fetching 6 files: 100%|##########| 6/6 [00:02<00:00,  2.30it/s]
+
+

@@ -8,12 +8,17 @@
  * 4) 通知后端完成并持久化记录
  * 5) EPUB/PDF 直接写入 IndexedDB，支持立即阅读
  *
+ * **离线支持**:
+ * - 离线时将上传任务保存到 IndexedDB 队列
+ * - 网络恢复后自动上传
+ *
  * 错误处理：统一 `errorCode` 标准化，支持取消与配额限制等场景
  */
 import { useState, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import api from '@/lib/api'
-import { saveBookFile } from '@/lib/bookStorage'
+import { saveBookFile, saveOfflineUploadQueue, getOfflineUploadQueue } from '@/lib/bookStorage'
+import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 
 // 上传阶段枚举
 export type UploadStage = 'idle' | 'hashing' | 'initializing' | 'uploading' | 'completing' | 'done' | 'error'
@@ -28,6 +33,7 @@ export type UploadErrorCode =
   | 'invalid_format'
   | 'network_error'
   | 'cancelled'
+  | 'queued_offline'  // 新增：离线队列
   | 'unknown'
 
 // 支持的文件格式
@@ -228,6 +234,45 @@ export function useBookUpload(options: UseBookUploadOptions = {}) {
         }
         // 哈希计算失败不阻塞上传，使用空值
         fingerprint = ''
+      }
+
+      // **离线检测**: 如果离线，将上传任务保存到队列
+      if (!navigator.onLine) {
+        console.log('[Upload] Offline detected, saving to upload queue...')
+        const fmt = getFileExtension(fileName)
+        const directFormats = ['epub', 'pdf']
+        
+        // 保存文件到 IndexedDB（允许离线阅读）
+        if (directFormats.includes(fmt)) {
+          const tempBookId = `temp_${idempotencyKeyRef.current}`
+          await saveBookFile(tempBookId, file, fmt as 'epub' | 'pdf')
+          console.log('[Upload] Saved file locally for offline reading:', tempBookId)
+        }
+        
+        // 加入上传队列
+        await saveOfflineUploadQueue({
+          id: idempotencyKeyRef.current,
+          fileName,
+          title,
+          blob: file,
+          fingerprint,
+          createdAt: Date.now(),
+        })
+        
+        // 返回临时结果，告知用户已加入队列
+        updateState('done', 100, { 
+          fileName,
+          bookId: `temp_${idempotencyKeyRef.current}`,
+        })
+        
+        // 触发特殊回调：队列成功而非真正上传成功
+        onError?.('queued_offline', 'File saved to upload queue. Will upload when online.')
+        
+        return {
+          id: `temp_${idempotencyKeyRef.current}`,
+          downloadUrl: '',
+          title,
+        }
       }
 
       updateState('initializing', 15)

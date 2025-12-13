@@ -21,12 +21,23 @@ ENV OCR_CPU_THREADS=6
 ARG SKIP_HEAVY=true
 
 # 安装系统依赖（适配 Debian Trixie）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --fix-missing \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    tesseract-ocr \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-chi-tra \
+    tesseract-ocr-eng \
+    ghostscript \
+    unpaper \
+    && rm -rf /var/lib/apt/lists/* || \
+    (apt-get update && apt-get install -y --fix-missing \
+    libgl1 libglib2.0-0 libgomp1 curl \
+    tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-eng \
+    ghostscript unpaper && rm -rf /var/lib/apt/lists/*)
 
 # 升级 pip 并安装基础依赖
 COPY requirements.txt /app/requirements.txt
