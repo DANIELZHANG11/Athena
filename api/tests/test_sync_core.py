@@ -14,9 +14,9 @@ import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
-# 使用相对导入（容器内）
-from app.main import app
-from app.powersync import _generate_version_hash
+# 使用绝对导入（CI 环境兼容）
+from api.app.main import app
+from api.app.powersync import _generate_version_hash
 
 
 class TestVersionFingerprint:

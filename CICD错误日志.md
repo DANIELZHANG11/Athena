@@ -69,5 +69,5 @@ E   ModuleNotFoundError: No module named 'app'
 =========================== short test summary info ============================
 ERROR api/tests/test_sync_core.py
 !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-1 warning, 1 error in 1.68s
+1 warning, 1 error in 1.50s
 Error: Process completed with exit code 2.
