@@ -191,7 +191,7 @@ export default function NotesPage() {
           
           <Select value={selectedBookId} onValueChange={setSelectedBookId}>
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder={t('notes.filter_book', '所有书籍')}</SelectValue>
+              <SelectValue placeholder={t("notes.filter_book", "所有书籍")} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('notes.all_books', '所有书籍')}</SelectItem>
