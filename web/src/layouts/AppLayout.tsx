@@ -79,7 +79,7 @@ export default function AppLayout() {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
       hideTimerRef.current = setTimeout(() => {
         setIsNavVisible(false)
-      }, 3000) // 3秒无操作后隐藏
+      }, 3000) as unknown as number // 3秒无操作后隐藏
     }
 
     // 监听全局交互

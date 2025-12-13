@@ -30,7 +30,7 @@ export default function DeviceShowcase() {
                 <motion.div
                   className="relative rounded-[38px] overflow-hidden"
                   style={{
-                    y: index === 1 ? device2Y : index === 3 ? device4Y : 0,
+                    y: (index === 1 ? device2Y : index === 3 ? device4Y : 0) as any,
                     height: '440px',
                     background: 'linear-gradient(180deg, #121314 0%, #0a0b0c 100%)',
                     boxShadow:

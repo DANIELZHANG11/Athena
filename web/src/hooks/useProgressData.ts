@@ -166,7 +166,7 @@ export function useProgressData(bookId: string | null) {
       await doSave()
     } else {
       // 防抖 1 秒
-      saveTimeoutRef.current = setTimeout(doSave, 1000)
+      saveTimeoutRef.current = setTimeout(doSave, 1000) as unknown as number
     }
   }, [db, bookId])
 

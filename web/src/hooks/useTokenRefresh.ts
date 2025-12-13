@@ -49,7 +49,7 @@ export function useTokenRefresh() {
         checkAndRefresh()
 
         // 启动定时器，每 5 分钟检查一次
-        timerRef.current = setInterval(checkAndRefresh, 5 * 60 * 1000)
+        timerRef.current = setInterval(checkAndRefresh, 5 * 60 * 1000) as unknown as number
 
         // 清理函数
         return () => {

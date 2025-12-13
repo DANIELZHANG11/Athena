@@ -37,26 +37,10 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-
-> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
-> eslint "src/**/*.{ts,tsx}"
-
-
-Oops! Something went wrong! :(
-
-ESLint: 8.57.1
-
-ESLint couldn't find the plugin "eslint-plugin-react-hooks".
-
-(The package "eslint-plugin-react-hooks" was not found when loaded as a Node module from the directory "/home/runner/work/Athena/Athena/web".)
-
-It's likely that the plugin isn't installed correctly. Try reinstalling by running the following:
-
-    npm install eslint-plugin-react-hooks@latest --save-dev
-
-The plugin "eslint-plugin-react-hooks" was referenced from the config file in ".eslintrc.cjs".
-
-If you still can't figure out the problem, please stop by https://eslint.org/chat/help to chat with the team.
-
+Error: src/hooks/useProgressData.ts(169,7): error TS2322: Type 'Timeout' is not assignable to type 'number'.
+Error: src/hooks/useTokenRefresh.ts(52,9): error TS2322: Type 'Timeout' is not assignable to type 'number'.
+Error: src/landing/DeviceShowcase.tsx(33,21): error TS2353: Object literal may only specify known properties, and 'y' does not exist in type 'Properties<string | number, string & {}>'.
+Error: src/layouts/AppLayout.tsx(80,7): error TS2322: Type 'Timeout' is not assignable to type 'number'.
+Error: src/pages/app/home/HomeHeader.tsx(36,62): error TS2353: Object literal may only specify known properties, and 'y' does not exist in type 'Properties<string | number, string & {}>'.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
