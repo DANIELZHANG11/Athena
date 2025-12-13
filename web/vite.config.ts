@@ -72,11 +72,32 @@ export default defineConfig({
         type: 'module',
       },
     }),
-  ],
+  },
   resolve: {
     alias: [
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) }
     ]
+  },
+  worker: {
+    format: 'es',
+    plugins: () => [react()],
+  },
+  build: {
+    target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'powersync': ['@powersync/web', '@powersync/react'],
+          'sqlite': ['@journeyapps/wa-sqlite'],
+        },
+      },
+    },
+  },
+  optimizeDeps: {
+    exclude: ['@journeyapps/wa-sqlite', '@powersync/web'],
+    esbuildOptions: {
+      target: 'esnext',
+    },
   },
   server: {
     port: 48173,
