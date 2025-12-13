@@ -6,9 +6,14 @@
 module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint', 'react'],
+  plugins: ['@typescript-eslint', 'react', 'react-hooks'],
   env: { browser: true, es2020: true, node: true },
-  extends: ['eslint:recommended', 'plugin:react/recommended', 'plugin:@typescript-eslint/recommended'],
+  extends: [
+    'eslint:recommended', 
+    'plugin:react/recommended', 
+    'plugin:react-hooks/recommended',
+    'plugin:@typescript-eslint/recommended'
+  ],
   settings: { react: { version: 'detect' } },
   rules: {
     'react/react-in-jsx-scope': 'off',

@@ -9,13 +9,11 @@ import HomeSkeleton from './home/HomeSkeleton'
 import { useAuthStore } from '@/stores/auth'
 import { useDashboardData } from '@/hooks/useDashboardData'
 import { useAllProgressData } from '@/hooks/useProgressData'
-import { usePowerSyncDatabase } from '@/lib/powersync'
 
 export default function Home() {
   const { t } = useTranslation('common')
   const { dashboard, updateGoals, isLoading: isDashboardLoading } = useDashboardData()
   const { recentBooks, isLoading: isBooksLoading } = useAllProgressData({ limit: 10 })
-  const db = usePowerSyncDatabase()
   const accessToken = useAuthStore(s => s.accessToken)
 
   const loading = isDashboardLoading || isBooksLoading

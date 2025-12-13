@@ -32,7 +32,6 @@ export default function SearchPage() {
   const navigate = useNavigate()
 
   const [query, setQuery] = useState('')
-  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [category, setCategory] = useState<SearchCategory>('all')
   const [searched, setSearched] = useState(false)
 

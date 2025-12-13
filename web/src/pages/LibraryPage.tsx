@@ -57,8 +57,7 @@ export default function LibraryPage() {
     isLoading, 
     stats, 
     hasProcessing, 
-    refresh,
-    isReady 
+    refresh
   } = useBooksData({
     sortBy,
     search: searchQuery

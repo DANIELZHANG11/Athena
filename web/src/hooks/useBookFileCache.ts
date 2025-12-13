@@ -84,7 +84,8 @@ export function useBookFileCache(bookIds: string[]): UseBookFileCacheReturn {
   // 初始化和 bookIds 变化时加载
   useEffect(() => {
     loadCacheStatus()
-  }, [bookIds.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookIds.join(',')])
 
   // 监听缓存事件
   useEffect(() => {

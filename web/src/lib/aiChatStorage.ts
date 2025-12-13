@@ -22,11 +22,11 @@ export interface MessageRecord {
   metadata?: any
 }
 
-export const saveConversations = async (_conversations: ConversationRecord[]) => {
+export const saveConversations = async () => {
   console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
 }
 
-export const saveMessages = async (_messages: MessageRecord[]) => {
+export const saveMessages = async () => {
   console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
 }
 
@@ -34,10 +34,10 @@ export const getCachedConversations = async () => {
   return [] as ConversationRecord[]
 }
 
-export const getConversationMessages = async (_conversationId: string) => {
+export const getConversationMessages = async () => {
   return [] as MessageRecord[]
 }
 
-export const deleteConversation = async (_id: string) => {
+export const deleteConversation = async () => {
   console.warn('[aiChatStorage] Stub: 待迁移到 PowerSync')
 }

@@ -68,7 +68,7 @@ export function useUploadPostProcessing(options: UseUploadPostProcessingOptions 
   }, [onStatusUpdate, onMetadataReady, onImagePdfDetected, onCoverReady])
 
   // 使用 PowerSync 实时查询书籍状态
-  const { data: books, isLoading } = useQuery(
+  const { data: books } = useQuery(
     'SELECT * FROM books WHERE id = ?',
     [monitoredBookId || '']
   )
