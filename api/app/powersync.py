@@ -10,6 +10,7 @@ PowerSync 同步上传接口
 @see 09 - APP-FIRST架构改造计划.md - Phase 4
 @version 1.0.0
 """
+import hashlib
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
@@ -21,6 +22,20 @@ from .auth import require_user
 from .db import engine
 
 router = APIRouter(prefix="/api/v1/sync")
+
+
+def _generate_version_hash(content: str) -> str:
+    """
+    生成版本指纹（用于冲突检测）
+    
+    Args:
+        content: 要hash的内容
+        
+    Returns:
+        格式: "sha256:xxxxx" (前16字符)
+    """
+    h = hashlib.sha256(content.encode('utf-8')).hexdigest()
+    return f"sha256:{h[:16]}"
 
 
 # ============ Pydantic 模型 ============

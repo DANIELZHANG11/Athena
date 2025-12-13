@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 # 使用相对导入（容器内）
 from app.main import app
-from app.sync import _generate_version_hash
+from app.powersync import _generate_version_hash
 
 
 class TestVersionFingerprint:
