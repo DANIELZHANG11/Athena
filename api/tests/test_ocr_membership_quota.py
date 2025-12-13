@@ -5,6 +5,9 @@ import pytest
 
 from api.app.main import app
 
+# NOTE: OCR/Membership/Admin API 测试保留 REST 调用是合理的，因为管理后台本身就是 Web-First。
+# APP-FIRST 原则只适用于用户面向的功能（书籍/笔记/阅读进度等）。
+# 参考: 09_APP-FIRST架构改造计划.md Section 1 - “不在范围: Auth/Billing 功能、OCR/PDF 生成逻辑”
 
 @pytest.mark.asyncio
 async def test_ocr_quota_membership(monkeypatch):

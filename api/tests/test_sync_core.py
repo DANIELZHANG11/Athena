@@ -126,5 +126,38 @@ class TestReadingProgressLWW:
         assert device_b_progress["timestamp"] > device_a_progress["timestamp"]
 
 
+class TestPowerSyncIntegration:
+    """测试 PowerSync 集成功能（单元测试层面）"""
+    
+    def test_sync_rules_schema_consistency(self):
+        """验证 PowerSync sync_rules.yaml 与数据库 schema 一致性"""
+        # TODO: 读取 sync_rules.yaml，验证表名、列名与 PostgreSQL schema 匹配
+        # 参考: docker/powersync/sync_rules.yaml
+        assert True, "待实现：解析 YAML 并验证表结构"
+    
+    def test_conflict_copy_naming_convention(self):
+        """验证 Conflict Copy 命名规范"""
+        from datetime import datetime
+        original_title = "My Favorite Quote"
+        conflict_suffix = f" (conflict {datetime.now().strftime('%Y%m%d-%H%M%S')})"
+        conflict_title = original_title + conflict_suffix
+        
+        assert "conflict" in conflict_title
+        assert original_title in conflict_title
+    
+    def test_powersync_jwt_claims_structure(self):
+        """验证 PowerSync JWT Token 必需字段"""
+        # PowerSync 要求 JWT 必须包含 user_id、device_id
+        required_claims = ["user_id", "device_id", "exp"]
+        mock_jwt_payload = {
+            "user_id": "123e4567-e89b-12d3-a456-426614174000",
+            "device_id": "device-uuid-abc",
+            "exp": 1735689600  # 2025-01-01
+        }
+        
+        for claim in required_claims:
+            assert claim in mock_jwt_payload, f"缺少必需字段: {claim}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

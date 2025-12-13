@@ -3,6 +3,7 @@ import httpx
 from unittest.mock import MagicMock
 from api.app.main import app
 
+@pytest.mark.skip(reason="Web-First API test - 违反 APP-FIRST 原则。客户端应操作 SQLite + PowerSync 而非直接调用 REST API。待迁移到 E2E 测试（Playwright + PowerSync SDK）。参考: 09_APP-FIRST架构改造计划.md Phase 5")
 @pytest.mark.asyncio
 async def test_books_crud_flow(monkeypatch):
     # Mock S3 - mock functions in books module (imported from storage)
