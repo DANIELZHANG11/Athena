@@ -252,6 +252,7 @@ export function useOcrData({
         imageHeight: defaultHeight,
         pageSizes: Object.keys(pageSizes).length > 0 ? pageSizes : undefined,
         regions: data.regions,
+        downloadedAt: Date.now(),
       })
       
       // 更新内存缓存

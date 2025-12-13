@@ -37,16 +37,7 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/AddToShelfDialog.tsx(102,52): error TS2554: Expected 0 arguments, but got 1.
-Error: src/components/AddToShelfDialog.tsx(147,29): error TS2554: Expected 0 arguments, but got 2.
-Error: src/components/AddToShelfDialog.tsx(171,34): error TS2554: Expected 0 arguments, but got 2.
-Error: src/hooks/useAIChatCache.ts(19,3): error TS2305: Module '"@/lib/aiChatStorage"' has no exported member 'saveConversations'.
-Error: src/hooks/useAIChatCache.ts(133,50): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(155,32): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(182,36): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useAIChatCache.ts(190,24): error TS2554: Expected 0 arguments, but got 1.
-Error: src/hooks/useOcrData.ts(244,33): error TS2554: Expected 1 arguments, but got 2.
-Error: src/pages/AIConversationsPage.tsx(16,3): error TS2305: Module '"@/lib/aiChatStorage"' has no exported member 'saveConversations'.
-Error: src/pages/AIConversationsPage.tsx(205,36): error TS2551: Property 'createdAt' does not exist on type 'ConversationRecord'. Did you mean 'created_at'?
+Error: src/hooks/useOcrData.ts(244,25): error TS2345: Argument of type '{ bookId: string; isImageBased: any; confidence: any; totalPages: any; totalChars: any; totalRegions: any; imageWidth: any; imageHeight: any; pageSizes: Record<string, { width: number; height: number; pdfWidth?: number; pdfHeight?: number; dpi?: number; }>; regions: any; }' is not assignable to parameter of type 'OcrDataRecord'.
+  Property 'downloadedAt' is missing in type '{ bookId: string; isImageBased: any; confidence: any; totalPages: any; totalChars: any; totalRegions: any; imageWidth: any; imageHeight: any; pageSizes: Record<string, { width: number; height: number; pdfWidth?: number; pdfHeight?: number; dpi?: number; }>; regions: any; }' but required in type 'OcrDataRecord'.
  ELIFECYCLE  Command failed with exit code 2.
 Error: Process completed with exit code 2.
