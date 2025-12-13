@@ -37,7 +37,73 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/hooks/useOcrData.ts(244,25): error TS2345: Argument of type '{ bookId: string; isImageBased: any; confidence: any; totalPages: any; totalChars: any; totalRegions: any; imageWidth: any; imageHeight: any; pageSizes: Record<string, { width: number; height: number; pdfWidth?: number; pdfHeight?: number; dpi?: number; }>; regions: any; }' is not assignable to parameter of type 'OcrDataRecord'.
-  Property 'downloadedAt' is missing in type '{ bookId: string; isImageBased: any; confidence: any; totalPages: any; totalChars: any; totalRegions: any; imageWidth: any; imageHeight: any; pageSizes: Record<string, { width: number; height: number; pdfWidth?: number; pdfHeight?: number; dpi?: number; }>; regions: any; }' but required in type 'OcrDataRecord'.
- ELIFECYCLE  Command failed with exit code 2.
-Error: Process completed with exit code 2.
+
+> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
+> eslint "src/**/*.{ts,tsx}"
+
+
+/home/runner/work/Athena/Athena/web/src/hooks/useBookFileCache.ts
+Error:   87:27  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/runner/work/Athena/Athena/web/src/hooks/useBookUpload.ts
+Error:   20:48  error  'getOfflineUploadQueue' is defined but never used  @typescript-eslint/no-unused-vars
+Error:   21:10  error  'useOnlineStatus' is defined but never used        @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/hooks/useDashboardData.ts
+Error:   184:13  error  'checkDate' is never reassigned. Use 'const' instead  prefer-const
+Error:   204:16  error  Unexpected constant condition                         no-constant-condition
+Error:   254:19  error  'firstDate' is assigned a value but never used        @typescript-eslint/no-unused-vars
+Error:   255:19  error  'lastDate' is assigned a value but never used         @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/hooks/useUploadPostProcessing.ts
+Error:    71:24  error  'isLoading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+Error:   121:56  error  'initialTitle' is defined but never used        @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/lib/aiChatStorage.ts
+Error:   25:41  error  'conversations' is defined but never used   @typescript-eslint/no-unused-vars
+Error:   29:36  error  'messages' is defined but never used        @typescript-eslint/no-unused-vars
+Error:   37:47  error  'conversationId' is defined but never used  @typescript-eslint/no-unused-vars
+Error:   41:42  error  'id' is defined but never used              @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/lib/shelvesStorage.ts
+Error:    6:38  error  'shelfId' is defined but never used  @typescript-eslint/no-unused-vars
+Error:    6:55  error  'bookId' is defined but never used   @typescript-eslint/no-unused-vars
+Error:   10:43  error  'shelfId' is defined but never used  @typescript-eslint/no-unused-vars
+Error:   10:60  error  'bookId' is defined but never used   @typescript-eslint/no-unused-vars
+Error:   18:39  error  'bookId' is defined but never used   @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/AIConversationsPage.tsx
+Error:    94:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+Error:   103:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/runner/work/Athena/Athena/web/src/pages/LibraryPage.tsx
+Error:   10:31  error  'useRef' is defined but never used            @typescript-eslint/no-unused-vars
+Error:   16:29  error  'BookItem' is defined but never used          @typescript-eslint/no-unused-vars
+Error:   20:70  error  'Check' is defined but never used             @typescript-eslint/no-unused-vars
+Error:   61:5   error  'isReady' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/NotesPage.tsx
+Error:    45:53  error  'updateHighlight' is assigned a value but never used  @typescript-eslint/no-unused-vars
+Error:   132:14  error  'error' is defined but never used                     @typescript-eslint/no-unused-vars
+Error:   158:14  error  'error' is defined but never used                     @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/ProfilePage.tsx
+Error:   113:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+Error:   121:5  error  Definition for rule 'react-hooks/exhaustive-deps' was not found  react-hooks/exhaustive-deps
+
+/home/runner/work/Athena/Athena/web/src/pages/SearchPage.tsx
+Error:   13:20  error  'useCallback' is defined but never used                 @typescript-eslint/no-unused-vars
+Error:   35:10  error  'debouncedQuery' is assigned a value but never used     @typescript-eslint/no-unused-vars
+Error:   35:26  error  'setDebouncedQuery' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/app/Home.tsx
+Error:   18:9  error  'db' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/runner/work/Athena/Athena/web/src/pages/app/home/ContinueReadingHero.tsx
+Error:   77:18  error  'securityError' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 34 problems (34 errors, 0 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+
+ ELIFECYCLE  Command failed with exit code 1.
+Error: Process completed with exit code 1.

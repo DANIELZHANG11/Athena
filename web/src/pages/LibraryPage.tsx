@@ -7,17 +7,17 @@
  * - 移除所有旧 API 调用和 Dexie 依赖
  * - 纯响应式设计
  */
-import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BookCard from '../components/BookCard'
 import UploadManager from '../components/upload/UploadManager'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth'
-import { useBooksData, type BookItem } from '@/hooks/useBooksData'
+import { useBooksData } from '@/hooks/useBooksData'
 import { useBookFileCache } from '@/hooks/useBookFileCache'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { toast } from '@/components/ui/sonner'
-import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, Check, Library, WifiOff, RefreshCw } from 'lucide-react'
+import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, Library, WifiOff, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
