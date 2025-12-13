@@ -77,16 +77,10 @@ class TestHeartbeatResponseValidation:
 class TestInitialSyncResponseStructure:
     """测试初始同步响应结构（静态验证）"""
     
+    @pytest.mark.skip(reason="SyncCategory 已废弃，PowerSync 不再使用类别枚举")
     def test_sync_category_enum(self):
-        """验证同步类别枚举"""
-        from app.sync import SyncCategory
-        
-        assert SyncCategory.ALL == "all"
-        assert SyncCategory.METADATA == "metadata"
-        assert SyncCategory.COVERS == "covers"
-        assert SyncCategory.NOTES == "notes"
-        assert SyncCategory.AI_HISTORY == "ai_history"
-        assert SyncCategory.BILLING == "billing"
+        """验证同步类别枚举（已废弃）"""
+        pass
     
     def test_expected_response_fields(self):
         """验证期望的响应结构"""
