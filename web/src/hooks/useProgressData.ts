@@ -156,11 +156,27 @@ export function useProgressData(bookId: string | null) {
 
       try {
         // 检查是否已存在进度记录 - 使用 book_id + user_id 匹配
-        const existingRows = await db.getAll<{ id: string; last_location: string | null }>(
-          'SELECT id, last_location FROM reading_progress WHERE book_id = ? AND user_id = ?',
+        // 同时查询 finished_at 用于"已读完"保护
+        const existingRows = await db.getAll<{ id: string; last_location: string | null; finished_at: string | null }>(
+          'SELECT id, last_location, finished_at FROM reading_progress WHERE book_id = ? AND user_id = ?',
           [bookId, userId]
         )
         const existing = existingRows[0]
+
+        // 🔒 Bug 3 修复: 已读完保护锁
+        // 如果书已标记为"已读完"(finished_at 有值)，且当前更新不是进度 100%，
+        // 则拒绝保存，防止阅读器的自动保存覆盖"已读完"状态
+        if (existing?.finished_at && pending.percentage !== undefined) {
+          const normalizedPending = pending.percentage > 1 ? pending.percentage / 100 : pending.percentage
+          if (normalizedPending < 1.0) {
+            console.log('[useProgressData] 🔒 Blocked: Book is marked as finished, refusing to overwrite with lower progress', {
+              bookId,
+              finishedAt: existing.finished_at,
+              attemptedProgress: normalizedPending
+            })
+            return // 拒绝保存
+          }
+        }
 
         // 构建 last_location JSON
         const buildLastLocation = (existingJson: string | null): string => {

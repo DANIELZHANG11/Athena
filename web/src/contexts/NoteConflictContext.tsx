@@ -9,7 +9,7 @@
  * - 冲突队列管理（多个冲突依次处理）
  * 
  * @see NoteConflictDialog - 冲突解决对话框组件
- * @see useSmartHeartbeat - 心跳同步中的冲突检测
+ * @see PowerSync - App-First 架构中由 PowerSync SDK 处理冲突检测
  */
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
@@ -104,7 +104,7 @@ export function NoteConflictProvider({ children }: NoteConflictProviderProps) {
     }
   }, [processNextConflict])
 
-  // 监听全局冲突事件（由 useSmartHeartbeat 触发）
+  // 监听全局冲突事件（由 PowerSync 冲突解决触发）
   useEffect(() => {
     const handleConflictEvent = (event: CustomEvent<ConflictItem>) => {
       addConflict(event.detail)

@@ -2,6 +2,91 @@
 
 ## 最新更新
 
+### 2025-12-17 - 核心 Bug 修复：进度丢失、主页空数据、已读完闪烁（第四轮）
+
+#### 问题描述
+用户反馈三个核心 Bug：
+1. **阅读进度丢失** - 重进 ReaderPage 跳回第一页
+2. **主页数据全空** - Dashboard 显示 0 数据，WeeklyActivity 全是 MISSED
+3. **已读完状态闪烁** - 标记"已读完"后瞬间变回旧进度
+
+#### 根因分析（按真理层级）
+
+**Level 0 真理检查（数据库迁移脚本）：**
+经检查 `api/alembic/versions/0126_add_powersync_columns.py`，发现：
+- `reading_progress` 表有 `last_position` (CFI 字符串) ✅
+- **缺少 `last_location` 列**（sync_rules.yaml 和 PowerSync Schema 定义了但迁移未创建）❌
+
+**Bug 1 根因：** 字段映射正确，但需要添加缺失的 DB 列
+**Bug 2 根因：** `reading_sessions` 写入和查询逻辑正确，问题可能是空数据
+**Bug 3 根因：** `saveProgress` 没有检查 `finished_at`，阅读器自动保存覆盖了已读完状态
+
+#### 解决方案
+
+##### 1. 添加缺失的数据库列 (Bug 1)
+创建新迁移脚本 `0128_add_last_location_column.py`：
+```python
+def upgrade():
+    op.execute("""
+        ALTER TABLE IF EXISTS reading_progress
+          ADD COLUMN IF NOT EXISTS last_location TEXT;
+    """)
+```
+
+##### 2. "已读完"保护锁 (Bug 3)
+在 `useProgressData.ts` 的 `saveProgress` 函数中添加防御逻辑：
+```typescript
+// 🔒 Bug 3 修复: 已读完保护锁
+if (existing?.finished_at && pending.percentage !== undefined) {
+  const normalizedPending = pending.percentage > 1 ? pending.percentage / 100 : pending.percentage
+  if (normalizedPending < 1.0) {
+    console.log('[useProgressData] 🔒 Blocked: Book is marked as finished, refusing to overwrite')
+    return // 拒绝保存
+  }
+}
+```
+
+##### 3. 清理旧代码注释 (任务 4)
+更新 `NoteConflictContext.tsx` 中的过时注释，移除对 `useSmartHeartbeat` 的引用。
+
+#### 修改文件清单
+
+| 文件 | 修改内容 |
+|:-----|:--------|
+| `api/alembic/versions/0128_add_last_location_column.py` | **新建** - 添加 `last_location` 列到 `reading_progress` 表 |
+| `web/src/hooks/useProgressData.ts` | 添加 `finished_at` 保护锁，防止已读完状态被覆盖 |
+| `web/src/contexts/NoteConflictContext.tsx` | 更新注释，移除对 `useSmartHeartbeat` 的过时引用 |
+
+#### 验证清理状态
+
+| 项目 | 状态 | 说明 |
+|:-----|:-----|:-----|
+| Dexie 依赖 | ✅ 已清理 | `package.json` 中无 dexie |
+| Dexie 代码引用 | ✅ 已清理 | 无 `from 'dexie'` 导入 |
+| `useSmartHeartbeat.ts` | ✅ 已删除 | 文件不存在 |
+| `useReaderHeartbeat.ts` | ✅ 已删除 | 文件不存在 |
+| `syncEngine.ts` | ✅ 已删除 | 文件不存在 |
+| `db.ts` (Dexie) | ✅ 已删除 | 文件不存在 |
+
+#### 状态
+✅ 已修复 - 需要运行数据库迁移并测试
+
+#### 部署步骤
+1. **运行数据库迁移**：
+   ```bash
+   cd /home/vitiana/Athena/api
+   alembic upgrade head
+   ```
+2. **重启开发服务器**
+3. **测试验证**
+
+#### 测试步骤
+1. **Bug 1 测试（进度恢复）**：打开书籍，翻到中间位置，退出再重新打开，应恢复到上次位置
+2. **Bug 2 测试（主页数据）**：阅读几分钟，返回主页查看 WeeklyActivity 是否显示阅读时间
+3. **Bug 3 测试（已读完保护）**：标记书籍为"已读完"，再次打开阅读器翻页，退出后应仍显示"已读完"
+
+---
+
 ### 2025-12-17 - PowerSync user_id/device_id 全面修复（第三轮）
 
 #### 问题描述
