@@ -1,17 +1,22 @@
 services:
   traefik:
-    image: zukubq0aouv2k2.xuanyuan.run/traefik:v3.0
+    image: zukubq0aouv2k2.xuanyuan.run/traefik:latest
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
       - --entrypoints.web.address=:80
       - --api.insecure=true
+    environment:
+      # 设置 Docker API 版本以匹配主机
+      - DOCKER_API_VERSION=1.44
     ports:
       - "48080:80"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - api
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -22,8 +27,6 @@ services:
       context: ./api
     env_file:
       - .env
-      - .env.local
-      - .env.infisical
     environment:
       ES_URL: http://opensearch:9200
       REDIS_URL: redis://valkey:6379
@@ -33,6 +36,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
       CELERY_BROKER_URL: redis://valkey:6379/0
       CELERY_BACKEND_URL: redis://valkey:6379/1
+      # JWT 认证密钥 - 必须与 PowerSync 一致
+      AUTH_SECRET: ${AUTH_SECRET:-dev_powersync_secret_change_in_production}
+      # 认证会话配置 (App-First 模式)
+      ACCESS_EXPIRE: ${ACCESS_EXPIRE:-86400}
+      REFRESH_EXPIRE: ${REFRESH_EXPIRE:-2592000}
       MINIO_PUBLIC_ENDPOINT: http://localhost:8333
       MINIO_ENDPOINT: seaweed:8333
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
@@ -65,6 +73,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./api:/app
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -78,6 +88,8 @@ services:
       - PGPASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./backups:/backups
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -89,13 +101,28 @@ services:
       - POSTGRES_USER=athena
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=athena
+      # 启用 replication
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "hba_file=/etc/postgresql/pg_hba.conf"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
       test: [ "CMD", "pg_isready", "-U", "athena" ]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -106,6 +133,8 @@ services:
     command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
       - valkey_data:/data
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -119,6 +148,8 @@ services:
       - "48888:8888"
     volumes:
       - seaweed_data:/data
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -142,25 +173,68 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "3"
   pgbouncer:
-    image: zukubq0aouv2k2.xuanyuan.run/brainsam/pgbouncer:latest
+    image: zukubq0aouv2k2.xuanyuan.run/bitnami/pgbouncer:1.22.0
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=athena
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - DB_NAME=athena
-      - POOL_MODE=session
-      - MAX_CLIENT_CONN=200
-      - DEFAULT_POOL_SIZE=20
-      - LISTEN_PORT=6432
+      # Bitnami PgBouncer 配置 - 使用 md5 认证
+      - POSTGRESQL_HOST=postgres
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USERNAME=athena
+      - POSTGRESQL_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRESQL_DATABASE=athena
+      - PGBOUNCER_DATABASE=athena
+      - PGBOUNCER_PORT=6432
+      - PGBOUNCER_AUTH_TYPE=md5
+      - PGBOUNCER_POOL_MODE=session
+      - PGBOUNCER_MAX_CLIENT_CONN=200
+      - PGBOUNCER_DEFAULT_POOL_SIZE=20
+      - PGBOUNCER_IGNORE_STARTUP_PARAMETERS=extra_float_digits,search_path
+      # 使用自定义 userlist.txt (含 md5 hash)
+      - PGBOUNCER_USERLIST_FILE=/bitnami/pgbouncer/conf/userlist.txt
+    volumes:
+      - ./docker/pgbouncer/userlist.txt:/bitnami/pgbouncer/conf/userlist.txt:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    networks:
+      - athena-network
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "timeout 2 bash -c '</dev/tcp/localhost/6432' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # -------------------------------------------------------------------------
+  # MongoDB (PowerSync 存储后端)
+  # -------------------------------------------------------------------------
+  mongo:
+    image: zukubq0aouv2k2.xuanyuan.run/mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "47017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "rs.status().ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -174,64 +248,41 @@ services:
   powersync:
     image: zukubq0aouv2k2.xuanyuan.run/journeyapps/powersync-service:latest
     ports:
-      - "${POWERSYNC_PORT:-48090}:8090"
+      - "${POWERSYNC_PORT:-48080}:8080"
       - "49091:9090"  # Prometheus metrics
     environment:
-      # 数据库连接（直连 PostgreSQL，不经过 PgBouncer）
-      - POWERSYNC_DATABASE_URL=postgresql://athena:${POSTGRES_PASSWORD}@postgres:5432/athena
-      # JWT 认证密钥
-      - POWERSYNC_JWT_SECRET=${POWERSYNC_JWT_SECRET:-dev_powersync_secret}
-      # 上传控制
+      # PowerSync 要求 PS_ 前缀的环境变量
+      - PS_DATABASE_URI=postgresql://athena:${POSTGRES_PASSWORD}@postgres:5432/athena
+      - PS_SUPABASE_JWT_SECRET=${AUTH_SECRET:-dev_powersync_secret_change_in_production}
+      - PS_MONGO_URI=mongodb://mongo:27017/powersync?replicaSet=rs0
+      - PS_LOG_LEVEL=${POWERSYNC_LOG_LEVEL:-info}
+      # 兼容性保留
+      - POWERSYNC_JWT_SECRET=${AUTH_SECRET:-dev_powersync_secret_change_in_production}
       - POWERSYNC_UPLOAD_ENABLED=${POWERSYNC_UPLOAD_ENABLED:-true}
-      # 日志级别
       - POWERSYNC_LOG_LEVEL=${POWERSYNC_LOG_LEVEL:-info}
     volumes:
-      - ./docker/powersync/powersync.yaml:/config/powersync.yaml:ro
-      - ./docker/powersync/sync_rules.yaml:/config/sync_rules.yaml:ro
+      - ./docker/powersync/powersync.yaml:/app/powersync.yaml:ro
+      - ./docker/powersync/sync_rules.yaml:/app/sync_rules.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
-      interval: 10s
-      timeout: 5s
+      # PowerSync 正确的健康检查端点是 /probes/liveness
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/probes/liveness', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 10s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "3"
-
-  # -------------------------------------------------------------------------
-  # Tolgee (Translation Platform)
-  # -------------------------------------------------------------------------
-  tolgee_db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: tolgee
-      POSTGRES_PASSWORD: tolgee_password
-      POSTGRES_DB: tolgee
-    volumes:
-      - tolgee_postgres_data:/var/lib/postgresql/data
-    networks:
-      - athena-network
-
-  tolgee:
-    image: tolgee/tolgee:latest
-    ports:
-      - "48085:8080"
-    environment:
-      TOLGEE_DB_URL: jdbc:postgresql://tolgee_db:5432/tolgee
-      TOLGEE_DB_USER: tolgee
-      TOLGEE_DB_PASSWORD: tolgee_password
-      TOLGEE_AUTHENTICATION_ENABLED: true
-      TOLGEE_AUTHENTICATION_INITIAL_USERNAME: admin
-      TOLGEE_AUTHENTICATION_INITIAL_PASSWORD: admin
-    depends_on:
-      - tolgee_db
-    networks:
-      - athena-network
 
   calibre:
     image: zukubq0aouv2k2.xuanyuan.run/linuxserver/calibre:latest
@@ -248,6 +299,8 @@ services:
       - "48082:8081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -269,11 +322,37 @@ services:
     depends_on:
       - calibre
     restart: unless-stopped
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "2"
+
+  # Calibre 元数据提取监控器 - 使用 ebook-meta 即时提取非 EPUB/PDF 的元数据和封面
+  calibre-metadata:
+    image: zukubq0aouv2k2.xuanyuan.run/linuxserver/calibre:latest
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+    volumes:
+      - calibre_books:/books
+      - ./scripts/calibre-metadata-watcher.sh:/scripts/metadata-watcher.sh:ro
+    entrypoint: ["/bin/bash", "/scripts/metadata-watcher.sh"]
+    command: []
+    depends_on:
+      - calibre
+    restart: unless-stopped
+    networks:
+      - athena-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
   worker:
     build:
       context: ./api
@@ -282,7 +361,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://valkey:6379/0
       - CELERY_BACKEND_URL=redis://valkey:6379/1
-      - DATABASE_URL=postgresql+asyncpg://athena:athena@pgbouncer:6432/athena
+      - DATABASE_URL=postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
       - MINIO_ENDPOINT=seaweed:8333
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
@@ -290,17 +369,17 @@ services:
       - CALIBRE_CONVERT_DIR=/calibre_books
       # OCR 配置 (PP-OCRv5 mobile)
       - OCR_USE_GPU=true
-      - OCR_GPU_MEM=3500
-      - OCR_CPU_THREADS=6
+      - OCR_GPU_MEM=4000
+      - OCR_CPU_THREADS=8
       - OCR_LANG=ch
       # Embedding 配置 (BGE-M3)
       - EMBEDDING_MODEL_NAME=BAAI/bge-m3
       - HF_HOME=/app/.hf_cache
-      # GPU 内存控制
-      - FLAGS_fraction_of_gpu_memory_to_use=0.4
-    # 2 Workers（开发环境 8GB GPU）
-    # 生产环境 12GB GPU 可改为 --concurrency=3
-    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=2", "--pool=prefork", "--max-tasks-per-child=50"]
+      # GPU 内存控制 (RTX 3060 12GB: PaddleOCR ~3GB + BGE-M3 ~3GB)
+      - FLAGS_fraction_of_gpu_memory_to_use=0.5
+    # 3 Workers (RTX 3060 12GB GPU，最佳并发)
+    # PaddleOCR + BGE-M3 约占用 6-7GB，剩余约 5GB 用于推理缓冲
+    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=3", "--pool=prefork", "--max-tasks-per-child=100"]
     depends_on:
       - valkey
       - pgbouncer
@@ -318,6 +397,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    networks:
+      - athena-network
     logging:
       driver: json-file
       options:
@@ -394,13 +475,14 @@ volumes:
       type: none
       o: bind
       device: /data/athena/calibre_config
-  
-  tolgee_postgres_data:
+
+  # MongoDB 数据（PowerSync 存储）
+  mongo_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /data/athena/tolgee
+      device: /data/athena/mongo
 
 
 networks:

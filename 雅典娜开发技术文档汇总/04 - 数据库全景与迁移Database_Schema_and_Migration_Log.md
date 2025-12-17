@@ -1,6 +1,6 @@
 # 04_Database_Schema_and_Migration_Log.md
 
-> **版本**：v1.0
+> **版本**：v1.1 (App-First Sync Revision)
 > **来源**：基于 Alembic 迁移脚本反推的当前数据库状态。
 > **定位**：数据库设计文档与数据字典。任何 Schema 变更必须先更新 Alembic 脚本，再同步此文档。
 
@@ -10,7 +10,7 @@
 *   **软删除**：核心表（如 `notes`, `tags`, `highlights`, `books`）包含 `deleted_at`（Timestamptz, Nullable）。
 *   **审计**：所有表包含 `created_at`，大部分表包含 `updated_at`。
 *   **安全**：敏感用户数据表（`notes`, `tags`, `highlights`）启用 RLS (Row Level Security)。
-*   **同步协议**：支持 App-First 的表必须包含 `_updated_at` (BigInt/Timestamp) 和 `_deleted` (Boolean) 字段以支持增量同步。
+*   **同步协议**：支持 App-First 的表必须包含 `updated_at` (TIMESTAMPTZ/TEXT) 和 `is_deleted` (INTEGER 0/1) 字段以支持增量同步。
 *   **扩展性**：广泛使用 `JSONB` 存储动态配置与元数据（如 `books.meta`, `system_settings.value`）。
 
 ## 2. 结构总览 (以 Alembic 为准)
@@ -18,7 +18,7 @@
 以下表格已在生产环境存在：
 
 *   **用户与基础**：`users`, `user_sessions`, `user_stats`, `invites`, `user_reading_goals`, `user_streaks`, `feature_flags`, `system_settings`, `translations`
-*   **书籍与内容**：`books`, `shelves`, `shelf_items`, `conversion_jobs`, `tags`
+*   **书籍与内容**：`books`, `shelves`, `shelf_books`, `conversion_jobs`, `tags`
 *   **阅读与笔记**：`reading_progress`, `reading_sessions`, `reading_daily`, `notes`, `highlights`, `note_tags`, `highlight_tags`
 *   **AI 与 SRS**：`ai_models`, `ai_conversations`, `ai_messages`, `ai_query_cache`, `ai_conversation_contexts`, `srs_cards`, `srs_reviews`
 *   **计费与额度**：`credit_accounts`, `credit_ledger`, `credit_products`, `payment_sessions`, `payment_webhook_events`, `payment_gateways`, `pricing_rules`, `regional_prices`, `service_providers`, `free_quota_usage`
@@ -32,39 +32,137 @@
 > **Architecture Pivot**: Moved from Dexie.js (IndexedDB) to SQLite (via Capacitor/WASM) for "App-First" architecture. 
 > **Sync Engine**: PowerSync (streaming replication).
 
-### 3.1 核心表结构 (Client Schema)
+### 3.1 PowerSync 同步表列表（共 9 个）
 
-| Table Name | Source (Postgres) | Sync Strategy | Description |
-| :--- | :--- | :--- | :--- |
-| `books` | `books` | Sync (Partial) | 书籍元数据 (Title, Author). `minio_key` 等敏感字段不需同步. |
-| `local_book_files` | - | Local Only | 对应 `books.id`，存储本地文件路径 (`file://...`) 或 Blob. |
-| `reading_progress` | `reading_progress` | Sync | 阅读进度 (CFI, Percentage, Last Chapter). |
-| `notes` | `notes` | Sync | 用户笔记 (Content, Color). |
-| `highlights` | `highlights` | Sync | 高亮 (Location, Color). |
-| `shelves` | `shelves` | Sync | 书架定义. |
-| `shelf_items` | `shelf_items` | Sync | 书架关联. |
-| `user_settings` | `system_settings` | Sync | 用户偏好 (Theme, Font). |
-| `sync_queue` | - | Local Only | **PowerSync Internal**: 存储未上传的变更 operation. |
+> **权威来源**：`web/src/lib/powersync/schema.ts` + `docker/powersync/sync_rules.yaml`
+> **最后更新**：2025-12-17
 
-**PowerSync 特性**:
-- 所有的 Client ID 必须是 UUID。
-- `download_config` (YAML) 定义服务端到客户端的数据映射。
-- `upload_config` (YAML) 定义客户端到服务端的写入权限。
+| # | SQLite 表名 | PostgreSQL 源表 | 同步策略 | 说明 |
+|---|:-----------|:---------------|:---------|:-----|
+| 1 | `books` | `books` | ↕ 双向同步 | 书籍元数据，允许修改 title/author/deleted_at |
+| 2 | `reading_progress` | `reading_progress` | ↕ 双向同步 | 阅读进度，LWW 冲突策略 |
+| 3 | `reading_sessions` | `reading_sessions` | ↕ 双向同步 | 阅读会话记录 |
+| 4 | `notes` | `notes` | ↕ 双向同步 | 用户笔记，Conflict Copy 策略 |
+| 5 | `highlights` | `highlights` | ↕ 双向同步 | 高亮标注，Conflict Copy 策略 |
+| 6 | `bookmarks` | `bookmarks` | ↕ 双向同步 | 书签 |
+| 7 | `shelves` | `shelves` | ↕ 双向同步 | 书架定义 |
+| 8 | `shelf_books` | `shelf_books` | ↕ 双向同步 | 书架-书籍关联 |
+| 9 | `user_settings` | `user_settings` | ↕ 双向同步 | 用户偏好设置 |
 
-### 3.2 PowerSync Sync Rules（YAML 摘要）
+> **注意**：阅读统计数据通过前端聚合 `reading_sessions` + `reading_progress` 计算，不作为独立同步表。
+> PostgreSQL 有 `reading_daily` 表用于服务端统计，但不同步到客户端。
 
-> **认证说明**：PowerSync Service 在建立连接时通过 JWT 解析出 `user_id`，并在 Sync Rules 中使用参数化查询 `WHERE user_id = :user_id`（而非 `current_setting()`）。这与 PostgreSQL RLS 不同，PowerSync 有独立的权限控制层。
+**本地专用表（不同步）**：
+| SQLite 表名 | 说明 |
+|:-----------|:-----|
+| `local_book_files` | 书籍文件缓存元数据（OPFS/Filesystem 路径） |
+| `local_ocr_data` | OCR 结果本地缓存 |
+| `local_cover_cache` | 封面图片本地缓存 |
 
-| 表 | download_config | upload_config | 备注 |
-| :--- | :--- | :--- | :--- |
-| `books` | `SELECT id, title, author, cover_image_key, meta, ocr_status, converted_epub_key, metadata_confirmed, _updated_at FROM books WHERE deleted_at IS NULL AND user_id = :user_id` | 只读 | 仅同步元数据，文件 key/配额等敏感字段不下发 |
-| `reading_sessions` ↔ `reading_progress` | 字段映射：`book_id`, `progress`, `last_location`, `_updated_at`, `_deleted` | 允许 `INSERT/UPDATE`，触发器负责 LWW | `_deleted` 用于在客户端清理完成记录 |
-| `notes`, `highlights` | 所有业务字段 + `_updated_at`, `_deleted`, `device_id`, `conflict_of` | 允许 `UPSERT/DELETE`，写入时强制 `device_id` | 冲突副本逻辑在 PostgreSQL 触发器完成 |
-| `tags`, `note_tags`, `highlight_tags` | 只同步当前用户数据 | 允许 CRUD | `note_tags`/`highlight_tags` 上传时需携带 `created_at`（未来迁移字段） |
-| `user_settings` | `key`, `value`, `_updated_at` | 允许 `UPSERT` | 通过 JSONB Merge 解决冲突 |
-| `shelves`, `shelf_items` | 所有业务字段 | 允许 CRUD | 书架管理通过 PowerSync 双向同步 |
+### 3.2 reading_progress 表字段映射对照表 🔑
 
-> 完整 YAML 样例参考 `docker/powersync/{download_config.yaml, upload_config.yaml}`，每次 Schema 变更需同步更新。
+> **权威来源**：`docker/powersync/sync_rules.yaml` + `web/src/lib/powersync/schema.ts`
+> **最后更新**：2025-12-17
+
+| SQLite (前端) | PostgreSQL (后端) | 类型 | 前端使用说明 |
+|:-------------|:-----------------|:-----|:------------|
+| `id` | `id` | UUID | 主键 |
+| `user_id` | `user_id` | UUID | 用户 ID |
+| `book_id` | `book_id` | UUID | 书籍 ID |
+| `device_id` | `device_id` | TEXT | 设备 ID |
+| `progress` | `progress` | REAL (0-1) | 阅读进度百分比，前端代码中映射为 `percentage` |
+| `last_position` | `last_position` | TEXT | CFI 位置字符串，前端代码中映射为 `currentCfi` |
+| `last_location` | `last_location` | TEXT (JSON) | `{ currentPage, totalPages }` |
+| `finished_at` | `finished_at` | TEXT (ISO8601) | 读完时间 |
+| `updated_at` | `updated_at` | TEXT (ISO8601) | 最后更新时间，前端代码中映射为 `lastReadAt` |
+
+> ⚠️ **重要**：前端代码（如 `useProgressData.ts`）在业务层使用语义化字段名（如 `percentage`, `currentCfi`），
+> 但在 SQL 查询中必须使用 PowerSync Schema 定义的字段名（如 `progress`, `last_position`）。
+
+### 3.3 reading_sessions 表字段映射对照表
+
+> **权威来源**：`docker/powersync/sync_rules.yaml` + `web/src/lib/powersync/schema.ts`
+
+| SQLite (前端) | PostgreSQL (后端) | 类型 | 说明 |
+|:-------------|:-----------------|:-----|:-----|
+| `id` | `id` | UUID | 主键 |
+| `user_id` | `user_id` | UUID | 用户 ID |
+| `book_id` | `book_id` | UUID | 书籍 ID |
+| `device_id` | `device_id` | TEXT | 设备 ID |
+| `is_active` | `is_active` | INTEGER (0/1) | 会话是否活跃 |
+| `total_ms` | `total_ms` | INTEGER | 阅读时长（毫秒），注意：是毫秒不是秒！ |
+| `created_at` | `created_at` | TEXT (ISO8601) | 会话开始时间 |
+| `updated_at` | `updated_at` | TEXT (ISO8601) | 最后心跳时间 |
+
+> ⚠️ **注意**：`total_ms` 是毫秒单位，显示分钟需要 `/60000`。
+
+### 3.4 books 表字段映射对照表 🔑
+
+> **⚠️ 关键说明**：PostgreSQL 使用 `is_digitalized` 存储（语义：是否数字化/可搜索），  
+> 通过 sync_rules.yaml 映射为 SQLite 的 `is_image_based`（语义：是否图片型/需OCR）。  
+> **两者语义相反！** 映射公式：`is_image_based = NOT is_digitalized OR confidence < 0.8`
+
+| SQLite (前端) | PostgreSQL (后端) | sync_rules 映射 | 类型 | 说明 |
+|:-------------|:-----------------|:----------------|:-----|:-----|
+| `id` | `id` | 直接映射 | UUID | 主键 |
+| `user_id` | `user_id` | 直接映射 | UUID | 所属用户 |
+| `title` | `title` | 直接映射 | TEXT | 书名 |
+| `author` | `author` | 直接映射 | TEXT | 作者 |
+| `cover_url` | `cover_image_key` | `AS cover_url` | TEXT | 封面 S3 Key |
+| `file_type` | `original_format` | `AS file_type` | TEXT | 原始格式 |
+| `file_size` | `size` | `AS file_size` | INTEGER | 文件大小 (bytes) |
+| `content_sha256` | `content_sha256` | 直接映射 | TEXT | 文件哈希 |
+| `storage_key` | `minio_key` | `AS storage_key` | TEXT | MinIO 存储 Key |
+| `metadata_confirmed` | `metadata_confirmed` | 直接映射 | INTEGER (0/1) | 元数据已确认 |
+| `is_image_based` | `is_digitalized` | **⚠️ 语义转换** | INTEGER (0/1) | 见下方计算公式 |
+| `ocr_status` | `ocr_status` | 直接映射 | TEXT | OCR 处理状态 |
+| `conversion_status` | `conversion_status` | 直接映射 | TEXT | 格式转换状态 |
+| `converted_epub_key` | `converted_epub_key` | 直接映射 | TEXT | 转换后 EPUB Key |
+| `page_count` | `meta->>'page_count'` | **提取 JSONB** | INTEGER | 书籍页数 |
+| `created_at` | `created_at` | 直接映射 | TEXT (ISO8601) | 创建时间 |
+| `updated_at` | `updated_at` | 直接映射 | TEXT (ISO8601) | 更新时间 |
+| `deleted_at` | `deleted_at` | 直接映射 | TEXT (ISO8601) | 软删除时间 |
+
+**`is_image_based` 计算公式（sync_rules.yaml）**：
+```sql
+-- 在 sync_rules.yaml 中计算
+(CASE 
+  WHEN is_digitalized = false THEN 1        -- 明确的图片型
+  WHEN is_digitalized = true AND initial_digitalization_confidence < 0.8 THEN 1  -- 低置信度
+  ELSE 0                                      -- 文字型
+END) as is_image_based
+```
+
+**PostgreSQL 独有字段（不同步到 SQLite）**：
+| 字段 | 用途 | 不同步原因 |
+|:-----|:-----|:----------|
+| `canonical_book_id` | SHA256 去重引用 | 后端内部逻辑 |
+| `storage_ref_count` | 存储引用计数 | 后端内部逻辑 |
+| `source_etag` | 上传幂等性 | 后端内部逻辑 |
+| `digitalize_report_key` | 数字化报告 Key | 后端内部逻辑 |
+| `ocr_result_key` | OCR 结果 Key | 后端内部逻辑 |
+| `ocr_requested_at` | OCR 请求时间 | 后端内部逻辑 |
+| `vector_indexed_at` | 向量索引时间 | 后端内部逻辑 |
+| `language` | 书籍语言 | 考虑未来同步 |
+
+### 3.3 PowerSync 认证与权限
+
+> **认证说明**：PowerSync Service 在建立连接时通过 JWT 解析出 `user_id`，并在 Sync Rules 中使用参数化查询 `WHERE user_id = bucket.user_id`（而非 PostgreSQL 的 `current_setting()`）。
+
+**写入权限矩阵**：
+| 表 | PowerSync 可写 | 限制说明 |
+|:---|:--------------|:---------|
+| `books` | ⚠️ 部分可写 | 仅能 UPDATE `metadata_confirmed`, `deleted_at`, `title`, `author` |
+| `reading_progress` | ✅ INSERT/UPDATE | LWW 策略，`updated_at` 比较 |
+| `reading_sessions` | ✅ INSERT/UPDATE | 会话心跳更新 |
+| `notes` | ✅ CRUD | Conflict Copy 策略 |
+| `highlights` | ✅ CRUD | Conflict Copy 策略 |
+| `bookmarks` | ✅ CRUD | 无冲突处理 |
+| `shelves` | ✅ CRUD | 字段级合并 |
+| `shelf_books` | ✅ CRUD | 需要 `user_id` 字段 |
+| `user_settings` | ✅ UPSERT | JSONB 合并策略 |
+
+> **权威来源**：`docker/powersync/sync_rules.yaml`
 
 ---
 
@@ -80,8 +178,8 @@ erDiagram
     users ||--o{ shelves : maintains
     books ||--o{ notes : contains
     books ||--o{ highlights : contains
-    books ||--o{ shelf_items : included_in
-    shelves ||--o{ shelf_items : contains
+    books ||--o{ shelf_books : included_in
+    shelves ||--o{ shelf_books : contains
     notes ||--o{ note_tags : tagged
     tags ||--o{ note_tags : classifies
     ai_conversations ||--o{ ai_messages : contains
@@ -245,7 +343,7 @@ def delete_book(book_id, user_id):
     delete_notes(book_id, user_id)
     delete_highlights(book_id, user_id)
     delete_reading_progress(book_id, user_id)
-    delete_shelf_items(book_id)
+    delete_shelf_books(book_id)
     
     # 2. 判断是引用书还是原书
     if book.canonical_book_id:
@@ -283,12 +381,15 @@ def delete_book(book_id, user_id):
 *   `created_at` (TIMESTAMPTZ)
 *   `updated_at` (TIMESTAMPTZ)
 
-#### `shelf_items`
+#### `shelf_books`
 书架-书籍关联。
-*   `shelf_id` (UUID, PK)
-*   `book_id` (UUID, PK)
-*   `position` (INTEGER, Nullable)
-*   `created_at` (TIMESTAMPTZ)
+*   `id` (UUID, PK)
+*   `shelf_id` (UUID)
+*   `book_id` (UUID)
+*   `user_id` (UUID) - 冗余存储，用于 PowerSync 同步过滤
+*   `sort_order` (INTEGER, Nullable)
+*   `added_at` (TIMESTAMPTZ)
+*   约束：UNIQUE (shelf_id, book_id)
 
 #### `conversion_jobs`
 书籍格式转换任务。
@@ -768,7 +869,7 @@ WITH CHECK (
 为辅助 AI 代码生成与理解，数据库表按以下领域逻辑划分：
 
 *   **User Domain**: `users`, `user_sessions`, `user_stats`, `invites`, `user_reading_goals`, `user_streaks`
-*   **Book Domain**: `books`, `shelves`, `shelf_items`, `conversion_jobs`
+*   **Book Domain**: `books`, `shelves`, `shelf_books`, `conversion_jobs`
 *   **Notes Domain**: `notes`, `highlights`, `tags`, `note_tags`, `highlight_tags`
 *   **Reading Domain**: `reading_progress`, `reading_sessions`, `reading_daily`
 *   **Sync Domain**: `sync_events` *(新增)*
@@ -779,7 +880,7 @@ WITH CHECK (
 
 ### 7.2 表命名规范
 *   **Case**: 全部小写 (lowercase)，使用下划线分隔 (snake_case)。
-*   **Pluralization**: 表名使用复数 (e.g., `users`, `books`)，关联表使用动词或组合名 (e.g., `user_sessions`, `shelf_items`)。
+*   **Pluralization**: 表名使用复数 (e.g., `users`, `books`)，关联表使用动词或组合名 (e.g., `user_sessions`, `shelf_books`)。
 *   **Primary Key**: 统一命名为 `id`，类型为 `UUID`。
 *   **Timestamps**: 所有表必须包含 `created_at`，大部分表包含 `updated_at` (TIMESTAMPTZ)。
 *   **Foreign Keys**: 使用 `singular_table_name_id` (e.g., `user_id`, `book_id`)。
@@ -932,254 +1033,25 @@ COMMENT ON COLUMN books.metadata_confirmed_at IS '元数据确认时间';
 
 ## 11. 客户端 IndexedDB 数据库架构 - [DEPRECATED]
 
-> **STATUS**: **DEPRECATED**. 被 SQLite + PowerSync 替代（见 Section 3）。
-> **保留原因**：迁移期间参考，Phase 5 后移除。
-> **更新日期**：2025-12-08
-> **定位**：旧版客户端离线存储层设计文档。
-
-### 9.1 IndexedDB 数据库总览
-
-| 数据库名称 | 版本 | 用途 | 实现文件 |
-|-----------|------|------|---------|
-| `athena_books` | 1 | 书籍文件、封面、OCR 数据缓存 | `lib/bookStorage.ts` |
-| `athena_ai_chat` | 1 | AI 对话历史本地缓存 | `lib/aiChatStorage.ts` |
-| `athena_sync` | 1 | 同步队列、阅读进度、心跳状态 | `lib/syncStorage.ts` |
-| `athena_notes` | 1 | 笔记和高亮的离线存储 | `lib/notesStorage.ts` |
-| `athena_shelves` | 1 | 书架和书架项的离线存储 | `lib/shelvesStorage.ts` |
-
-### 9.2 `athena_books` 数据库
-
-#### Object Stores
-
-| Store 名称 | Key Path | 索引 | 说明 |
-|-----------|----------|------|------|
-| `book_files` | `bookId` | - | 书籍文件 Blob 缓存 |
-| `book_covers` | `bookId` | - | 封面图片 Blob 缓存 |
-| `book_ocr` | `bookId` | - | OCR 数据缓存 |
-
-#### 数据结构
-
-```typescript
-// book_files
-interface BookFileRecord {
-  bookId: string;
-  blob: Blob;
-  mimeType: string;
-  cachedAt: number;
-}
-
-// book_covers
-interface BookCoverRecord {
-  bookId: string;
-  blob: Blob;
-  cachedAt: number;
-}
-
-// book_ocr
-interface BookOcrRecord {
-  bookId: string;
-  ocrData: OcrPage[];
-  version: string;
-  cachedAt: number;
-}
-```
-
-### 9.3 `athena_ai_chat` 数据库
-
-#### Object Stores
-
-| Store 名称 | Key Path | 索引 | 说明 |
-|-----------|----------|------|------|
-| `conversations` | `id` | `bookId` | 对话记录 |
-
-#### 数据结构
-
-```typescript
-interface ConversationRecord {
-  id: string;
-  bookId: string;
-  messages: Message[];
-  createdAt: number;
-  updatedAt: number;
-}
-```
-
-### 9.4 `athena_sync` 数据库
-
-#### Object Stores
-
-| Store 名称 | Key Path | 索引 | 说明 |
-|-----------|----------|------|------|
-| `sync_queue` | `id` | `type`, `status`, `createdAt` | 待同步操作队列 |
-| `reading_progress` | `bookId` | `syncStatus` | 阅读进度本地存储 |
-| `heartbeat_state` | `bookId` | - | 心跳状态记录 |
-
-#### 数据结构
-
-```typescript
-// sync_queue
-interface SyncQueueItem {
-  id: string;
-  type: 'note' | 'highlight' | 'progress' | 'shelf' | 'bookmark';
-  operation: 'create' | 'update' | 'delete';
-  payload: unknown;
-  status: 'pending' | 'syncing' | 'synced' | 'failed';
-  retryCount: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// reading_progress
-interface ReadingProgressRecord {
-  bookId: string;
-  position: { page: number; offset: number };
-  syncStatus: 'synced' | 'pending' | 'conflict';
-  localVersion: number;
-  serverVersion?: number;
-  updatedAt: number;
-}
-```
-
-### 9.5 `athena_notes` 数据库
-
-#### Object Stores
-
-| Store 名称 | Key Path | 索引 | 说明 |
-|-----------|----------|------|------|
-| `notes` | `id` | `bookId`, `syncStatus`, `updatedAt` | 笔记离线存储 |
-| `highlights` | `id` | `bookId`, `syncStatus`, `page` | 高亮离线存储 |
-
-#### 数据结构
-
-```typescript
-// notes
-interface NoteRecord {
-  id: string;           // UUID (临时 ID 以 'local_' 开头)
-  bookId: string;
-  content: string;
-  page?: number;
-  position?: { start: number; end: number };
-  syncStatus: 'synced' | 'pending' | 'conflict';
-  syncedAt?: number;
-  deletedAt?: number;   // 软删除
-  createdAt: number;
-  updatedAt: number;
-}
-
-// highlights
-interface HighlightRecord {
-  id: string;
-  bookId: string;
-  page: number;
-  text: string;
-  color: string;
-  position: { start: number; end: number };
-  note?: string;
-  syncStatus: 'synced' | 'pending' | 'conflict';
-  syncedAt?: number;
-  deletedAt?: number;
-  createdAt: number;
-  updatedAt: number;
-}
-```
-
-### 9.6 `athena_shelves` 数据库 ✨ 新增
-
-> **添加日期**：2025-12-08
-> **实现文件**：`web/src/lib/shelvesStorage.ts`, `web/src/hooks/useOfflineShelves.ts`
-
-#### Object Stores
-
-| Store 名称 | Key Path | 索引 | 说明 |
-|-----------|----------|------|------|
-| `shelves` | `id` | `syncStatus`, `updatedAt` | 书架离线存储 |
-| `shelf_items` | `[shelfId, bookId]` | `shelfId`, `bookId`, `syncStatus` | 书架项复合键存储 |
-
-#### 数据结构
-
-```typescript
-// shelves store
-interface ShelfRecord {
-  id: string;           // UUID (临时 ID 以 'local_' 开头)
-  name: string;
-  description?: string;
-  coverUrl?: string;
-  position: number;
-  syncStatus: 'synced' | 'pending' | 'conflict';
-  syncedAt?: number;
-  deletedAt?: number;   // 软删除
-  version: number;      // 乐观锁版本号
-  createdAt: number;
-  updatedAt: number;
-}
-
-// shelf_items store
-interface ShelfItemRecord {
-  shelfId: string;
-  bookId: string;
-  position: number;
-  syncStatus: 'synced' | 'pending';
-  addedAt: number;
-  syncedAt?: number;
-}
-```
-
-#### 索引设计
-
-```typescript
-// shelves store 索引
-store.createIndex('syncStatus', 'syncStatus', { unique: false });
-store.createIndex('updatedAt', 'updatedAt', { unique: false });
-
-// shelf_items store 索引 (复合主键)
-store.createIndex('shelfId', 'shelfId', { unique: false });
-store.createIndex('bookId', 'bookId', { unique: false });
-store.createIndex('syncStatus', 'syncStatus', { unique: false });
-```
-
-#### 与服务端表的对应关系
-
-| IndexedDB 字段 | PostgreSQL 字段 | 说明 |
-|---------------|----------------|------|
-| `shelves.id` | `shelves.id` | UUID 主键 |
-| `shelves.name` | `shelves.name` | 书架名称 |
-| `shelves.description` | `shelves.description` | 书架描述 |
-| `shelves.position` | `shelves.sort_order` | 排序位置 |
-| `shelves.version` | `shelves.version` | 乐观锁版本号 |
-| `shelf_items.shelfId` | `shelf_items.shelf_id` | 书架 ID 外键 |
-| `shelf_items.bookId` | `shelf_items.book_id` | 书籍 ID 外键 |
-| `shelf_items.position` | `shelf_items.position` | 书籍在书架中的位置 |
-
-### 9.7 IndexedDB 迁移策略
-
-当需要升级 IndexedDB schema 时：
-
-1. **版本号递增**：修改 `openDB()` 调用中的版本号
-2. **`upgrade` 回调**：在回调中处理 schema 变更
-3. **数据迁移**：如需迁移旧数据，在 `upgrade` 中完成
-
-```typescript
-// 示例：从 v1 升级到 v2
-const db = await openDB('athena_shelves', 2, {
-  upgrade(db, oldVersion, newVersion, transaction) {
-    if (oldVersion < 2) {
-      // 新增字段或索引
-      const store = transaction.objectStore('shelves');
-      store.createIndex('newField', 'newField');
-    }
-  }
-});
-```
-
-### 9.8 存储配额管理
-
-| 浏览器 | 默认配额 | 说明 |
-|-------|---------|------|
-| Chrome | 磁盘空间的 60% | 持久存储需用户授权 |
-| Firefox | 磁盘空间的 50% | 按域隔离 |
-| Safari | 1GB | 超过需用户授权 |
-
-**LRU 清理策略**（待实现）：
-- 优先清理 `athena_books.book_files`（可重新下载）
-- 保留 `athena_sync`、`athena_notes`（用户数据）
-- 监控 `navigator.storage.estimate()` 预警
+> **⚠️ STATUS**: **DEPRECATED**. 已被 SQLite + PowerSync 替代。
+> 
+> **历史背景**：雅典娜早期使用 Dexie.js + IndexedDB 作为客户端离线存储。  
+> **当前架构**：App-First 架构（ADR-007）已将客户端存储迁移至 SQLite + PowerSync。
+> 
+> **现行方案**：
+> - **同步表**：参见 Section 3（PowerSync 同步表清单）
+> - **本地缓存表**：`local_book_files`、`local_ocr_data`、`local_cover_cache`（见 Section 3.2）
+> - **SQLite Schema**：`web/src/lib/powersync/schema.ts`
+> 
+> **迁移参考**：
+> - 首次加载时 `MigrationService` 会自动将 IndexedDB 数据迁移至 SQLite
+> - 迁移完成后 IndexedDB 数据库会被删除
+> 
+> **原有 IndexedDB 数据库**（仅供历史参考）：
+> | 数据库名称 | 用途 | 迁移目标 |
+> |-----------|------|---------|
+> | `athena_books` | 书籍文件缓存 | `local_book_files` (SQLite) |
+> | `athena_ai_chat` | AI 对话历史 | `ai_conversations` (PostgreSQL) |
+> | `athena_sync` | 同步队列 | PowerSync 内置队列 |
+> | `athena_notes` | 笔记/高亮 | `notes`/`highlights` (SQLite) |
+> | `athena_shelves` | 书架 | `shelves`/`shelf_books` (SQLite) |

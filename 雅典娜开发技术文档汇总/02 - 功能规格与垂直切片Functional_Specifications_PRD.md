@@ -1,5 +1,8 @@
 # 02_Functional_Specifications_PRD.md
 
+> **版本**：v2.1 (App-First Edition)
+> **定位**：产品功能需求文档（PRD），定义各功能模块的实现规格与 App-First 架构约束。
+
 ## 1. 核心功能概览
 - User & Auth（登录/注册/JWT）
 - Books & Shelves（上传/列表/OCR 触发/书架）
@@ -14,12 +17,12 @@
 
 1. **数据总线**：所有业务数据必须遵循 `UI → SQLite (PowerSync SDK) → PowerSync Service → PostgreSQL` 的闭环。前端组件禁止直接依赖 REST API 渲染。
 2. **本地优先写入**：CUD 操作通过 PowerSync Repository 写入本地 SQLite 并由 SDK 自动上传，REST API 仅保留鉴权、计费、AI SSE、上传初始化等场景。
-3. **Feature Flag**：`APP_FIRST_ENABLED` 控制 Dexie/PowerSync 双路运行，确保灰度发布与快速回滚。
+3. **Feature Flag**：`APP_FIRST_ENABLED` 控制 PowerSync Provider 注入（已启用）。
 4. **冲突策略**：阅读进度使用 LWW，笔记/高亮采用 Conflict Copy，书架/设置字段按列合并。
 5. **端差异化**：
   * Mobile：通过 `capacitor-community/sqlite` 调用原生 SQLite 引擎。
   * Web：通过 `sqlite-wasm` + OPFS 提供一致体验。
-6. **观测与回滚**：PowerSync Service 必须接入 Prometheus/Grafana，并提供双写校验脚本以对比 Dexie 与 SQLite 数据。
+6. **观测**：PowerSync Service 必须接入 Prometheus/Grafana 监控。
 
 ## 2. 垂直切片详情（Vertical Slices）
 
@@ -88,9 +91,9 @@
 - `shelves`：
   - 字段：`id (UUID, PK)`、`user_id (UUID, FK users.id)`、`name (TEXT)`、`parent_shelf_id (UUID, NULLABLE, FK shelves.id)`、`updated_at (TIMESTAMPTZ)`、`version (INT)`。
   - 关系：`users (1) — (N) shelves`；支持层级结构（父子架）。
-- `shelf_items`（关联表）：
-  - 字段：`book_id (UUID, FK books.id)`、`shelf_id (UUID, FK shelves.id)`、`position (INT)`、`created_at (TIMESTAMPTZ)`。
-  - 约束：主键（`book_id`, `shelf_id`）；`ON CONFLICT DO NOTHING` 用于去重。
+- `shelf_books`（关联表）：
+  - 字段：`id (UUID, PK)`、`book_id (UUID, FK books.id)`、`shelf_id (UUID, FK shelves.id)`、`user_id (UUID, FK users.id)`、`sort_order (INT)`、`added_at (TIMESTAMPTZ)`。
+  - 约束：唯一约束（`book_id`, `shelf_id`）；`ON CONFLICT DO NOTHING` 用于去重。
 > Status: Backend Implemented（Books 上传、转换、封面提取、元数据提取）；Shelves = Implemented。
 
 #### B. 后端逻辑与 API 契约（Backend & Contract）
@@ -98,7 +101,7 @@
 - 规则：
   - 上传前校验配额；完成后落库与索引同步；支持 `Idempotency-Key`。
   - @if (`user_stats.is_readonly`)：
-    - `POST /books/upload_init` → 403 `QUOTA_EXCEEDED`
+    - `POST /books/upload_init` → 403 `quota_exceeded`
     - Shelves 全量 CRUD 禁止（`POST/PUT/PATCH/DELETE` 返回 403）
 
 #### B.1 书籍上传与处理流水线（Upload & Processing Pipeline）
@@ -232,6 +235,80 @@ POST /api/v1/books/dedup_reference
 | 阅读进度 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
 | 书架关联 | 用户私有 | ❌ 立即删除 | ❌ 立即删除 |
 
+#### B.1.3 最近删除功能（Recently Deleted）
+
+**功能概述**：
+- 用户删除书籍后，书籍进入"最近删除"状态（软删除）
+- 书籍保留 30 天，期间可恢复
+- 超过 30 天后由后台任务自动清理
+
+**页面入口**：侧边栏 → 最近删除
+
+**页面功能**：
+| 功能 | 操作 | 业务逻辑 |
+|-----|------|---------|
+| 查看已删除书籍 | 显示列表 | 查询 `deleted_at IS NOT NULL` |
+| 恢复书籍 | 单选/批量 | 设置 `deleted_at = NULL` |
+| 永久删除 | 单选/批量 | 见下方详细逻辑 |
+| 清空全部 | 批量 | 对所有书籍执行永久删除 |
+
+**⚠️ 永久删除业务逻辑（仅删除私人数据）**：
+
+> **重要决策**：永久删除**不会**删除共享资源（MinIO 文件、OCR 结果、向量索引），  
+> 因为其他用户可能通过秒传引用了相同文件。只删除当前用户的私人数据。
+
+```
+用户点击"永久删除"
+    ↓
+1. 删除私人数据（立即执行）
+    ├─ notes: DELETE WHERE book_id = :id AND user_id = :uid
+    ├─ highlights: DELETE WHERE book_id = :id AND user_id = :uid
+    ├─ bookmarks: DELETE WHERE book_id = :id AND user_id = :uid
+    ├─ reading_progress: DELETE WHERE book_id = :id AND user_id = :uid
+    ├─ reading_sessions: DELETE WHERE book_id = :id AND user_id = :uid
+    └─ shelf_books: DELETE WHERE book_id = :id AND user_id = :uid
+    ↓
+2. 更新书籍记录
+    └─ books: 物理删除记录 (DELETE WHERE id = :id)
+    ↓
+3. 更新引用计数（如果是引用书）
+    └─ 原书 storage_ref_count -= 1
+    ↓
+4. 不执行的操作（共享资源保护）
+    ├─ ❌ 不删除 MinIO 文件 (minio_key)
+    ├─ ❌ 不删除封面 (cover_image_key)
+    ├─ ❌ 不删除 OCR 结果 (ocr_result_key)
+    └─ ❌ 不删除向量索引 (OpenSearch)
+```
+
+**共享资源清理规则**（由后台定时任务执行）：
+```sql
+-- 每日凌晨执行，清理孤立的共享资源
+DELETE FROM books_storage_cleanup_queue
+WHERE content_sha256 IN (
+    SELECT content_sha256 
+    FROM books 
+    WHERE deleted_at < NOW() - INTERVAL '30 days'
+    GROUP BY content_sha256
+    HAVING COUNT(*) = SUM(CASE WHEN deleted_at IS NOT NULL THEN 1 ELSE 0 END)
+);
+-- 即：只有当该 SHA256 的所有书籍都已软删除超过30天，才清理存储
+```
+
+**API 端点**：
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/api/v1/books/deleted` | GET | 获取已删除书籍列表 |
+| `/api/v1/books/{id}/restore` | POST | 恢复单本书籍 |
+| `/api/v1/books/restore` | POST | 批量恢复 `{ids: []}` |
+| `/api/v1/books/{id}/permanent` | DELETE | 永久删除单本 |
+| `/api/v1/books/permanent` | DELETE | 批量永久删除 `{ids: []}` |
+
+**前端实现要点**：
+1. 通过 PowerSync 查询 `SELECT * FROM books WHERE deleted_at IS NOT NULL`
+2. 恢复操作：PowerSync UPDATE `deleted_at = NULL`
+3. 永久删除：**必须调用 REST API**（非 PowerSync），因为需要处理私人数据和引用计数
+
 #### B.2 OCR 与向量索引触发机制（⚠️ 重要架构决策）
 
 **核心原则**：
@@ -323,9 +400,9 @@ POST /api/v1/books/{book_id}/ocr
 │     "queue_position": 3,
 │     "estimated_minutes": 15
 │   }
-├─ 响应 403：QUOTA_EXCEEDED (OCR 配额不足)
-├─ 响应 400：ALREADY_DIGITALIZED (confidence >= 0.8，已是文字型)
-└─ 响应 400：OCR_MAX_PAGES_EXCEEDED (超过 2000 页)
+├─ 响应 403：quota_exceeded (OCR 配额不足)
+├─ 响应 400：already_digitalized (confidence >= 0.8，已是文字型)
+└─ 响应 400：ocr_max_pages_exceeded (超过 2000 页)
 ```
 
 **OCR 复用机制（假 OCR）**：
@@ -580,7 +657,7 @@ const menuItems = [
 - 权限字段：`user_id`；并发字段：`version`。
 
 #### B. 后端逻辑与 API 契约（Backend & Contract）
-- **PowerSync Surface**：`download_config` 同步 `notes`, `highlights`, `tags`, `note_tags`, `highlight_tags`；`upload_config` 允许携带 `device_id`, `_updated_at`, `_deleted` 字段的 UPSERT。
+- **PowerSync Surface**：`download_config` 同步 `notes`, `highlights`, `tags`, `note_tags`, `highlight_tags`；`upload_config` 允许携带 `device_id`, `updated_at`, `is_deleted` 字段的 UPSERT。
 - **REST 端点**：`/api/v1/notes/*`, `/api/v1/highlights/*`, `/api/v1/tags/*` 仅保留下列用途：管理员工具、外部集成、PowerSync 失效时的应急回退。
 - **一致性规则**：
   - 只读锁依旧通过 RLS/触发器阻断写入；PowerSync 上传失败会返回对应的 4xx 代码。

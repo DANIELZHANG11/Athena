@@ -1,7 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { useState } from 'react'
-import i18n, { tolgee } from '../../i18n'
+import i18n from '../../i18n'
 import { useTolgeeLanguages } from '../../hooks/useTolgeeLanguages'
 import NavItem from './NavItem'
 
@@ -33,7 +33,7 @@ export default function MainLayout() {
             <NavItem to="/search" icon={<Search size={18} />} label="" />
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-            <select value={i18n.language} onChange={(e) => { const v = e.target.value; const lang = (langs.find((l) => l.code === v) || { raw: v }); i18n.changeLanguage(v); tolgee?.changeLanguage((lang as any).raw) }} style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
+            <select value={i18n.language} onChange={(e) => { const v = e.target.value; i18n.changeLanguage(v) }} style={{ padding: 6, borderRadius: 8, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)' }}>
               {(langs.length ? langs : [{ code: 'zh-CN', name: '中文' }, { code: 'en-US', name: 'English' }]).map((l) => (
                 <option key={l.code} value={l.code}>{l.name || l.code}</option>
               ))}

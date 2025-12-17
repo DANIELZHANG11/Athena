@@ -4,9 +4,7 @@
  * 书籍元数据编辑对话框
  * 允许用户修改书籍标题、作者等信息
  * 
- * **离线优先**：
- * - 离线时保存到本地缓存并加入同步队列
- * - 在线时立即同步到服务器
+ * 使用后端 API 修改，PowerSync 自动同步更新到本地
  */
 
 import { useState, useEffect } from 'react'
@@ -14,7 +12,7 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { FileText, Loader2, X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useBooksData } from '@/hooks/useBooksData'
+import { useAuthStore } from '@/stores/auth'
 
 interface BookMetadataDialogProps {
   bookId: string
@@ -38,8 +36,8 @@ export default function BookMetadataDialog({
   const [author, setAuthor] = useState(initialAuthor || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const { updateBook } = useBooksData()
+  
+  const accessToken = useAuthStore(s => s.accessToken)
 
   // 重置表单当对话框打开时
   useEffect(() => {
@@ -65,10 +63,27 @@ export default function BookMetadataDialog({
     }
 
     try {
-      // 使用 PowerSync 更新 (本地写入，自动同步)
-      await updateBook(bookId, newMetadata)
+      // 使用后端 API 更新元数据
+      const token = accessToken || localStorage.getItem('access_token') || ''
+      const response = await fetch(`/api/v1/books/${bookId}/metadata`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: newMetadata.title,
+          author: newMetadata.author,
+          confirmed: true,
+        }),
+      })
 
-      console.log('[BookMetadataDialog] Updated book metadata:', bookId)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || errorData.message || `更新失败: ${response.status}`)
+      }
+
+      console.log('[BookMetadataDialog] Updated book metadata via API:', bookId)
 
       onSuccess?.(newMetadata)
       onClose()

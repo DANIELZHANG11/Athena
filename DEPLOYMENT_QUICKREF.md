@@ -13,10 +13,9 @@
 | SeaweedFS S3 | 8333 | 48333 | S3 对象存储 API | http://localhost:48333 |
 | SeaweedFS Admin | 8888 | 48888 | SeaweedFS 管理界面 | http://localhost:48888 |
 | OpenSearch | 9200 | 49200 | 全文搜索引擎 | http://localhost:49200 |
-| **同步 & 翻译** | | | | |
+| **同步** | | | | |
 | PowerSync | 8090 | 48090 | App-First 同步引擎 | http://localhost:48090 |
 | PowerSync Metrics | 9090 | 49091 | PowerSync 监控指标 | http://localhost:49091/metrics |
-| Tolgee | 8080 | 48085 | 多语言翻译平台 | http://localhost:48085 |
 | **电子书转换** | | | | |
 | Calibre UI | 8080 | 48081 | Calibre 界面 | http://localhost:48081 |
 | Calibre Web | 8081 | 48082 | Calibre Web 服务 | http://localhost:48082 |
@@ -38,7 +37,6 @@
 ├── seaweed/               # SeaweedFS 对象存储
 ├── calibre_books/         # Calibre 电子书库
 ├── calibre_config/        # Calibre 配置文件
-├── tolgee/                # Tolgee 翻译数据库
 └── nginx_logs/            # Nginx 日志（生产环境）
 ```
 

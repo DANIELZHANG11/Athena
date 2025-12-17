@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery } from '@powersync/react'
+import { usePowerSyncState } from '@/lib/powersync'
 
 export interface BookProcessingStatus {
   bookId: string
@@ -67,10 +68,16 @@ export function useUploadPostProcessing(options: UseUploadPostProcessingOptions 
     onCoverReadyRef.current = onCoverReady
   }, [onStatusUpdate, onMetadataReady, onImagePdfDetected, onCoverReady])
 
+  const { isInitialized } = usePowerSyncState()
+
   // 使用 PowerSync 实时查询书籍状态
+  const query = isInitialized && monitoredBookId
+    ? 'SELECT * FROM books WHERE id = ?'
+    : 'SELECT * FROM books WHERE 1=0'
+    
   const { data: books } = useQuery(
-    'SELECT * FROM books WHERE id = ?',
-    [monitoredBookId || '']
+    query,
+    isInitialized && monitoredBookId ? [monitoredBookId] : []
   )
   
   const book = books?.[0]

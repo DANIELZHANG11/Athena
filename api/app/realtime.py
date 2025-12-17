@@ -60,7 +60,8 @@ async def ws_note(websocket: WebSocket, note_id: str):
         await websocket.close()
         return
     try:
-        payload = jwt.decode(token, AUTH_SECRET)
+        # 【重要】verify_aud=False 因为 token 包含 aud: authenticated (PowerSync 要求)
+        payload = jwt.decode(token, AUTH_SECRET, options={"verify_aud": False})
         user_id = payload["sub"]
     except Exception:
         await websocket.send_text(

@@ -4,7 +4,7 @@
 > **发布日期**: 2025-12-13
 > **最后更新**: 2025-12-13
 > **作者**: 架构委员会 (Daniel, Infra, AI Assistants)
-> **状态**: ✅ Completed
+> **状态**: 
 
 ---
 
@@ -83,7 +83,7 @@
 | :--- | :--- | :--- | :--- |
 | `web/src/sw.ts` | `BackgroundSyncPlugin` 相关代码 (第 25、341-406 行) | ⚠️ 部分删除 | PowerSync 接管后台同步 |
 | `web/src/sw.ts` | `shouldBackgroundSync` 函数及调用 | ⚠️ 部分删除 | PowerSync 接管后台同步 |
-| (保留) | CacheFirst/NetworkFirst 等静态资源缓存策略 | ✅ 保留 | PWA 功能需要 |
+| (保留) | CacheFirst/NetworkFirst 等静态资源缓存策略 | ⚠️ 部分删除 | PWA 功能需要 |
 
 ### 4.4 前端 - Repo 层与测试
 | 文件路径 | 说明 | 状态 | 删除条件 |
@@ -106,9 +106,9 @@
 ### 4.6 文档
 | 文件/章节 | 状态 | 说明 |
 | :--- | :--- | :--- |
-| `App-First改造计划.md` | ✅ 已废弃 | 改为引用本计划 |
-| `App-First完全体改造计划.md` | ✅ 已废弃 | 改为引用本计划 |
-| `03_System_Architecture` 中 ADR-006 | ✅ 已标记 DEPRECATED | 被 ADR-007 取代 |
+| `App-First改造计划.md` | ⚠️ 部分删除 | 改为引用本计划 |
+| `App-First完全体改造计划.md` | ⚠️ 部分删除 | 改为引用本计划 |
+| `03_System_Architecture` 中 ADR-006 | ⚠️ 部分删除 | 被 ADR-007 取代 |
 
 **删除执行准则**：
 1. 先标记 `@deprecated` + Feature Flag 保护。
@@ -121,26 +121,26 @@
 
 ## 5. 分阶段实施计划 (Phased Implementation Plan)
 
-### Phase 0 - 准备 (Week 0) ✅ 已完成
+### Phase 0 - 准备 (Week 0) 待完成
 - [x] 建立 Feature Flag (`APP_FIRST_ENABLED`) - `web/src/config/featureFlags.ts`
 - [x] 编写 PowerSync 环境变量模板 (`.env.example`) - 前端和根目录均已更新
 - [x] 评估移动端 Capacitor 插件兼容性 - 详见 `Capacitor插件兼容性评估报告.md`
 - [x] 更新技术文档 (本计划 + 相关章节)
 
-### Phase 1 - 基础设施 (Week 1) ✅ 已完成
+### Phase 1 - 基础设施 (Week 1) 待完成
 - [x] 在 `docker-compose.yml` 中新增 `powersync` 服务
 - [x] 准备 `powersync.yaml` 与 `sync_rules.yaml` 配置文件
 - [x] 编写部署手册章节 (07_DevOps) - Section 1.3 已更新
 - [ ] 搭建 PowerSync 本地环境并联通 PostgreSQL (待验证)
 
-### Phase 2 - 数据层迁移 (Week 2) ✅ 已完成
+### Phase 2 - 数据层迁移 (Week 2) 待完成
 - [x] 在 `web/src/lib/powersync/` 下创建 SQLite schema、provider、hooks。
 - [x] 引入 `@powersync/web` (1.30.0), `@powersync/react` (1.8.2), `@journeyapps/wa-sqlite` (1.4.1) 依赖。
 - [x] 实现基础 Live Query Hook (`useBooks`, `useNotes`, `useHighlights`, `useReadingProgress`, `useShelves`) 并以 Flag 控制切换。
 - [x] 保留 Dexie 作为 fallback，确保回退路径畅通。
 
 **已创建文件**：
-- `web/src/lib/powersync/schema.ts` - SQLite 表结构 (10 同步表 + 3 本地表)
+- `web/src/lib/powersync/schema.ts` - SQLite 表结构 (9 同步表 + 3 本地表)
 - `web/src/lib/powersync/PowerSyncProvider.tsx` - React Provider + AthenaConnector
 - `web/src/lib/powersync/hooks/useBooks.ts` - 书籍查询/写入
 - `web/src/lib/powersync/hooks/useNotes.ts` - 笔记查询/写入
@@ -150,7 +150,7 @@
 - `web/src/lib/powersync/hooks/index.ts` - Hooks 统一导出
 - `web/src/lib/powersync/index.ts` - 模块统一导出
 
-### Phase 3 - 业务 Hook 替换 (Week 3-4) 🚧 进行中
+### Phase 3 - 业务 Hook 替换 (Week 3-4) 待完成
 - [x] 在 `App.tsx` 中集成 `PowerSyncProvider`
 - [x] 创建统一数据 Hooks（**不保留 Dexie 回退**）：
   - `web/src/hooks/useBooksData.ts` - 书籍列表/详情
@@ -172,7 +172,7 @@
 - [ ] 新增数据写入 API：先写 SQLite，再由 PowerSync 自动上传。
 - [ ] 编写回归测试，验证断网/重连行为。
 
-### Phase 4 - 后端 API 清理 (Week 5) ✅ 已完成
+### Phase 4 - 后端 API 清理 (Week 5) 待完成
 - [x] 移除 `/api/v1/sync/*` （参见 4.5 节）：
   - 删除 `api/app/sync.py` 整个文件
   - 清理 `api/app/search_sync.py` 心跳联动部分
@@ -184,7 +184,7 @@
 - [x] 从 `api/app/main.py` 中注册 powersync 路由
 - [x] 新增数据库迁移脚本 (`0126_add_powersync_columns.py`)
 
-### Phase 5 - 验收与收尾 (Week 6) ✅ 已完成
+### Phase 5 - 验收与收尾 (Week 6) 待完成
 - [x] App-First 已默认启用（Feature Flag 简化）
 - [x] 删除 Dexie/心跳遗留代码
 - [x] 更新所有技术文档章节 (00~08)
@@ -198,21 +198,21 @@
 
 | 功能 | 旧方案 (Dexie/Heartbeat) | 新方案 (PowerSync/SQLite) | 状态 |
 | :--- | :--- | :--- | :--- |
-| 书籍列表 | API → Dexie 缓存 (`libraryStorage.ts`) | SQLite Live Query | ✅ 已迁移 |
-| 阅读进度同步 | Heartbeat LWW (`useReadingProgress.ts`) | PowerSync LWW | ✅ 已迁移 |
-| 笔记/高亮 | Heartbeat + 冲突副本 (`useOfflineNotes*.ts`) | PowerSync Conflict Copy | ✅ 已迁移 |
-| 书架管理 | Dexie 队列 + Heartbeat (`useOfflineShelves*.ts`) | SQLite + PowerSync Upload | ✅ 已迁移 |
-| 本地书籍文件 | Dexie Blob (`bookStorage.ts`) | IndexedDB (OPFS) + SQLite meta | ✅ 已迁移 |
-| 本地书籍缓存 | `useLocalBookCache.ts` | `useBookFileCache` + IndexedDB | ✅ 已迁移 |
-| Service Worker 背景同步 | Workbox + Queue (`sw.ts`) | PowerSync SDK (内建重试) | ✅ 已迁移 |
-| OCR 状态更新 | 事件 + Heartbeat | PowerSync 事件 | ✅ 已迁移 |
-| Dashboard 数据 | `homeStorage.ts` | SQLite Live Query | ✅ 已迁移 |
-| 用户设置 | `settingsRepo.ts` | SQLite + PowerSync | ✅ 已迁移 |
-| 阅读会话 | `reader.py` `/heartbeat` | PowerSync 直接同步 | ✅ 已迁移 |
-| 冲突检测 | `useConflictDetection.ts` | PowerSync 内建冲突处理 | ✅ 已迁移 |
-| 同步队列状态 | `syncQueue.ts` + `SyncQueueManager` | PowerSync SDK 状态 | ✅ 已迁移 |
+| 书籍列表 | API → Dexie 缓存 (`libraryStorage.ts`) | SQLite Live Query | 待完成 |
+| 阅读进度同步 | Heartbeat LWW (`useReadingProgress.ts`) | PowerSync LWW | 待完成 |
+| 笔记/高亮 | Heartbeat + 冲突副本 (`useOfflineNotes*.ts`) | PowerSync Conflict Copy | 待完成 |
+| 书架管理 | Dexie 队列 + Heartbeat (`useOfflineShelves*.ts`) | SQLite + PowerSync Upload | 待完成 |
+| 本地书籍文件 | Dexie Blob (`bookStorage.ts`) | IndexedDB (OPFS) + SQLite meta | 待完成 |
+| 本地书籍缓存 | `useLocalBookCache.ts` | `useBookFileCache` + IndexedDB | 待完成 |
+| Service Worker 背景同步 | Workbox + Queue (`sw.ts`) | PowerSync SDK (内建重试) | 待完成 |
+| OCR 状态更新 | 事件 + Heartbeat | PowerSync 事件 | 待完成 |
+| Dashboard 数据 | `homeStorage.ts` | SQLite Live Query | 待完成 |
+| 用户设置 | `settingsRepo.ts` | SQLite + PowerSync | 待完成 |
+| 阅读会话 | `reader.py` `/heartbeat` | PowerSync 直接同步 | 待完成 |
+| 冲突检测 | `useConflictDetection.ts` | PowerSync 内建冲突处理 | 待完成 |
+| 同步队列状态 | `syncQueue.ts` + `SyncQueueManager` | PowerSync SDK 状态 | 待完成 |
 
-> ✅ 所有功能已完成迁移，PowerSync 架构全面生效。
+>  所有功能待完成。
 
 ---
 
@@ -233,7 +233,7 @@
    - 单元测试覆盖率 ≥ 80%
    - 离线/在线切换 E2E 场景必须通过
    - SQLite schema 迁移脚本需通过自动化测试
-   - **✅ 已执行 (2025-12-14)**: 标记所有 Web-First API 测试为 skip，避免架构混乱
+   - **待完成 (2025-12-14)**: 标记所有 Web-First API 测试为 skip，避免架构混乱
 3. **安全门禁**: PowerSync Service 鉴权必须复用现有 JWT/Infisical；禁止裸凭证。
 4. **性能门禁**: 同步延迟 (端到端) ≤ 5s；客户端 DB 初始化 < 500ms。
 5. **可观测性**: 必须在 Prometheus/Grafana 中新增 PowerSync Dashboard。
@@ -285,7 +285,123 @@
 
 ---
 
-## 10. 风险登记簿 (Risk Register)
+## 10. 后端代码重构计划 (Backend Refactoring Plan)
+
+> **新增日期**: 2025-12-16
+> **状态**: 📋 计划中
+> **目标**: 将 3325 行的 `books.py` 按职责拆分为多个服务模块
+
+### 10.1 当前问题分析
+
+`api/app/books.py` 包含 **39 个 API 端点**，代码量 **3325 行**，职责严重混杂：
+
+| 职责领域 | 端点数 | 行数（估算） | 问题 |
+|:--------|:------|:------------|:-----|
+| 上传/去重 | 4 | ~350 | upload_init, upload_complete, dedup_reference, upload_proxy |
+| OCR 处理 | 8 | ~900 | ocr, ocr/full, ocr/quota, ocr/status, ocr/page, ocr/search 等 |
+| 格式转换 | 5 | ~250 | convert, presign_put_converted, set_converted, jobs/* |
+| 封面/内容 | 4 | ~200 | cover, content, presign, processing/status |
+| 书籍 CRUD | 5 | ~400 | list, detail, register, delete, metadata patch |
+| 书架管理 | 7 | ~300 | shelves/* (创建、列表、更新、删除、添加书籍) |
+| 其他 | 6 | ~200 | deep_analyze, book_shelves 等 |
+
+### 10.2 重构目标结构
+
+```
+api/app/
+├── books/                      # 新增目录
+│   ├── __init__.py            # 统一导出 router
+│   ├── router.py              # 组合所有子路由
+│   ├── upload.py              # 上传相关 (~350行)
+│   │   ├── upload_init
+│   │   ├── upload_complete
+│   │   ├── dedup_reference
+│   │   └── upload_proxy
+│   ├── ocr.py                 # OCR 相关 (~900行)
+│   │   ├── get_book_ocr
+│   │   ├── get_ocr_full
+│   │   ├── get_ocr_quota
+│   │   ├── trigger_ocr
+│   │   ├── ocr_status
+│   │   ├── ocr_page
+│   │   └── ocr_search
+│   ├── conversion.py          # 格式转换 (~250行)
+│   │   ├── convert
+│   │   ├── presign_put_converted
+│   │   ├── presign_get_source
+│   │   ├── set_converted
+│   │   └── convert/output
+│   ├── content.py             # 内容访问 (~200行)
+│   │   ├── get_cover
+│   │   ├── get_content
+│   │   ├── presign
+│   │   └── processing_status
+│   ├── crud.py                # 书籍 CRUD (~400行)
+│   │   ├── list_books
+│   │   ├── get_book
+│   │   ├── register_book
+│   │   ├── delete_book
+│   │   ├── patch_metadata
+│   │   └── patch_book
+│   └── jobs.py                # 转换任务管理 (~200行)
+│       ├── list_jobs
+│       ├── complete_job
+│       ├── fail_job
+│       └── simulate_job
+├── shelves/                   # 新增目录
+│   ├── __init__.py
+│   ├── router.py
+│   └── crud.py               # 书架 CRUD (~300行)
+│       ├── create_shelf
+│       ├── list_shelves
+│       ├── update_shelf
+│       ├── delete_shelf
+│       ├── add_book_to_shelf
+│       ├── list_shelf_books
+│       └── remove_book_from_shelf
+├── services/                  # 已存在，增加服务
+│   ├── book_service.py       # 书籍业务逻辑抽取
+│   ├── ocr_service.py        # OCR 业务逻辑抽取
+│   └── conversion_service.py # 转换业务逻辑抽取
+└── books.py                   # 重定向/兼容层（最终删除）
+```
+
+### 10.3 迁移步骤
+
+| 阶段 | 任务 | 依赖 | 状态 |
+|:----|:-----|:----|:-----|
+| **Step 1** | 创建 `api/app/books/` 目录结构 | 无 | 📋 待开始 |
+| **Step 2** | 提取上传逻辑到 `books/upload.py` | Step 1 | 📋 待开始 |
+| **Step 3** | 提取 OCR 逻辑到 `books/ocr.py` | Step 2 | 📋 待开始 |
+| **Step 4** | 提取转换逻辑到 `books/conversion.py` | Step 3 | 📋 待开始 |
+| **Step 5** | 提取内容访问到 `books/content.py` | Step 4 | 📋 待开始 |
+| **Step 6** | 提取 CRUD 到 `books/crud.py` | Step 5 | 📋 待开始 |
+| **Step 7** | 分离书架到 `shelves/` 目录 | Step 6 | 📋 待开始 |
+| **Step 8** | 更新 `main.py` 路由注册 | Step 7 | 📋 待开始 |
+| **Step 9** | 删除旧 `books.py` | Step 8 | 📋 待开始 |
+| **Step 10** | 更新测试和文档 | Step 9 | 📋 待开始 |
+
+### 10.4 迁移原则
+
+1. **保持 API 契约不变**：URL 路径、请求/响应格式完全不变
+2. **逐步提取**：每次只迁移一个功能领域，单独 PR
+3. **测试驱动**：每个 PR 必须包含对应的测试覆盖
+4. **兼容层**：在旧 `books.py` 保留重定向，直到所有调用方更新
+5. **共享工具**：公共函数（如 `_quick_confidence`）移到 `services/`
+
+### 10.5 预期收益
+
+| 指标 | 当前 | 重构后 |
+|:----|:-----|:------|
+| 单文件最大行数 | 3325 行 | < 500 行 |
+| 职责耦合度 | 高（所有功能混合） | 低（按领域分离） |
+| 测试覆盖难度 | 高 | 低（可独立测试） |
+| 代码审查效率 | 低（改动影响大） | 高（变更隔离） |
+| 新功能开发速度 | 慢（需理解全文件） | 快（只需关注对应模块） |
+
+---
+
+## 11. 风险登记簿 (Risk Register)
 
 | 风险 | 影响 | 概率 | 缓解措施 |
 | :--- | :--- | :--- | :--- |

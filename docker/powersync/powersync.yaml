@@ -1,82 +1,36 @@
-# PowerSync Service 配置
+# PowerSync Service 配置 - Open Edition
 # @see https://docs.powersync.com/self-hosted/configuration
-# @see 09 - APP-FIRST架构改造计划.md - Phase 1
-#
-# 注意：这是开发环境配置，生产环境需要调整安全设置
 
-# 服务监听配置
-api:
-  host: 0.0.0.0
-  port: 8090
+# 复制配置
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATABASE_URI
+      # 禁用 SSL（容器内部通信）
+      sslmode: disable
 
-# 数据库连接配置
-# 使用直连 PostgreSQL（不经过 PgBouncer，因为 PowerSync 需要 LISTEN/NOTIFY）
-database:
-  type: postgresql
-  host: postgres
-  port: 5432
-  database: athena
-  username: athena
-  password: ${POSTGRES_PASSWORD}
-  
-  # 连接池设置
-  pool:
-    max: 10
-    min: 2
-    idle_timeout: 60000
-  
-  # SSL 设置（开发环境禁用）
-  ssl:
-    enabled: false
-
-# JWT 认证配置
-# PowerSync 复用现有的 JWT Token
-auth:
-  jwt:
-    # 验证算法
-    algorithm: HS256
-    
-    # 密钥（与后端保持一致）
-    secret: ${POWERSYNC_JWT_SECRET}
-    
-    # Token 中的用户 ID 字段
-    user_id_claim: sub
-    
-    # Token 中的设备 ID 字段
-    device_id_claim: device_id
-    
-    # 允许的 issuer（可选）
-    # issuer: athena-api
-
-# 同步规则配置
+# 同步规则
 sync_rules:
-  # 引用外部规则文件
-  file: /config/sync_rules.yaml
+  path: /app/sync_rules.yaml
 
-# 日志配置
-logging:
-  level: ${POWERSYNC_LOG_LEVEL:-info}
-  format: json
+# JWT 认证 - 使用 Supabase 风格 HS256 对称密钥
+client_auth:
+  supabase: true
+  supabase_jwt_secret: !env PS_SUPABASE_JWT_SECRET
 
+# 存储配置 - 使用 MongoDB
+storage:
+  type: mongodb
+  uri: !env PS_MONGO_URI
+
+# API 监听
+api:
+  port: 8080
+  
 # 指标监控
-metrics:
-  enabled: true
-  port: 9090
-  path: /metrics
+telemetry:
+  disable_telemetry_sharing: true
+  internal_service_endpoint: http://127.0.0.1:9090
 
-# 健康检查
-health:
-  enabled: true
-  path: /health
-
-# 上传控制
-upload:
-  enabled: ${POWERSYNC_UPLOAD_ENABLED:-true}
-  
-  # 最大请求大小
-  max_request_size: 10mb
-  
-  # 批量处理设置
-  batch:
-    max_size: 100
-    timeout: 5000
+# 日志
+log_level: !env PS_LOG_LEVEL

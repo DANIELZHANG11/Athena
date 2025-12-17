@@ -101,20 +101,25 @@ export default defineConfig({
   },
   server: {
     port: 48173,
-    host: true,
-    hmr: { protocol: 'ws' },
+    host: '0.0.0.0', // 允许外部访问（Android 模拟器）
+    hmr: { 
+      protocol: 'ws',
+      host: '192.168.0.122', // 使用服务器 IP，让 Android 模拟器能连接
+      port: 48173
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:48000',
         changeOrigin: true,
         ws: true
       },
-      // Tolgee 代理暂时禁用 - 待开发完成后恢复
-      // '/tolgee-api': {
-      //   target: 'http://localhost:8085',
-      //   changeOrigin: true,
-      //   rewrite: (path) => path.replace(/^\/tolgee-api/, '')
-      // },
+      // PowerSync 代理 - 让 Android 可以通过 Vite 访问
+      '/powersync': {
+        target: 'http://localhost:48090',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/powersync/, '')
+      },
       '/s3': {
         target: 'http://localhost:48333',
         changeOrigin: true,

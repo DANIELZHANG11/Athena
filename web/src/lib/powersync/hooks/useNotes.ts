@@ -10,6 +10,8 @@
 import { useMemo } from 'react'
 import { useQuery } from '@powersync/react'
 import { usePowerSyncDatabase, useIsAppFirstEnabled } from '../PowerSyncProvider'
+import { useAuthStore } from '@/stores/auth'
+import { generateUUID, getDeviceId } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义
@@ -190,14 +192,19 @@ export function useNoteMutations() {
       throw new Error('PowerSync not available')
     }
 
-    const id = note.id || crypto.randomUUID()
+    const id = note.id || generateUUID()
     const now = new Date().toISOString()
+    // 使用正确的 user_id 和 device_id - 从 AuthStore 和 localStorage 获取
+    const userId = useAuthStore.getState().user?.id || ''
+    const deviceId = getDeviceId()
 
     await db.execute(
-      `INSERT INTO notes (id, book_id, chapter_index, cfi_range, page_number, content, color, tags, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO notes (id, user_id, device_id, book_id, chapter_index, cfi_range, page_number, content, color, tags, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        userId,
+        deviceId,
         note.book_id,
         note.chapter_index,
         note.cfi_range,

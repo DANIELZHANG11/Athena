@@ -8,7 +8,9 @@
 
 import { useMemo, useCallback } from 'react'
 import { useQuery } from '@powersync/react'
-import { usePowerSyncDatabase } from '@/lib/powersync'
+import { usePowerSyncDatabase, usePowerSyncState } from '@/lib/powersync'
+import { useAuthStore } from '@/stores/auth'
+import { generateUUID, getDeviceId } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义
@@ -90,10 +92,17 @@ interface UseNotesDataOptions {
  */
 export function useNotesData(options: UseNotesDataOptions = {}) {
   const db = usePowerSyncDatabase()
+  const { isInitialized } = usePowerSyncState()
+  const isReady = isInitialized && db !== null
   const { bookId, limit, search } = options
+
+  const EMPTY_NOTES_QUERY = 'SELECT * FROM notes WHERE 1=0'
+  const EMPTY_BOOKS_QUERY = 'SELECT id, title FROM books WHERE 1=0'
 
   // 笔记查询
   const notesSql = useMemo(() => {
+    if (!isReady) return EMPTY_NOTES_QUERY
+    
     let sql = 'SELECT * FROM notes WHERE deleted_at IS NULL'
     const conditions: string[] = []
 
@@ -114,17 +123,20 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
       sql += ` LIMIT ${limit}`
     }
     return sql
-  }, [bookId, limit, search])
+  }, [isReady, bookId, limit, search])
 
   const notesParams = useMemo(() => {
+    if (!isReady) return []
     const params: any[] = []
     if (bookId) params.push(bookId)
     if (search) params.push(`%${search}%`)
     return params
-  }, [bookId, search])
+  }, [isReady, bookId, search])
 
   // 书籍标题查询（用于显示书名）
-  const booksTitlesSql = 'SELECT id, title FROM books WHERE deleted_at IS NULL'
+  const booksTitlesSql = isReady 
+    ? 'SELECT id, title FROM books WHERE deleted_at IS NULL'
+    : EMPTY_BOOKS_QUERY
 
   const { data: notesData, isLoading, error } = useQuery<NoteRow>(notesSql, notesParams)
   const { data: booksData } = useQuery<BookTitleRow>(booksTitlesSql, [])
@@ -159,14 +171,19 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
   const addNote = useCallback(async (note: Omit<NoteItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!db) throw new Error('Database not available')
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const now = new Date().toISOString()
+    // 使用正确的 user_id 和 device_id - 从 AuthStore 和 localStorage 获取
+    const userId = useAuthStore.getState().user?.id || ''
+    const deviceId = getDeviceId()
 
     await db.execute(
-      `INSERT INTO notes (id, book_id, chapter_index, cfi_range, page_number, content, color, tags, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO notes (id, user_id, device_id, book_id, chapter_index, cfi_range, page_number, content, color, tags, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        userId,
+        deviceId,
         note.bookId,
         note.chapterIndex ?? null,
         note.cfiRange ?? null,
@@ -204,12 +221,12 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
 
   return {
     notes,
-    isLoading,
+    isLoading: !isReady || isLoading,
     error,
     addNote,
     updateNote,
     deleteNote,
-    isReady: !!db,
+    isReady,
   }
 }
 
@@ -218,10 +235,17 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
  */
 export function useHighlightsData(options: UseNotesDataOptions = {}) {
   const db = usePowerSyncDatabase()
+  const { isInitialized } = usePowerSyncState()
+  const isReady = isInitialized && db !== null
   const { bookId, limit, search } = options
+
+  const EMPTY_HIGHLIGHTS_QUERY = 'SELECT * FROM highlights WHERE 1=0'
+  const EMPTY_BOOKS_QUERY = 'SELECT id, title FROM books WHERE 1=0'
 
   // 高亮查询
   const highlightsSql = useMemo(() => {
+    if (!isReady) return EMPTY_HIGHLIGHTS_QUERY
+    
     let sql = 'SELECT * FROM highlights WHERE deleted_at IS NULL'
     const conditions: string[] = []
 
@@ -242,17 +266,20 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
       sql += ` LIMIT ${limit}`
     }
     return sql
-  }, [bookId, limit, search])
+  }, [isReady, bookId, limit, search])
 
   const highlightsParams = useMemo(() => {
+    if (!isReady) return []
     const params: any[] = []
     if (bookId) params.push(bookId)
     if (search) params.push(`%${search}%`)
     return params
-  }, [bookId, search])
+  }, [isReady, bookId, search])
 
   // 书籍标题查询
-  const booksTitlesSql = 'SELECT id, title FROM books WHERE deleted_at IS NULL'
+  const booksTitlesSql = isReady
+    ? 'SELECT id, title FROM books WHERE deleted_at IS NULL'
+    : EMPTY_BOOKS_QUERY
 
   const { data: highlightsData, isLoading, error } = useQuery<HighlightRow>(highlightsSql, highlightsParams)
   const { data: booksData } = useQuery<BookTitleRow>(booksTitlesSql, [])
@@ -287,14 +314,19 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
   const addHighlight = useCallback(async (highlight: Omit<HighlightItem, 'id' | 'createdAt' | 'updatedAt' | 'bookTitle'>) => {
     if (!db) throw new Error('Database not available')
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const now = new Date().toISOString()
+    // 使用正确的 user_id 和 device_id - 从 AuthStore 和 localStorage 获取
+    const userId = useAuthStore.getState().user?.id || ''
+    const deviceId = getDeviceId()
 
     await db.execute(
-      `INSERT INTO highlights (id, book_id, chapter_index, cfi_range, page_number, text_content, color, note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO highlights (id, user_id, device_id, book_id, chapter_index, cfi_range, page_number, text_content, color, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        userId,
+        deviceId,
         highlight.bookId,
         highlight.chapterIndex ?? null,
         highlight.cfiRange,
@@ -342,12 +374,12 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
 
   return {
     highlights,
-    isLoading,
+    isLoading: !isReady || isLoading,
     error,
     addHighlight,
     updateHighlight,
     deleteHighlight,
-    isReady: !!db,
+    isReady,
   }
 }
 

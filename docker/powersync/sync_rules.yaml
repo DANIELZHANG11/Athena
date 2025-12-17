@@ -1,219 +1,93 @@
-# PowerSync 同步规则配置
-# @see https://docs.powersync.com/self-hosted/sync-rules
+# PowerSync 同步规则配置 - Open Edition
+# @see https://docs.powersync.com/usage/sync-rules
 # @see 09 - APP-FIRST架构改造计划.md - Phase 1
 #
-# 定义哪些数据同步到客户端，以及如何过滤
+# 使用 bucket_definitions 定义数据同步规则
 
-# 版本号（用于客户端检测规则变化）
-version: 1
-
-# 同步规则定义
-tables:
-  # ============ 书籍元数据 ============
-  - name: books
-    # 客户端只能看到自己的书籍
-    row_filter: |
-      user_id = :user_id
+bucket_definitions:
+  # ============ 用户数据桶 ============
+  # 每个用户有自己的数据桶，包含所有个人数据
+  user_data:
+    # 参数化桶 - 按用户 ID 分区
+    parameters: SELECT token_parameters.user_id as user_id
     
-    # 同步的列（排除大型二进制数据）
-    columns:
-      - id
-      - user_id
-      - title
-      - author
-      - cover_url
-      - file_type
-      - file_size
-      - content_sha256
-      - storage_key
-      - metadata_extracted
-      - metadata_confirmed
-      - pdf_type
-      - ocr_status
-      - ocr_version
-      - conversion_status
-      - converted_epub_key
-      - created_at
-      - updated_at
-      - deleted_at
-    
-    # 冲突策略：LWW (Last Write Wins)
-    conflict_resolution: lww
-  
-  # ============ 阅读进度 ============
-  - name: reading_progress
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - book_id
-      - device_id
-      - progress
-      - last_position
-      - last_location
-      - updated_at
-    
-    # 阅读进度使用 LWW，以最新设备为准
-    conflict_resolution: lww
-  
-  # ============ 阅读会话 ============
-  - name: reading_sessions
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - book_id
-      - device_id
-      - is_active
-      - total_ms
-      - created_at
-      - updated_at
-    
-    conflict_resolution: lww
-  
-  # ============ 笔记 ============
-  - name: notes
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - book_id
-      - device_id
-      - content
-      - page_number
-      - position_cfi
-      - color
-      - is_deleted
-      - deleted_at
-      - created_at
-      - updated_at
-    
-    # 笔记使用冲突副本策略
-    conflict_resolution: conflict_copy
-  
-  # ============ 高亮 ============
-  - name: highlights
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - book_id
-      - device_id
-      - text
-      - page_number
-      - position_start_cfi
-      - position_end_cfi
-      - color
-      - is_deleted
-      - deleted_at
-      - created_at
-      - updated_at
-    
-    # 高亮使用冲突副本策略
-    conflict_resolution: conflict_copy
-  
-  # ============ 书签 ============
-  - name: bookmarks
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - book_id
-      - device_id
-      - title
-      - page_number
-      - position_cfi
-      - is_deleted
-      - deleted_at
-      - created_at
-      - updated_at
-    
-    conflict_resolution: lww
-  
-  # ============ 书架 ============
-  - name: shelves
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - name
-      - description
-      - cover_url
-      - sort_order
-      - is_deleted
-      - deleted_at
-      - created_at
-      - updated_at
-    
-    # 书架使用 LWW + Merge
-    conflict_resolution: lww
-  
-  # ============ 书架书籍关联 ============
-  - name: shelf_books
-    row_filter: |
-      EXISTS (SELECT 1 FROM shelves s WHERE s.id = shelf_id AND s.user_id = :user_id)
-    
-    columns:
-      - id
-      - shelf_id
-      - book_id
-      - sort_order
-      - added_at
-    
-    conflict_resolution: lww
-  
-  # ============ 用户设置 ============
-  - name: user_settings
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - device_id
-      - settings_json
-      - updated_at
-    
-    conflict_resolution: lww
-
-  # ============ 阅读统计 ============
-  - name: reading_stats
-    row_filter: |
-      user_id = :user_id
-    
-    columns:
-      - id
-      - user_id
-      - date
-      - total_seconds
-      - pages_read
-      - books_finished
-      - updated_at
-    
-    # 统计数据只读，服务端计算
-    read_only: true
-
-# 全局设置
-global:
-  # 软删除字段
-  soft_delete:
-    enabled: true
-    column: is_deleted
-    timestamp_column: deleted_at
-  
-  # 时间戳字段
-  timestamp:
-    created: created_at
-    updated: updated_at
+    data:
+      # 书籍元数据
+      # 注意：is_image_based 在前端根据 is_digitalized 和 initial_digitalization_confidence 计算
+      # is_image_based = !is_digitalized || (is_digitalized && confidence < 0.8)
+      # is_digitalized = true 表示文字型（有文字层）
+      - SELECT 
+          id, user_id, title, author, 
+          cover_image_key as cover_url,
+          original_format as file_type, 
+          size as file_size, 
+          content_sha256, 
+          minio_key as storage_key,
+          metadata_confirmed,
+          is_digitalized,
+          initial_digitalization_confidence,
+          (meta->>'page_count')::integer as page_count,
+          ocr_status, 
+          conversion_status, 
+          converted_epub_key,
+          created_at, updated_at, deleted_at
+        FROM books
+        WHERE user_id = bucket.user_id
+      
+      # 阅读进度
+      - SELECT 
+          id, user_id, book_id, device_id, 
+          progress, last_position, last_location, finished_at, updated_at
+        FROM reading_progress
+        WHERE user_id = bucket.user_id
+      
+      # 阅读会话
+      - SELECT 
+          id, user_id, book_id, device_id,
+          is_active, total_ms, created_at, updated_at
+        FROM reading_sessions
+        WHERE user_id = bucket.user_id
+      
+      # 笔记
+      - SELECT 
+          id, user_id, book_id, device_id,
+          content, page_number, position_cfi, color,
+          is_deleted, deleted_at, created_at, updated_at
+        FROM notes
+        WHERE user_id = bucket.user_id
+      
+      # 高亮
+      - SELECT 
+          id, user_id, book_id, device_id,
+          text, page_number, position_start_cfi, position_end_cfi, color,
+          is_deleted, deleted_at, created_at, updated_at
+        FROM highlights
+        WHERE user_id = bucket.user_id
+      
+      # 书签
+      - SELECT 
+          id, user_id, book_id, device_id,
+          title, page_number, position_cfi,
+          is_deleted, deleted_at, created_at, updated_at
+        FROM bookmarks
+        WHERE user_id = bucket.user_id
+      
+      # 书架
+      - SELECT 
+          id, user_id, name, description, cover_url,
+          sort_order, is_deleted, deleted_at, created_at, updated_at
+        FROM shelves
+        WHERE user_id = bucket.user_id
+      
+      # 书架书籍关联
+      # 2025-12-15: 已添加 user_id 列，现在可以通过 PowerSync 同步
+      - SELECT 
+          id, user_id, shelf_id, book_id, sort_order, added_at
+        FROM shelf_books
+        WHERE user_id = bucket.user_id
+      
+      # 用户设置
+      - SELECT 
+          id, user_id, device_id, settings_json, updated_at
+        FROM user_settings
+        WHERE user_id = bucket.user_id

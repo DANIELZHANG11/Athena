@@ -95,6 +95,14 @@ async def run_daily_tasks():
         )
         if res.rowcount > 0:
             logger.info(f"Cleaned up {res.rowcount} stale undelivered sync_events")
+        
+        # 5. Hard delete books that have been soft-deleted for more than 30 days
+        # This implements the "30-day recovery window" policy
+        res = await conn.execute(
+            text("DELETE FROM books WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days'")
+        )
+        if res.rowcount > 0:
+            logger.info(f"Permanently deleted {res.rowcount} books (soft-deleted > 30 days)")
             
     logger.info("Daily tasks completed")
 

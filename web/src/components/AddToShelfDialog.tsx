@@ -4,7 +4,7 @@
  * 「加入书架」对话框组件
  * - 显示已有书架列表供用户选择（可多选）
  * - 支持创建新书架
- * - 实时校验同名书架
+ * - 使用 PowerSync 进行本地数据操作
  * 
  * 遵循 UIUX 设计规范：
  * - 毛玻璃效果：bg-white/95 backdrop-blur-xl
@@ -12,7 +12,7 @@
  * - 动效：duration-fast (150ms) - 使用 Motion Token
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -23,23 +23,21 @@ import {
   AlertCircle,
   FolderPlus,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, generateUUID, getDeviceId } from '@/lib/utils'
+import { usePowerSync, useQuery } from '@powersync/react'
 import { useAuthStore } from '@/stores/auth'
-import {
-  addBookToShelf as addBookToShelfLocal,
-  removeBookFromShelf as removeBookFromShelfLocal,
-  getAllShelves as getAllShelvesLocal,
-  getBookShelfIds as getBookShelfIdsLocal,
-} from '@/lib/shelvesStorage'
 
 // ================== 类型定义 ==================
 
-interface Shelf {
+interface ShelfRow {
   id: string
   name: string
-  description?: string
+  description: string | null
   book_count: number
-  created_at: string
+}
+
+interface ShelfBookRow {
+  shelf_id: string
 }
 
 interface AddToShelfDialogProps {
@@ -48,141 +46,6 @@ interface AddToShelfDialogProps {
   open: boolean
   onClose: () => void
   onSuccess?: () => void
-}
-
-// ================== API 函数 ==================
-
-/** 获取用户的所有书架 - 优先从本地存储读取 */
-async function fetchShelves(): Promise<Shelf[]> {
-  // 先从本地存储获取（确保离线时也能工作）
-  const localShelves = await getAllShelvesLocal()
-  
-  // 如果在线，同时从服务器获取并合并
-  if (navigator.onLine) {
-    try {
-      const token = useAuthStore.getState().accessToken
-      const res = await fetch('/api/v1/shelves', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const serverShelves = data.data?.items || []
-        // 合并：服务器数据为主，但保留本地未同步的书架
-        const serverIds = new Set(serverShelves.map((s: Shelf) => s.id))
-        const localOnly = localShelves.filter(s => s.localId && !serverIds.has(s.id))
-        return [
-          ...serverShelves,
-          ...localOnly.map(s => ({
-            id: s.id,
-            name: s.name,
-            description: s.description,
-            book_count: s.bookCount,
-            created_at: new Date(s.createdAt).toISOString(),
-          }))
-        ]
-      }
-    } catch (e) {
-      console.warn('[AddToShelfDialog] Failed to fetch shelves from server:', e)
-    }
-  }
-  
-  // 离线或服务器失败时，使用本地数据
-  return localShelves.map(s => ({
-    id: s.id,
-    name: s.name,
-    description: s.description,
-    book_count: s.bookCount,
-    created_at: new Date(s.createdAt).toISOString(),
-  }))
-}
-
-/** 获取书籍所属的书架 ID 列表 - 优先从本地存储读取 */
-async function fetchBookShelves(bookId: string): Promise<string[]> {
-  // 先从本地存储获取
-  const localShelfIds = await getBookShelfIdsLocal(bookId)
-  
-  // 如果在线，同时从服务器获取并合并
-  if (navigator.onLine) {
-    try {
-      const token = useAuthStore.getState().accessToken
-      const res = await fetch(`/api/v1/books/${bookId}/shelves`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const serverIds = (data.data?.items || []).map((s: Shelf) => s.id)
-        // 合并本地和服务器的书架 ID
-        return [...new Set([...serverIds, ...localShelfIds])]
-      }
-    } catch (e) {
-      console.warn('[AddToShelfDialog] Failed to fetch book shelves from server:', e)
-    }
-  }
-  
-  return localShelfIds
-}
-
-/** 创建新书架 - 返回 { id: string } */
-async function createShelf(name: string, description?: string): Promise<{ id: string }> {
-  const token = useAuthStore.getState().accessToken
-  const res = await fetch('/api/v1/shelves', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ name, description }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.message || err.detail || 'Failed to create shelf')
-  }
-  const data = await res.json()
-  return data.data
-}
-
-/** 添加书籍到书架 */
-async function addBookToShelf(shelfId: string, bookId: string): Promise<void> {
-  // 先更新本地存储（立即可见）
-  await addBookToShelfLocal(shelfId, bookId)
-  
-  // 然后同步到服务器（如果在线）
-  if (navigator.onLine) {
-    const token = useAuthStore.getState().accessToken
-    const res = await fetch(`/api/v1/shelves/${shelfId}/items`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ book_id: bookId }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      // 服务器失败不回滚本地（离线优先），但记录错误
-      console.warn('[AddToShelfDialog] Server sync failed:', err.message || err.detail)
-    }
-  }
-}
-
-/** 从书架移除书籍 */
-async function removeBookFromShelf(shelfId: string, bookId: string): Promise<void> {
-  // 先更新本地存储（立即可见）
-  await removeBookFromShelfLocal(shelfId, bookId)
-  
-  // 然后同步到服务器（如果在线）
-  if (navigator.onLine) {
-    const token = useAuthStore.getState().accessToken
-    const res = await fetch(`/api/v1/shelves/${shelfId}/items/${bookId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      // 服务器失败不回滚本地（离线优先），但记录错误
-      console.warn('[AddToShelfDialog] Server sync failed:', err.message || err.detail)
-    }
-  }
 }
 
 // ================== 组件 ==================
@@ -195,10 +58,36 @@ export default function AddToShelfDialog({
   onSuccess,
 }: AddToShelfDialogProps) {
   const { t } = useTranslation('common')
+  const db = usePowerSync()
+
+  // 使用 PowerSync 查询书架列表
+  // 注意：is_deleted 可能是 NULL、0 或 FALSE，需要正确处理
+  const shelvesQuery = open
+    ? `SELECT s.id, s.name, s.description, COALESCE(sb.book_count, 0) as book_count
+       FROM shelves s
+       LEFT JOIN (
+         SELECT shelf_id, COUNT(*) as book_count
+         FROM shelf_books
+         GROUP BY shelf_id
+       ) sb ON s.id = sb.shelf_id
+       WHERE s.deleted_at IS NULL
+       AND (s.is_deleted IS NULL OR s.is_deleted = 0)
+       ORDER BY s.sort_order ASC, s.name ASC`
+    : 'SELECT id, name, description, 0 as book_count FROM shelves WHERE 1=0'
+  
+  const { data: shelvesData, isLoading: shelvesLoading, error: shelvesError } = useQuery<ShelfRow>(shelvesQuery, [])
+
+  // 查询书籍当前所属的书架
+  const bookShelvesQuery = open && bookId
+    ? 'SELECT shelf_id FROM shelf_books WHERE book_id = ?'
+    : 'SELECT shelf_id FROM shelf_books WHERE 1=0'
+  
+  const { data: bookShelvesData, isLoading: bookShelvesLoading } = useQuery<ShelfBookRow>(
+    bookShelvesQuery,
+    open && bookId ? [bookId] : []
+  )
 
   // 状态
-  const [loading, setLoading] = useState(true)
-  const [shelves, setShelves] = useState<Shelf[]>([])
   const [selectedShelfIds, setSelectedShelfIds] = useState<Set<string>>(new Set())
   const [originalShelfIds, setOriginalShelfIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -212,26 +101,31 @@ export default function AddToShelfDialog({
   // 保存状态
   const [saving, setSaving] = useState(false)
 
-  // 加载书架列表和书籍所属书架
+  const loading = shelvesLoading || bookShelvesLoading
+
+  // 如果查询出错，设置错误信息
   useEffect(() => {
-    if (open && bookId) {
-      setLoading(true)
-      setError(null)
+    if (shelvesError) {
+      console.error('[AddToShelfDialog] Query error:', shelvesError)
+      setError(shelvesError.message || '查询书架失败')
+    }
+  }, [shelvesError])
+
+  // 转换书架数据
+  const shelves = useMemo(() => shelvesData || [], [shelvesData])
+
+  // 当对话框打开或书籍书架数据变化时，更新选中状态
+  useEffect(() => {
+    if (open && bookShelvesData) {
+      const ids = new Set(bookShelvesData.map(sb => sb.shelf_id))
+      setSelectedShelfIds(ids)
+      setOriginalShelfIds(ids)
       setShowCreateForm(false)
       setNewShelfName('')
       setNameError(null)
-
-      Promise.all([fetchShelves(), fetchBookShelves(bookId)])
-        .then(([shelvesData, bookShelfIds]) => {
-          setShelves(shelvesData)
-          const ids = new Set(bookShelfIds)
-          setSelectedShelfIds(ids)
-          setOriginalShelfIds(new Set(bookShelfIds))
-        })
-        .catch((e) => setError(e.message))
-        .finally(() => setLoading(false))
+      setError(null)
     }
-  }, [open, bookId])
+  }, [open, bookShelvesData])
 
   // 校验书架名称
   useEffect(() => {
@@ -265,32 +159,43 @@ export default function AddToShelfDialog({
   // 创建新书架
   const handleCreateShelf = useCallback(async () => {
     const name = newShelfName.trim()
-    if (!name || nameError) return
+    if (!name || nameError || !db) return
 
     setCreating(true)
     try {
-      const result = await createShelf(name)
-      // 后端只返回 { id }，需要构造完整的 Shelf 对象
-      const newShelf: Shelf = {
-        id: result.id,
-        name: name,
-        description: '',
-        book_count: 0,
-        created_at: new Date().toISOString(),
-      }
-      setShelves((prev) => [...prev, newShelf])
-      setSelectedShelfIds((prev) => new Set(prev).add(newShelf.id))
+      const id = generateUUID()
+      const now = new Date().toISOString()
+
+      // 获取最大排序值 - 使用 getAll 避免空结果异常
+      const maxOrderResults = await db.getAll<{ max_order: number }>(
+        'SELECT COALESCE(MAX(sort_order), 0) as max_order FROM shelves'
+      )
+      const maxOrder = maxOrderResults[0]?.max_order ?? 0
+
+      // 使用正确的 user_id - 从 AuthStore 获取
+      const userId = useAuthStore.getState().user?.id || ''
+      await db.execute(
+        `INSERT INTO shelves (id, user_id, name, description, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, userId, name, null, maxOrder + 1, now, now]
+      )
+
+      // 自动选中新创建的书架
+      setSelectedShelfIds((prev) => new Set(prev).add(id))
       setNewShelfName('')
       setShowCreateForm(false)
     } catch (e: any) {
-      setError(e.message)
+      console.error('[AddToShelfDialog] Failed to create shelf:', e)
+      setError(e.message || '创建书架失败')
     } finally {
       setCreating(false)
     }
-  }, [newShelfName, nameError])
+  }, [newShelfName, nameError, db])
 
   // 保存更改
   const handleSave = useCallback(async () => {
+    if (!db) return
+    
     setSaving(true)
     setError(null)
 
@@ -299,32 +204,62 @@ export default function AddToShelfDialog({
       const toAdd = [...selectedShelfIds].filter((id) => !originalShelfIds.has(id))
       const toRemove = [...originalShelfIds].filter((id) => !selectedShelfIds.has(id))
 
+      const now = new Date().toISOString()
+
       // 执行添加操作
-      await Promise.all(toAdd.map((shelfId) => addBookToShelf(shelfId, bookId)))
+      for (const shelfId of toAdd) {
+        // 检查是否已存在 - 使用 getAll 避免空结果异常
+        const existingRows = await db.getAll<{ id: string }>(
+          'SELECT id FROM shelf_books WHERE shelf_id = ? AND book_id = ?',
+          [shelfId, bookId]
+        )
+        
+        if (existingRows.length === 0) {
+          const id = generateUUID()
+          const maxOrderRows = await db.getAll<{ max_order: number }>(
+            'SELECT COALESCE(MAX(sort_order), 0) as max_order FROM shelf_books WHERE shelf_id = ?',
+            [shelfId]
+          )
+          const maxOrder = maxOrderRows[0]?.max_order ?? 0
+          
+          // 使用正确的 user_id - 从 AuthStore 获取
+          const userId = useAuthStore.getState().user?.id || ''
+          await db.execute(
+            `INSERT INTO shelf_books (id, user_id, shelf_id, book_id, sort_order, added_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [id, userId, shelfId, bookId, maxOrder + 1, now]
+          )
+        }
+      }
 
       // 执行移除操作
-      await Promise.all(toRemove.map((shelfId) => removeBookFromShelf(shelfId, bookId)))
+      for (const shelfId of toRemove) {
+        await db.execute(
+          'DELETE FROM shelf_books WHERE shelf_id = ? AND book_id = ?',
+          [shelfId, bookId]
+        )
+      }
 
-      // 触发书架变更事件，通知 ShelfView 刷新
-      window.dispatchEvent(new CustomEvent('shelf-changed'))
+      console.log('[AddToShelfDialog] Saved changes:', { added: toAdd, removed: toRemove })
 
       onSuccess?.()
       onClose()
     } catch (e: any) {
-      setError(e.message)
+      console.error('[AddToShelfDialog] Failed to save:', e)
+      setError(e.message || '保存失败')
     } finally {
       setSaving(false)
     }
-  }, [bookId, selectedShelfIds, originalShelfIds, onSuccess, onClose])
+  }, [db, bookId, selectedShelfIds, originalShelfIds, onSuccess, onClose])
 
   // 检查是否有更改
-  const hasChanges = (() => {
+  const hasChanges = useMemo(() => {
     if (selectedShelfIds.size !== originalShelfIds.size) return true
     for (const id of selectedShelfIds) {
       if (!originalShelfIds.has(id)) return true
     }
     return false
-  })()
+  }, [selectedShelfIds, originalShelfIds])
 
   if (!open) return null
 

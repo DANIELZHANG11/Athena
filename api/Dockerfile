@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM zukubq0aouv2k2.xuanyuan.run/python:3.11-slim
 
 WORKDIR /app
 
@@ -19,6 +19,10 @@ ENV OCR_GPU_MEM=3500
 ENV OCR_CPU_THREADS=6
 
 ARG SKIP_HEAVY=true
+
+# 使用国内 Debian 镜像源加速
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list 2>/dev/null || true
 
 # 安装系统依赖（适配 Debian Trixie）
 RUN apt-get update && \

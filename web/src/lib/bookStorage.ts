@@ -358,8 +358,35 @@ export async function clearAllCache(): Promise<void> {
 
 // ============ Blob URL 辅助函数 ============
 
-export function createBlobUrl(blob: Blob): string {
+/**
+ * 创建 Blob URL
+ * 如果 Blob 的 MIME 类型不正确，会创建一个新的 Blob 并设置正确的类型
+ */
+export function createBlobUrl(blob: Blob, format?: 'epub' | 'pdf'): string {
+  // 检查 MIME 类型是否正确
+  const correctMimeTypes: Record<string, string> = {
+    'epub': 'application/epub+zip',
+    'pdf': 'application/pdf',
+  }
+  
+  // 如果提供了格式信息，确保 MIME 类型正确
+  if (format && correctMimeTypes[format]) {
+    const expectedType = correctMimeTypes[format]
+    if (blob.type !== expectedType) {
+      console.log(`[FileStorage] Correcting MIME type from "${blob.type}" to "${expectedType}"`)
+      blob = new Blob([blob], { type: expectedType })
+    }
+  }
+  
   return URL.createObjectURL(blob)
+}
+
+/**
+ * 将 Blob 转换为 ArrayBuffer
+ * epub.js 更好地支持 ArrayBuffer 而不是 blob URL
+ */
+export async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  return blob.arrayBuffer()
 }
 
 export function revokeBlobUrl(url: string): void {
@@ -384,5 +411,6 @@ export const bookStorage = {
   getCacheStats,
   clearAllCache,
   createBlobUrl,
-  revokeBlobUrl
+  revokeBlobUrl,
+  blobToArrayBuffer
 }

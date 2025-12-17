@@ -24,7 +24,7 @@ from .search_sync import index_book, index_highlight, index_note
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
-@router.get("")
+@router.get("/")
 async def search(
     q: str | None = Query(None),
     kind: str | None = Query(None),

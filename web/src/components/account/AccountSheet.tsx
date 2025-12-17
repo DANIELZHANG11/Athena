@@ -13,7 +13,7 @@
  */
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, ChevronRight, LogOut, User, Camera } from 'lucide-react'
+import { X, ChevronRight, LogOut, User, Camera, Trash2 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useNavigate } from 'react-router-dom'
 import { useTolgeeLanguages } from '@/hooks/useTolgeeLanguages'
@@ -190,6 +190,20 @@ export default function AccountSheet({ open, onOpenChange }: AccountSheetProps) 
               </div>
             )}
           </div>
+
+          {/* 最近删除 */}
+          <button
+            className="w-full bg-tertiary-background rounded-2xl p-4 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            onClick={() => {
+              onOpenChange(false)
+              navigate('/app/recently-deleted')
+            }}
+          >
+            <span className="text-label font-medium">
+              {t('account.recently_deleted', '最近删除')}
+            </span>
+            <Trash2 className="w-5 h-5 text-secondary-label" />
+          </button>
 
           {/* 退出登录 */}
           <button

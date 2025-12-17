@@ -10,25 +10,35 @@
 import { useMemo } from 'react'
 import { useQuery } from '@powersync/react'
 import { usePowerSyncDatabase, useIsAppFirstEnabled } from '../PowerSyncProvider'
+import { useAuthStore } from '@/stores/auth'
+import { generateUUID } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义
 // ============================================================================
 
+/**
+ * books 表结构 - 与 PostgreSQL/PowerSync Schema 完全一致
+ * @see docker/powersync/sync_rules.yaml
+ * @see web/src/lib/powersync/schema.ts
+ */
 export interface Book {
   id: string
+  user_id: string
   title: string
   author: string | null
-  cover_path: string | null
-  file_path: string
-  file_size: number
-  file_hash: string
-  format: string
-  publisher: string | null
-  language: string | null
-  isbn: string | null
-  description: string | null
-  total_pages: number | null
+  cover_url: string | null        // 不是 cover_path
+  file_type: string | null        // 不是 format
+  file_size: number | null
+  content_sha256: string | null   // 不是 file_hash
+  storage_key: string | null      // 不是 file_path
+  metadata_confirmed: number | null
+  is_digitalized: number | null
+  initial_digitalization_confidence: number | null
+  page_count: number | null       // 不是 total_pages
+  ocr_status: string | null
+  conversion_status: string | null
+  converted_epub_key: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -187,31 +197,32 @@ export function useBookMutations() {
   const db = usePowerSyncDatabase()
   const isAppFirstEnabled = useIsAppFirstEnabled()
 
-  const addBook = async (book: Omit<Book, 'id' | 'created_at' | 'updated_at' | 'deleted_at'> & { id?: string }) => {
+  /**
+   * 添加书籍 - 使用与 PostgreSQL 一致的字段名
+   */
+  const addBook = async (book: Partial<Book> & { title: string }) => {
     if (!db || !isAppFirstEnabled) {
       throw new Error('PowerSync not available')
     }
 
-    const id = book.id || crypto.randomUUID()
+    const id = book.id || generateUUID()
     const now = new Date().toISOString()
+    const userId = useAuthStore.getState().user?.id || ''
 
     await db.execute(
-      `INSERT INTO books (id, title, author, cover_path, file_path, file_size, file_hash, format, publisher, language, isbn, description, total_pages, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO books (id, user_id, title, author, cover_url, file_type, file_size, content_sha256, storage_key, page_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        userId,
         book.title,
-        book.author,
-        book.cover_path,
-        book.file_path,
-        book.file_size,
-        book.file_hash,
-        book.format,
-        book.publisher,
-        book.language,
-        book.isbn,
-        book.description,
-        book.total_pages,
+        book.author ?? null,
+        book.cover_url ?? null,
+        book.file_type ?? null,
+        book.file_size ?? null,
+        book.content_sha256 ?? null,
+        book.storage_key ?? null,
+        book.page_count ?? null,
         now,
         now
       ]

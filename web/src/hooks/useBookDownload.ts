@@ -116,7 +116,8 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
         if (blobUrlRef.current) {
           revokeBlobUrl(blobUrlRef.current)
         }
-        const url = createBlobUrl(cached.blob)
+        // 传递格式信息以确保 MIME 类型正确
+        const url = createBlobUrl(cached.blob, cached.format)
         blobUrlRef.current = url
         setBlobUrl(url)
         setStatus('cached')
@@ -197,7 +198,8 @@ export function useBookDownload(options: UseBookDownloadOptions): UseBookDownloa
       if (blobUrlRef.current) {
         revokeBlobUrl(blobUrlRef.current)
       }
-      const url = createBlobUrl(blob)
+      // 传递格式信息以确保 MIME 类型正确
+      const url = createBlobUrl(blob, format)
       blobUrlRef.current = url
       setBlobUrl(url)
       

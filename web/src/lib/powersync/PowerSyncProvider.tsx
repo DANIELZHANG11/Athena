@@ -134,6 +134,12 @@ class AthenaConnector {
       }
 
       console.log(`[PowerSync] Uploading ${operations.length} operations...`)
+      console.log(`[PowerSync] Operations:`, JSON.stringify(operations.map(op => ({
+        table: op.table,
+        op: op.op,
+        id: op.id,
+        data: op.opData
+      })), null, 2))
 
       // 批量发送到后端 API
       const response = await fetch('/api/v1/sync/upload', {
@@ -211,7 +217,8 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
           dbFilename: 'athena.sqlite',
           schema: AppSchema,
           flags: {
-            enableMultiTabs: true // 支持多标签页同步
+            enableMultiTabs: false, // 禁用多标签页支持（避免 Web Locks 问题）
+            useWebWorker: false     // 禁用 Web Worker（开发环境兼容）
           }
         })
 
@@ -366,6 +373,19 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
     reconnect,
     clearLocalData
   }), [state, triggerSync, disconnect, reconnect, clearLocalData])
+
+  // 行业最佳实践：在数据库就绪前显示加载状态
+  // 这样子组件中的 useQuery 就不需要每个都检查 isReady
+  if (!state.isInitialized || !state.db) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground text-sm">正在初始化本地数据库...</p>
+        </div>
+      </div>
+    )
+  }
 
   // App-First: 始终使用 PowerSync Provider
   return (

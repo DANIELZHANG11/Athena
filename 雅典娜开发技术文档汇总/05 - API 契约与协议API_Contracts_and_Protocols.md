@@ -70,6 +70,286 @@
 - **Backpressure**: SDK 自动处理；Service 端暴露 `stream_lag_ms` 指标供监控。
 - **错误映射**: PowerSync 错误码映射至 REST 错误：`permission_denied -> 403`, `validation_failed -> 400`, `conflict -> 409`。
 
+### 3.B API 与 PowerSync 职责分离 (Responsibility Separation)
+
+> **新增日期**: 2025-06-17
+> **重要性**: 🔴 核心架构决策 - 所有开发者必读
+
+雅典娜采用 **App-First 架构**，PowerSync 负责数据同步，REST API 负责文件操作和复杂业务逻辑。**两者使用统一的 JWT 认证**，避免 token 分裂。
+
+#### 3.B.1 职责划分表
+
+| 功能类别 | 负责方 | 说明 |
+| :--- | :--- | :--- |
+| **用户认证** | REST API | 登录、发送验证码、token 签发与刷新 |
+| **元数据同步** | PowerSync | 书籍列表、笔记、高亮、阅读进度、书架 |
+| **文件上传** | REST API | 书籍文件通过 S3 Presigned URL 上传，PowerSync 无法传输二进制文件 |
+| **文件下载** | REST API + S3 | 获取 Presigned Download URL |
+| **OCR 任务** | REST API | 触发 OCR、查询进度（计算密集型任务） |
+| **AI 功能** | REST API | 流式响应、向量检索、对话历史 |
+| **账单支付** | REST API | Stripe 集成、配额管理 |
+| **离线读写** | PowerSync (SQLite) | 本地优先，后台自动同步 |
+| **实时通知** | PowerSync | 通过同步流推送状态变更 |
+
+#### 3.B.2 JWT 统一规范
+
+**单一 Token 源**: 所有 JWT 由 REST API 的 `/auth/*` 端点签发，PowerSync 和 API 使用相同的 secret 验证。
+
+```
+┌─────────────────┐                    ┌─────────────────┐
+│   REST API      │ ──── 签发 JWT ──→  │     客户端      │
+│  (auth.py)      │                    │                 │
+└─────────────────┘                    └────────┬────────┘
+        ↑                                       │
+        │ 相同 secret                           │ 同一个 JWT
+        ↓                                       ↓
+┌─────────────────┐                    ┌─────────────────┐
+│   PowerSync     │ ←── 验证 JWT ────  │     客户端      │
+│  (验证器)       │                    │  (sync 请求)    │
+└─────────────────┘                    └─────────────────┘
+```
+
+**必须包含的 JWT Claims**:
+```json
+{
+  "sub": "<user_id>",           // 必须: 用户 ID
+  "aud": "authenticated",       // 必须: PowerSync Supabase 模式要求
+  "iat": 1718600000,
+  "exp": 1718686400
+}
+```
+
+**关键配置（docker-compose.yml）**:
+```yaml
+# REST API
+api:
+  environment:
+    AUTH_SECRET: ${AUTH_SECRET:-dev_powersync_secret_change_in_production}
+
+# PowerSync
+powersync:
+  environment:
+    PS_SUPABASE_JWT_SECRET: ${AUTH_SECRET:-dev_powersync_secret_change_in_production}
+```
+
+> ⚠️ **警告**: API 和 PowerSync 的 JWT secret 必须完全一致，否则客户端无法同时访问两个服务。
+
+#### 3.B.3 典型工作流示例
+
+**上传书籍**（需要 API + PowerSync 协作）:
+```
+1. [客户端] 调用 POST /api/v1/books/upload_init → 获取 S3 Presigned URL
+2. [客户端] PUT 文件到 S3
+3. [客户端] 调用 POST /api/v1/books/upload_complete → 创建 books 记录
+4. [PowerSync] 自动同步 books 表变更到所有设备
+5. [客户端其他设备] 通过 PowerSync 接收到新书，显示在书架
+```
+
+**创建笔记**（纯 PowerSync）:
+```
+1. [客户端] 写入本地 SQLite (notes 表)
+2. [PowerSync SDK] 后台自动推送到服务器
+3. [服务器] 写入 PostgreSQL
+4. [PowerSync] 同步到其他设备
+```
+
+**AI 对话**（纯 REST API）:
+```
+1. [客户端] POST /api/v1/ai/chat (SSE)
+2. [API] 流式返回 AI 响应
+3. [客户端] 实时显示
+```
+
+#### 3.B.4 故障排查检查清单
+
+| 症状 | 可能原因 | 解决方案 |
+| :--- | :--- | :--- |
+| API 认证成功，PowerSync 401 | JWT secret 不一致 | 检查 `AUTH_SECRET` 和 `PS_SUPABASE_JWT_SECRET` 是否相同 |
+| PowerSync "Known keys: " 空 | 缺少 `supabase: true` 配置 | 在 powersync.yaml 中启用 Supabase 模式 |
+| Token 刷新后仍然 401 | 浏览器缓存旧 token | 强制刷新页面或清除 localStorage |
+| 上传成功但书架不显示 | PowerSync 未连接 | 检查 WebSocket 连接状态 |
+| 书籍元数据同步但封面不显示 | 封面 URL 过期 | 检查 S3 Presigned URL 有效期 |
+
+---
+
+## 3.C PowerSync 数据操作规范 (Data Operation Specification)
+
+> **新增日期**: 2025-12-16
+> **重要性**: 🔴 **核心架构规范 - 必须严格遵守**
+> **原则**: PowerSync 是主要同步通道，REST API 仅用于 PowerSync 无法处理的场景
+
+### 3.C.1 核心原则
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    数据同步架构                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ┌─────────────┐        PowerSync         ┌─────────────┐          │
+│   │   前端       │ ◄═══════════════════════► │  PostgreSQL │          │
+│   │  (SQLite)   │    双向实时同步            │   (后端)    │          │
+│   └──────┬──────┘                          └──────┬──────┘          │
+│          │                                        │                 │
+│          │ REST API (仅特殊场景)                   │                 │
+│          └────────────────────────────────────────┘                 │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**核心原则**：
+1. **PowerSync 优先**：所有 CRUD 操作优先使用 PowerSync 本地写入
+2. **API 辅助**：仅文件操作、计算密集型任务使用 REST API
+3. **离线优先**：用户操作应立即响应，后台自动同步
+
+### 3.C.2 数据表操作规范
+
+#### 表 1: books（书籍元数据）
+
+| 操作 | 负责方 | 前端实现 | 说明 |
+|:-----|:------|:--------|:-----|
+| **创建** | REST API | `POST /api/v1/books/upload_complete` | 上传流程创建，PowerSync 自动同步到客户端 |
+| **读取** | PowerSync | `SELECT * FROM books` | 实时响应式查询 |
+| **更新标题/作者** | PowerSync | `UPDATE books SET title=?, author=? WHERE id=?` | 本地写入，自动同步到服务器 |
+| **软删除** | PowerSync | `UPDATE books SET deleted_at=? WHERE id=?` | 本地写入，自动同步到服务器 |
+| **硬删除(含文件)** | REST API | `DELETE /api/v1/books/{id}` | 需要删除 MinIO 文件 |
+| **恢复删除** | PowerSync | `UPDATE books SET deleted_at=NULL WHERE id=?` | 本地写入，自动同步 |
+
+> **⚠️ 关键配置**: 后端 `powersync.py` 的 `ALLOWED_TABLES` 必须包含 `books`！
+
+#### 表 2: reading_progress（阅读进度）
+
+| 操作 | 负责方 | 前端实现 | 说明 |
+|:-----|:------|:--------|:-----|
+| **创建/更新** | PowerSync | `INSERT OR REPLACE INTO reading_progress` | 实时保存，跨设备同步 |
+| **读取** | PowerSync | `SELECT * FROM reading_progress WHERE book_id=?` | 响应式查询 |
+
+#### 表 3: notes / highlights / bookmarks（笔记/高亮/书签）
+
+| 操作 | 负责方 | 前端实现 | 说明 |
+|:-----|:------|:--------|:-----|
+| **创建** | PowerSync | `INSERT INTO notes (...)` | 离线创建，自动同步 |
+| **更新** | PowerSync | `UPDATE notes SET ... WHERE id=?` | 离线更新 |
+| **软删除** | PowerSync | `UPDATE notes SET is_deleted=1, deleted_at=?` | 离线删除 |
+| **读取** | PowerSync | `SELECT * FROM notes WHERE book_id=? AND is_deleted=0` | 响应式 |
+
+#### 表 4: shelves / shelf_books（书架）
+
+| 操作 | 负责方 | 前端实现 | 说明 |
+|:-----|:------|:--------|:-----|
+| **创建书架** | PowerSync | `INSERT INTO shelves (...)` | 离线创建 |
+| **更新书架** | PowerSync | `UPDATE shelves SET ... WHERE id=?` | 离线更新 |
+| **删除书架** | PowerSync | `UPDATE shelves SET is_deleted=1` | 软删除 |
+| **添加书籍到书架** | PowerSync | `INSERT INTO shelf_books (...)` | 离线操作 |
+| **从书架移除书籍** | PowerSync | `DELETE FROM shelf_books WHERE ...` | 离线操作 |
+
+### 3.C.3 REST API 专属场景
+
+以下场景 **必须** 使用 REST API，因为 PowerSync 无法处理：
+
+| 场景 | API 端点 | 原因 |
+|:-----|:---------|:-----|
+| **上传书籍文件** | `POST /books/upload_init` + S3 + `POST /books/upload_complete` | 二进制文件传输 |
+| **下载书籍文件** | `GET /books/{id}/content` | 获取 S3 Presigned URL |
+| **获取封面图片** | `GET /books/{id}/cover` | 图片二进制流 |
+| **触发 OCR** | `POST /books/{id}/ocr/trigger` | 计算密集型异步任务 |
+| **AI 对话** | `POST /ai/chat` (SSE) | 流式响应 |
+| **AI 向量搜索** | `POST /ai/search` | 需要 OpenSearch |
+| **认证登录** | `POST /auth/*` | JWT 签发 |
+| **账单支付** | `POST /billing/*` | Stripe 集成 |
+| **永久删除书籍** | `DELETE /books/{id}/permanent` | 需要删除私人数据和更新引用计数 |
+| **批量永久删除** | `DELETE /books/permanent` | 批量删除私人数据 |
+
+> **⚠️ 注意**：软删除（设置 `deleted_at`）应使用 PowerSync；  
+> 恢复删除（清除 `deleted_at`）也应使用 PowerSync（与软删除对称）；  
+> 永久删除（清理私人数据）**必须**使用 REST API，因为需要：
+> 1. 删除 notes, highlights, bookmarks, reading_progress 等关联数据
+> 2. 更新引用书的 `storage_ref_count`
+> 3. 检查是否需要清理孤立的原书
+
+### 3.C.4 后端 ALLOWED_TABLES 配置
+
+**位置**: `api/app/powersync.py`
+
+```python
+ALLOWED_TABLES = {
+    "books",              # ✅ 必须添加！允许元数据修改和软删除
+    "reading_progress",
+    "reading_sessions",
+    "notes",
+    "highlights",
+    "bookmarks",
+    "shelves",
+    "shelf_books",
+    "user_settings",
+}
+```
+
+> **🔴 重要**: 如果 `books` 不在白名单中，前端对书籍的所有修改都不会同步到服务器！
+
+### 3.C.5 前端代码实现规范
+
+**✅ 正确示例 - 使用 PowerSync：**
+```typescript
+// 修改书籍元数据
+const db = usePowerSync()
+await db.execute(
+  'UPDATE books SET title = ?, author = ?, updated_at = ? WHERE id = ?',
+  [newTitle, newAuthor, new Date().toISOString(), bookId]
+)
+// PowerSync 自动同步到服务器，无需额外处理
+```
+
+**✅ 正确示例 - 软删除书籍：**
+```typescript
+await db.execute(
+  'UPDATE books SET deleted_at = ?, updated_at = ? WHERE id = ?',
+  [new Date().toISOString(), new Date().toISOString(), bookId]
+)
+// 30天后由后台任务硬删除
+```
+
+**❌ 错误示例 - 不应该这样做：**
+```typescript
+// 错误：不应该用 API 修改元数据（除非必须删除文件）
+await fetch(`/api/v1/books/${bookId}/metadata`, {
+  method: 'PATCH',
+  body: JSON.stringify({ title: newTitle })
+})
+// 这绕过了 PowerSync，导致数据不一致
+```
+
+### 3.C.6 同步流程图
+
+```
+用户操作 (书籍元数据修改)
+     │
+     ▼
+┌─────────────────┐
+│  前端 SQLite    │  ← 1. 立即写入本地数据库
+│  (PowerSync)    │
+└────────┬────────┘
+         │
+         ▼  2. PowerSync SDK 后台推送
+┌─────────────────┐
+│  PowerSync      │  ← 3. 调用 /api/v1/sync/upload
+│  Connector      │
+└────────┬────────┘
+         │
+         ▼  4. 写入 PostgreSQL
+┌─────────────────┐
+│   PostgreSQL    │
+│   (后端数据库)   │
+└────────┬────────┘
+         │
+         ▼  5. PowerSync sync_rules 检测变更
+┌─────────────────┐
+│  其他设备       │  ← 6. 实时同步到所有设备
+│  (PowerSync)    │
+└─────────────────┘
+```
+
+---
+
 ### [DEPRECATED] 3.1 初始全量同步 (Initial Sync)
 *(Legacy content preserved for reference, do not implement)*
 
@@ -267,255 +547,13 @@
 
 ## 6. 智能心跳同步协议 (Smart Heartbeat Sync Protocol) - [DEPRECATED]
 
-> **STATUS**: **DEPRECATED**.
-> **Reason**: PowerSync uses a streaming protocol over WebSocket/HTTP stream, rendering this custom heartbeat protocol obsolete.
-> **Replacement**: PowerSync SDK automatically handles keep-alive and sync.
-
-### [DEPRECATED] 6.1 协议概述
-*(Legacy content preserved for reference, do not implement)*
-
-智能心跳同步协议用于解决多端数据同步问题，核心设计理念：
-
-1. **版本指纹对比**：客户端携带本地数据版本，服务端比对后告知需要拉取的数据
-2. **双向同步**：客户端上传阅读进度等用户数据，服务端返回 OCR 等系统数据更新
-3. **按需拉取**：避免每次心跳都传输大量数据，仅在版本变化时触发下载
-
-### 5.2 接口定义
-
-#### `POST /api/v1/sync/heartbeat`
-
-**Request Headers**:
-```
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Request Body**:
-```typescript
-{
-  // 当前书籍上下文（可选，不传则同步所有书籍）
-  "bookId"?: string,
-  
-  // 设备标识（用于多设备冲突解决）
-  "deviceId": string,
-  
-  // 客户端已有的服务端权威数据版本
-  "clientVersions": {
-    "ocr"?: string,           // 例如 "sha256:abc12345"
-    "metadata"?: string,
-    "vectorIndex"?: string
-  },
-  
-  // 客户端权威数据（待上传）
-  "clientUpdates": {
-    // 阅读进度（客户端权威）
-    "readingProgress"?: {
-      "bookId": string,
-      "position": {
-        "page"?: number,
-        "cfi"?: string,        // EPUB CFI
-        "offset"?: number      // 页内偏移 0-1
-      },
-      "progress": number,      // 0-100
-      "timestamp": string      // ISO 8601
-    },
-    
-    // 离线创建的笔记（待上传）
-    "pendingNotes"?: Array<{
-      "clientId": string,      // 客户端临时 ID
-      "bookId": string,
-      "content": string,
-      "location": string,
-      "createdAt": string
-    }>,  // ⚠️ 单次最多 50 条
-    
-    // 离线创建的高亮（待上传）
-    "pendingHighlights"?: Array<{
-      "clientId": string,
-      "bookId": string,
-      "text": string,
-      "startLocation": string,
-      "endLocation": string,
-      "color"?: string,
-      "createdAt": string
-    }>,  // ⚠️ 单次最多 50 条
-    
-    // 是否还有更多待同步数据
-    "hasMore"?: boolean
-  }
-}
-```
-
-> **⚠️ 大 Payload 防护**
+> **STATUS**: ❌ **DEPRECATED** (ADR-007)
 > 
-> 为防止用户离线期间创建大量笔记/高亮导致请求体过大（超过 Nginx 默认 1MB 限制），采用分批上传策略：
-> - 单次心跳最多携带 50 条 notes + 50 条 highlights
-> - 当 `hasMore = true` 时，客户端应在收到响应后立即发起下一次心跳
-> - 后端请求体限制设为 512KB
-
-**Response Body**:
-```typescript
-{
-  // 服务端权威数据的最新版本
-  "serverVersions": {
-    "ocr": string,              // 当前 OCR 数据版本
-    "metadata": string,         // 当前元数据版本
-    "vectorIndex"?: string      // 向量索引版本（可选）
-  },
-  
-  // 需要客户端拉取的数据清单
-  "pullRequired": {
-    "ocr"?: {
-      "url": string,            // 下载地址
-      "size": number,           // 预估大小 (bytes)
-      "priority": "high" | "normal" | "low"
-    },
-    "metadata"?: {
-      "url": string,
-      "size": number
-    }
-  },
-  
-  // 客户端上传数据的处理结果
-  "pushResults": {
-    // 阅读进度处理结果
-    "readingProgress"?: "accepted" | "conflict",
-    
-    // 笔记创建结果
-    "notes"?: Array<{
-      "clientId": string,       // 客户端临时 ID
-      "serverId"?: string,      // 服务端分配的 UUID
-      "status": "created" | "conflict_copy" | "rejected",
-      "conflictId"?: string,    // 如果 status=conflict_copy，返回冲突副本 ID
-      "message"?: string
-    }>,
-    
-    // 高亮创建结果
-    "highlights"?: Array<{
-      "clientId": string,
-      "serverId"?: string,
-      "status": "created" | "conflict" | "merged" | "rejected",
-      "message"?: string
-    }>
-  },
-  
-  // 服务端建议的下次心跳间隔（毫秒）
-  "nextHeartbeatMs": number,    // 默认 30000
-  
-  // 待处理的服务端事件（可选，用于补偿 WebSocket 断连期间的事件）
-  "pendingEvents"?: Array<{
-    "type": "ocr_ready" | "metadata_updated" | "vector_ready",
-    "bookId": string,
-    "version": string,
-    "createdAt": string
-  }>
-}
-```
-
-**错误响应**:
-
-| HTTP Status | detail Code | 说明 |
-|------------|-------------|------|
-| 400 | `invalid_device_id` | 设备 ID 格式错误 |
-| 401 | `unauthorized` | Token 无效或过期 |
-| 404 | `book_not_found` | 指定的书籍不存在 |
-| 429 | `rate_limited` | 心跳频率过高 |
-
-### 5.3 版本指纹格式
-
-版本指纹采用内容哈希的前 16 位：
-
-```
-格式: sha256:<hash_prefix>
-示例: sha256:a1b2c3d4e5f67890
-```
-
-**生成规则**:
-- **OCR 版本**: `SHA256(ocr_report_json)` 的前 16 位
-- **元数据版本**: `SHA256(title + author + page_count + ...)` 的前 16 位
-- **向量索引版本**: `SHA256(embedding_model + dimension + count)` 的前 16 位
-
-### 5.4 心跳间隔动态调整
-
-| 场景 | 建议间隔 | 说明 |
-|-----|---------|------|
-| 用户活跃阅读中 | 10-15s | 频繁同步进度 |
-| 用户空闲（无操作 5 分钟） | 60s | 降低频率 |
-| 后台/最小化 | 300s | 极低频率 |
-| 刚完成 OCR 处理 | 立即推送 | WebSocket 事件 |
-
-### 5.5 客户端实现示例
-
-```typescript
-// web/src/hooks/useHeartbeat.ts
-
-interface HeartbeatState {
-  isActive: boolean;
-  lastSync: Date | null;
-  nextSyncMs: number;
-}
-
-export function useHeartbeat(bookId: string) {
-  const [state, setState] = useState<HeartbeatState>({
-    isActive: false,
-    lastSync: null,
-    nextSyncMs: 30000
-  });
-  
-  const { downloadOcr, localOcrVersion } = useOcrData(bookId);
-  
-  const sync = useCallback(async () => {
-    const response = await fetch('/api/v1/sync/heartbeat', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${getToken()}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        bookId,
-        deviceId: getDeviceId(),
-        clientVersions: {
-          ocr: localOcrVersion
-        },
-        clientUpdates: {
-          readingProgress: getCurrentProgress()
-        }
-      })
-    });
-    
-    const data = await response.json();
-    
-    // 检查是否需要拉取 OCR
-    if (data.pullRequired?.ocr) {
-      await downloadOcr(data.pullRequired.ocr.url);
-    }
-    
-    // 更新下次心跳间隔
-    setState(prev => ({
-      ...prev,
-      lastSync: new Date(),
-      nextSyncMs: data.nextHeartbeatMs
-    }));
-  }, [bookId, localOcrVersion]);
-  
-  // 定时心跳
-  useEffect(() => {
-    const timer = setInterval(sync, state.nextSyncMs);
-    return () => clearInterval(timer);
-  }, [sync, state.nextSyncMs]);
-  
-  return { sync, state };
-}
-```
-
-### 5.6 与现有接口的关系
-
-| 现有接口 | 变更说明 |
-|---------|---------|
-| `WS /ws/realtime/heartbeat` | 扩展支持版本指纹 |
-| `GET /api/v1/books/{id}/ocr` | 新增 `version` 响应头 |
-| `GET /api/v1/books/{id}/ocr/full` | 无变更，仅在版本不匹配时调用 |
-| `PATCH /api/v1/reading_progress` | 被心跳协议合并，可废弃 |
+> **废弃原因**: PowerSync 使用 WebSocket/HTTP 流式协议进行实时同步，无需自定义心跳。
+> 
+> **替代方案**: PowerSync SDK 自动处理连接保活、断线重连和增量同步。
+> 
+> **迁移指南**: 删除 `useHeartbeat` hook，改用 `usePowerSync` 即可。原心跳逻辑已由 PowerSync 内置机制接管。
 
 ---
 
@@ -1009,79 +1047,15 @@ Authorization: Bearer <access_token>
 > - 私人数据始终立即删除，保护用户隐私
 ## 11. 数据同步协议 (Data Sync Protocol)
 
-> **新增日期**: 2025-12-08
-> **用途**: 支持 App-First 架构的增量同步与冲突解决。
-
-### 10.1 增量拉取 (Pull)
-
-#### `POST /api/v1/sync/pull`
-
-获取自上次同步点以来的所有变更。
-
-**Request Body**:
-```json
-{
-  "lastPulledAt": 1700000000000,  // 上次同步时间戳 (ms)
-  "limit": 100                    // 单次拉取条数限制
-}
-```
-
-**Response 200**:
-```json
-{
-  "changes": {
-    "books": {
-      "created": [],
-      "updated": [ { "id": "...", "title": "...", "_updatedAt": 1700000001000 } ],
-      "deleted": [ "book-uuid-1" ]
-    },
-    "notes": { ... },
-    "highlights": { ... },
-    "progress": { ... }
-  },
-  "timestamp": 1700000002000,     // 当前服务器时间戳 (用于下次 lastPulledAt)
-  "hasMore": false                // 是否还有更多数据
-}
-```
-
-### 10.2 增量推送 (Push)
-
-#### `POST /api/v1/sync/push`
-
-提交本地产生的变更队列。
-
-**Request Body**:
-```json
-{
-  "mutations": [
-    {
-      "id": "uuid-v4",            // 变更 ID (幂等键)
-      "type": "note",
-      "action": "create",
-      "entityId": "note-uuid-1",
-      "payload": { ... },
-      "createdAt": 1700000000000
-    }
-  ]
-}
-```
-
-**Response 200**:
-```json
-{
-  "processed": [ "uuid-v4" ],     // 成功处理的变更 ID
-  "conflicts": [                  // 发生冲突的变更
-    {
-      "mutationId": "uuid-v5",
-      "error": "version_conflict",
-      "serverState": { ... }      // 服务器当前状态 (供客户端合并)
-    }
-  ]
-}
-```
-
-### 10.3 冲突解决机制
-
-1.  **乐观锁**: 每个实体包含 `_updatedAt` 字段。
-2.  **LWW (Last-Write-Wins)**: 对于 `reading_progress` 和 `user_settings`，服务器直接接受最新时间戳的数据。
-3.  **Conflict Copy**: 对于 `notes` 和 `highlights`，如果检测到服务器端版本更新（`server._updatedAt > mutation.createdAt`），则拒绝写入，返回冲突。客户端需提示用户或自动创建副本。
+> **⚠️ DEPRECATED**: 本节内容已废弃。
+> 
+> 雅典娜采用 **App-First 架构 (ADR-007)**，数据同步由 **PowerSync Service** 透明处理。
+> 
+> **不再使用**：
+> - ~~`POST /api/v1/sync/pull`~~ - 已废弃
+> - ~~`POST /api/v1/sync/push`~~ - 已废弃
+> - ~~`POST /api/v1/sync/initial`~~ - 已废弃
+> 
+> **现行方案**：参见 Section 3.A - 3.C（PowerSync 访问协议与数据操作规范）。
+> 
+> 冲突解决机制由 PowerSync 自动处理，详见 03 系统架构 - ADR-007。

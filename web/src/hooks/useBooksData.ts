@@ -9,7 +9,7 @@
 
 import { useMemo, useCallback } from 'react'
 import { useQuery } from '@powersync/react'
-import { usePowerSyncDatabase } from '@/lib/powersync'
+import { usePowerSyncDatabase, usePowerSyncState } from '@/lib/powersync'
 import { useAuthStore } from '@/stores/auth'
 
 // ============================================================================
@@ -30,36 +30,35 @@ export interface BookItem {
   isImageBased?: boolean
   conversionStatus?: string | null
   originalFormat?: string
-  totalPages?: number | null
 }
 
 interface BookRow {
   id: string
   title: string
   author: string | null
-  cover_path: string | null
-  file_path: string
+  cover_url: string | null
+  storage_key: string
   file_size: number
-  file_hash: string
-  format: string
-  publisher: string | null
-  language: string | null
-  isbn: string | null
-  description: string | null
-  total_pages: number | null
+  content_sha256: string | null
+  file_type: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
-  // 扩展字段（需要后端同步）
+  // 扩展字段
   ocr_status?: string | null
-  is_image_based?: number | null
+  is_digitalized?: number | null
+  initial_digitalization_confidence?: number | null
   conversion_status?: string | null
-  original_format?: string | null
 }
 
+/**
+ * reading_progress 表行结构
+ * 使用 progress 字段 (REAL 0-1) 和 finished_at 字段
+ */
 interface ProgressRow {
   book_id: string
-  percentage: number
+  progress: number  // 0-1, 不是 percentage
+  finished_at: string | null  // ISO 8601 时间戳，表示已读完
 }
 
 interface UseBooksDataOptions {
@@ -77,9 +76,13 @@ interface UseBooksDataOptions {
 
 export function useBooksData(options: UseBooksDataOptions = {}) {
   const db = usePowerSyncDatabase()
+  const { isInitialized, isConnected } = usePowerSyncState()
   const accessToken = useAuthStore(s => s.accessToken)
 
   const { sortBy = 'recent', includeDeleted = false, search } = options
+
+  // 检查 PowerSync 是否准备就绪
+  const isReady = isInitialized && db !== null
 
   // 构建排序 SQL
   const orderClause = useMemo(() => {
@@ -125,19 +128,31 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
     return []
   }, [search])
 
-  // 阅读进度查询
-  const progressSql = 'SELECT book_id, percentage FROM reading_progress'
+  // 阅读进度查询 - 使用正确的字段名 progress 和 finished_at
+  const progressSql = 'SELECT book_id, progress, finished_at FROM reading_progress'
 
-  // Live Queries
-  const { data: booksData, isLoading: booksLoading, error: booksError } = useQuery<BookRow>(booksSql, booksParams)
-  const { data: progressData } = useQuery<ProgressRow>(progressSql, [])
+  // Live Queries - 只有在 PowerSync 完全就绪时才执行真实查询
+  // 使用稳定的空查询作为占位符，避免 Hook 顺序问题
+  const EMPTY_BOOKS_QUERY = 'SELECT * FROM books WHERE 1=0'
+  const EMPTY_PROGRESS_QUERY = 'SELECT book_id, progress, finished_at FROM reading_progress WHERE 1=0'
+  
+  const safeBooksQuery = isReady ? booksSql : EMPTY_BOOKS_QUERY
+  const safeProgressQuery = isReady ? progressSql : EMPTY_PROGRESS_QUERY
+  const safeBooksParams = isReady ? booksParams : []
+  
+  const { data: booksData, isLoading: booksLoading, error: booksError } = useQuery<BookRow>(safeBooksQuery, safeBooksParams)
+  const { data: progressData } = useQuery<ProgressRow>(safeProgressQuery, [])
 
-  // 构建进度映射
+  // 构建进度映射 - 同时存储 progress 和 finished_at
   const progressMap = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, { progress: number; finishedAt: string | null }>()
     if (progressData) {
+      console.log('[useBooksData] Progress data from DB:', progressData)
       progressData.forEach(p => {
-        map.set(p.book_id, Math.round(p.percentage * 100))
+        map.set(p.book_id, {
+          progress: Math.round((p.progress ?? 0) * 100),
+          finishedAt: p.finished_at
+        })
       })
     }
     return map
@@ -149,23 +164,32 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
 
     const token = accessToken || localStorage.getItem('access_token') || ''
 
-    return booksData.map((book): BookItem => ({
-      id: book.id,
-      title: book.title || '未命名',
-      author: book.author || undefined,
-      coverUrl: book.id && token
-        ? `/api/v1/books/${book.id}/cover?token=${encodeURIComponent(token)}`
-        : undefined,
-      progress: progressMap.get(book.id) || 0,
-      isFinished: (progressMap.get(book.id) || 0) >= 100,
-      updatedAt: book.updated_at,
-      createdAt: book.created_at,
-      ocrStatus: book.ocr_status || null,
-      isImageBased: book.is_image_based === 1,
-      conversionStatus: book.conversion_status || null,
-      originalFormat: book.original_format || book.format,
-      totalPages: book.total_pages,
-    }))
+    return booksData.map((book): BookItem => {
+      const progressInfo = progressMap.get(book.id)
+      const progress = progressInfo?.progress || 0
+      // isFinished 优先检查 finished_at 字段，其次检查 progress >= 100
+      const isFinished = progressInfo?.finishedAt ? true : progress >= 100
+      
+      return {
+        id: book.id,
+        title: book.title || '未命名',
+        author: book.author || undefined,
+        // 只有当 PowerSync 同步的 cover_url 有值时，才生成封面访问 URL
+        // 封面是二进制文件，通过 REST API 代理获取（编码宪法 3.3 规定）
+        coverUrl: book.cover_url && book.id && token
+          ? `/api/v1/books/${book.id}/cover?token=${encodeURIComponent(token)}`
+          : undefined,
+        progress,
+        isFinished,
+        updatedAt: book.updated_at,
+        createdAt: book.created_at,
+        ocrStatus: book.ocr_status || null,
+        // isImageBased = !is_digitalized || (is_digitalized && confidence < 0.8)
+        isImageBased: book.is_digitalized !== 1 || (book.is_digitalized === 1 && (book.initial_digitalization_confidence ?? 1) < 0.8),
+        conversionStatus: book.conversion_status || null,
+        originalFormat: book.file_type || undefined,
+      }
+    })
   }, [booksData, progressMap, accessToken])
 
   // 书籍统计
@@ -236,8 +260,8 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
   return {
     /** 书籍列表 */
     items,
-    /** 加载状态 */
-    isLoading: booksLoading,
+    /** 加载状态 - 包含 PowerSync 未初始化的情况 */
+    isLoading: !isReady || booksLoading,
     /** 错误信息 */
     error: booksError,
     /** 书籍统计 */
@@ -250,8 +274,10 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
     refresh,
     /** 更新书籍 */
     updateBook,
-    /** 数据库是否可用 */
-    isReady: !!db,
+    /** PowerSync 数据库是否完全就绪 */
+    isReady,
+    /** PowerSync 是否已连接到服务器 */
+    isConnected,
   }
 }
 
@@ -260,16 +286,28 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
  */
 export function useBookData(bookId: string | null) {
   const db = usePowerSyncDatabase()
+  const { isInitialized } = usePowerSyncState()
   const accessToken = useAuthStore(s => s.accessToken)
 
+  const isReady = isInitialized && db !== null
+
+  // 在 PowerSync 初始化完成前使用空查询
+  const bookQuery = isReady && bookId
+    ? 'SELECT * FROM books WHERE id = ? AND deleted_at IS NULL'
+    : 'SELECT * FROM books WHERE 1=0'
+  
+  const progressQuery = isReady && bookId
+    ? 'SELECT book_id, progress FROM reading_progress WHERE book_id = ?'
+    : 'SELECT book_id, progress FROM reading_progress WHERE 1=0'
+
   const { data, isLoading, error } = useQuery<BookRow>(
-    bookId ? 'SELECT * FROM books WHERE id = ?' : 'SELECT * FROM books WHERE 1=0',
-    bookId ? [bookId] : []
+    bookQuery,
+    isReady && bookId ? [bookId] : []
   )
 
   const { data: progressData } = useQuery<ProgressRow>(
-    bookId ? 'SELECT book_id, percentage FROM reading_progress WHERE book_id = ?' : 'SELECT book_id, percentage FROM reading_progress WHERE 1=0',
-    bookId ? [bookId] : []
+    progressQuery,
+    isReady && bookId ? [bookId] : []
   )
 
   const book: BookItem | null = useMemo(() => {
@@ -277,13 +315,15 @@ export function useBookData(bookId: string | null) {
 
     const bookRow = data[0]
     const token = accessToken || localStorage.getItem('access_token') || ''
-    const progress = progressData?.[0]?.percentage ?? 0
+    const progress = progressData?.[0]?.progress ?? 0
 
     return {
       id: bookRow.id,
       title: bookRow.title || '未命名',
       author: bookRow.author || undefined,
-      coverUrl: bookRow.id && token
+      // 只有当 PowerSync 同步的 cover_url 有值时，才生成封面访问 URL
+      // 封面是二进制文件，通过 REST API 代理获取（编码宪法 3.3 规定）
+      coverUrl: bookRow.cover_url && bookRow.id && token
         ? `/api/v1/books/${bookRow.id}/cover?token=${encodeURIComponent(token)}`
         : undefined,
       progress: Math.round(progress * 100),
@@ -291,17 +331,172 @@ export function useBookData(bookId: string | null) {
       updatedAt: bookRow.updated_at,
       createdAt: bookRow.created_at,
       ocrStatus: bookRow.ocr_status || null,
-      isImageBased: bookRow.is_image_based === 1,
+      // isImageBased = !is_digitalized || (is_digitalized && confidence < 0.8)
+      isImageBased: bookRow.is_digitalized !== 1 || (bookRow.is_digitalized === 1 && (bookRow.initial_digitalization_confidence ?? 1) < 0.8),
       conversionStatus: bookRow.conversion_status || null,
-      originalFormat: bookRow.original_format || bookRow.format,
-      totalPages: bookRow.total_pages,
+      originalFormat: bookRow.file_type || undefined,
     }
   }, [data, progressData, accessToken])
 
   return {
     book,
-    isLoading,
+    isLoading: !isReady || isLoading,
     error,
-    isReady: !!db,
+    isReady,
+  }
+}
+
+// ============================================================================
+// 书架视图 Hook
+// ============================================================================
+
+interface ShelfRow {
+  id: string
+  name: string
+  description: string | null
+  sort_order: number | null
+  created_at: string
+}
+
+interface ShelfBookRow {
+  shelf_id: string
+  book_id: string
+  sort_order: number | null
+}
+
+export interface ShelfWithBooks {
+  id: string
+  name: string
+  books: BookItem[]
+}
+
+/**
+ * 获取按书架分组的书籍数据
+ */
+export function useShelvesWithBooks() {
+  const db = usePowerSyncDatabase()
+  const { isInitialized } = usePowerSyncState()
+  const accessToken = useAuthStore(s => s.accessToken)
+
+  const isReady = isInitialized && db !== null
+
+  // 查询书架列表
+  const EMPTY_QUERY = 'SELECT * FROM shelves WHERE 1=0'
+  const shelvesQuery = isReady 
+    ? 'SELECT * FROM shelves WHERE is_deleted = 0 OR is_deleted IS NULL ORDER BY sort_order ASC, name ASC'
+    : EMPTY_QUERY
+  
+  const { data: shelvesData, isLoading: shelvesLoading } = useQuery<ShelfRow>(shelvesQuery, [])
+
+  // 查询书架-书籍关联
+  const shelfBooksQuery = isReady
+    ? 'SELECT shelf_id, book_id, sort_order FROM shelf_books ORDER BY sort_order ASC'
+    : 'SELECT shelf_id, book_id, sort_order FROM shelf_books WHERE 1=0'
+  
+  const { data: shelfBooksData } = useQuery<ShelfBookRow>(shelfBooksQuery, [])
+
+  // 查询所有书籍
+  const booksQuery = isReady
+    ? 'SELECT * FROM books WHERE deleted_at IS NULL'
+    : 'SELECT * FROM books WHERE 1=0'
+  
+  const { data: booksData } = useQuery<BookRow>(booksQuery, [])
+
+  // 查询阅读进度 - 使用正确的字段名 progress
+  const progressQuery = isReady
+    ? 'SELECT book_id, progress FROM reading_progress'
+    : 'SELECT book_id, progress FROM reading_progress WHERE 1=0'
+  
+  const { data: progressData } = useQuery<ProgressRow>(progressQuery, [])
+
+  // 构建进度映射
+  const progressMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (progressData) {
+      progressData.forEach(p => {
+        map.set(p.book_id, Math.round((p.progress ?? 0) * 100))
+      })
+    }
+    return map
+  }, [progressData])
+
+  // 构建书籍映射
+  const booksMap = useMemo(() => {
+    const map = new Map<string, BookItem>()
+    const token = accessToken || localStorage.getItem('access_token') || ''
+    
+    if (booksData) {
+      booksData.forEach(book => {
+        map.set(book.id, {
+          id: book.id,
+          title: book.title || '未命名',
+          author: book.author || undefined,
+          // 只有当 PowerSync 同步的 cover_url 有值时，才生成封面访问 URL
+          coverUrl: book.cover_url && book.id && token
+            ? `/api/v1/books/${book.id}/cover?token=${encodeURIComponent(token)}`
+            : undefined,
+          progress: progressMap.get(book.id) || 0,
+          isFinished: (progressMap.get(book.id) || 0) >= 100,
+          updatedAt: book.updated_at,
+          createdAt: book.created_at,
+          ocrStatus: book.ocr_status || null,
+          // isImageBased = !is_digitalized || (is_digitalized && confidence < 0.8)
+          isImageBased: book.is_digitalized !== 1 || (book.is_digitalized === 1 && (book.initial_digitalization_confidence ?? 1) < 0.8),
+          conversionStatus: book.conversion_status || null,
+          originalFormat: book.file_type || undefined,
+        })
+      })
+    }
+    return map
+  }, [booksData, progressMap, accessToken])
+
+  // 构建书架-书籍映射
+  const shelfBooksMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    if (shelfBooksData) {
+      shelfBooksData.forEach(sb => {
+        const bookIds = map.get(sb.shelf_id) || []
+        bookIds.push(sb.book_id)
+        map.set(sb.shelf_id, bookIds)
+      })
+    }
+    return map
+  }, [shelfBooksData])
+
+  // 已分配到书架的书籍 ID 集合
+  const assignedBookIds = useMemo(() => {
+    const set = new Set<string>()
+    if (shelfBooksData) {
+      shelfBooksData.forEach(sb => set.add(sb.book_id))
+    }
+    return set
+  }, [shelfBooksData])
+
+  // 构建书架列表（含书籍）
+  const shelves: ShelfWithBooks[] = useMemo(() => {
+    if (!shelvesData) return []
+
+    return shelvesData.map(shelf => ({
+      id: shelf.id,
+      name: shelf.name,
+      books: (shelfBooksMap.get(shelf.id) || [])
+        .map(bookId => booksMap.get(bookId))
+        .filter((book): book is BookItem => book !== undefined)
+    }))
+  }, [shelvesData, shelfBooksMap, booksMap])
+
+  // 未分配书架的书籍
+  const unshelvedBooks: BookItem[] = useMemo(() => {
+    if (!booksData) return []
+    
+    return Array.from(booksMap.values())
+      .filter(book => !assignedBookIds.has(book.id))
+  }, [booksMap, assignedBookIds, booksData])
+
+  return {
+    shelves,
+    unshelvedBooks,
+    isLoading: !isReady || shelvesLoading,
+    isReady,
   }
 }

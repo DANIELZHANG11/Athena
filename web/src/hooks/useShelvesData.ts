@@ -9,7 +9,9 @@
 
 import { useMemo, useCallback } from 'react'
 import { useQuery } from '@powersync/react'
-import { usePowerSyncDatabase } from '@/lib/powersync'
+import { usePowerSyncDatabase, usePowerSyncState } from '@/lib/powersync'
+import { useAuthStore } from '@/stores/auth'
+import { generateUUID, getDeviceId } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义
@@ -72,8 +74,13 @@ interface ShelfBookRow {
  */
 export function useShelvesData() {
   const db = usePowerSyncDatabase()
+  const { isInitialized } = usePowerSyncState()
+  const isReady = isInitialized && db !== null
 
-  const sql = `
+  const EMPTY_QUERY = 'SELECT * FROM shelves WHERE 1=0'
+  
+  const sql = isReady
+    ? `
     SELECT s.*, COALESCE(sb.book_count, 0) as book_count
     FROM shelves s
     LEFT JOIN (
@@ -84,6 +91,7 @@ export function useShelvesData() {
     WHERE s.deleted_at IS NULL
     ORDER BY s.sort_order ASC, s.name ASC
   `
+    : EMPTY_QUERY
 
   const { data, isLoading, error } = useQuery<ShelfWithCountRow>(sql, [])
 
@@ -107,24 +115,28 @@ export function useShelvesData() {
   const createShelf = useCallback(async (shelf: { name: string; description?: string; color?: string; icon?: string }) => {
     if (!db) throw new Error('Database not available')
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const now = new Date().toISOString()
+    // 使用正确的 user_id - 从 AuthStore 获取
+    const userId = useAuthStore.getState().user?.id || ''
 
-    // 获取最大排序值
-    const maxOrder = await db.get<{ max_order: number }>(
+    // 获取最大排序值 - 使用 getAll 避免空结果异常
+    const maxOrderRows = await db.getAll<{ max_order: number }>(
       'SELECT COALESCE(MAX(sort_order), 0) as max_order FROM shelves'
     )
+    const maxOrder = maxOrderRows[0]?.max_order ?? 0
 
     await db.execute(
-      `INSERT INTO shelves (id, name, description, color, icon, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO shelves (id, user_id, name, description, color, icon, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
+        userId,
         shelf.name,
         shelf.description ?? null,
         shelf.color ?? null,
         shelf.icon ?? null,
-        (maxOrder?.max_order ?? 0) + 1,
+        maxOrder + 1,
         now,
         now
       ]
@@ -179,12 +191,12 @@ export function useShelvesData() {
 
   return {
     shelves,
-    isLoading,
+    isLoading: !isReady || isLoading,
     error,
     createShelf,
     updateShelf,
     deleteShelf,
-    isReady: !!db,
+    isReady,
   }
 }
 
@@ -193,6 +205,7 @@ export function useShelvesData() {
  */
 export function useShelfData(shelfId: string | null) {
   const db = usePowerSyncDatabase()
+  const userId = useAuthStore(s => s.user?.id)
 
   // 书架信息
   const { data: shelfData, isLoading: shelfLoading } = useQuery<ShelfRow>(
@@ -247,33 +260,34 @@ export function useShelfData(shelfId: string | null) {
 
   // 添加书籍到书架
   const addBook = useCallback(async (bookId: string) => {
-    if (!db || !shelfId) throw new Error('Database or shelfId not available')
+    if (!db || !shelfId || !userId) throw new Error('Database, shelfId or userId not available')
 
-    // 检查是否已存在
-    const existing = await db.get<{ id: string }>(
+    // 检查是否已存在 - 使用 getAll 避免空结果异常
+    const existingRows = await db.getAll<{ id: string }>(
       'SELECT id FROM shelf_books WHERE shelf_id = ? AND book_id = ?',
       [shelfId, bookId]
     )
 
-    if (existing) return existing.id
+    if (existingRows.length > 0) return existingRows[0].id
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const now = new Date().toISOString()
 
-    // 获取最大排序值
-    const maxOrder = await db.get<{ max_order: number }>(
+    // 获取最大排序值 - 使用 getAll 避免空结果异常
+    const maxOrderRows = await db.getAll<{ max_order: number }>(
       'SELECT COALESCE(MAX(sort_order), 0) as max_order FROM shelf_books WHERE shelf_id = ?',
       [shelfId]
     )
+    const maxOrder = maxOrderRows[0]?.max_order ?? 0
 
     await db.execute(
-      `INSERT INTO shelf_books (id, shelf_id, book_id, sort_order, added_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, shelfId, bookId, (maxOrder?.max_order ?? 0) + 1, now]
+      `INSERT INTO shelf_books (id, user_id, shelf_id, book_id, sort_order, added_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, userId, shelfId, bookId, maxOrder + 1, now]
     )
 
     return id
-  }, [db, shelfId])
+  }, [db, shelfId, userId])
 
   // 从书架移除书籍
   const removeBook = useCallback(async (bookId: string) => {
@@ -347,25 +361,28 @@ export function useBookShelvesData(bookId: string | null) {
   const addToShelf = useCallback(async (shelfId: string) => {
     if (!db || !bookId) throw new Error('Database or bookId not available')
 
-    const existing = await db.get<{ id: string }>(
+    const existingRows = await db.getAll<{ id: string }>(
       'SELECT id FROM shelf_books WHERE shelf_id = ? AND book_id = ?',
       [shelfId, bookId]
     )
 
-    if (existing) return
+    if (existingRows.length > 0) return
 
-    const id = crypto.randomUUID()
+    const id = generateUUID()
     const now = new Date().toISOString()
+    // 使用正确的 user_id - 从 AuthStore 获取
+    const userId = useAuthStore.getState().user?.id || ''
 
-    const maxOrder = await db.get<{ max_order: number }>(
+    const maxOrderRows = await db.getAll<{ max_order: number }>(
       'SELECT COALESCE(MAX(sort_order), 0) as max_order FROM shelf_books WHERE shelf_id = ?',
       [shelfId]
     )
+    const maxOrder = maxOrderRows[0]?.max_order ?? 0
 
     await db.execute(
-      `INSERT INTO shelf_books (id, shelf_id, book_id, sort_order, added_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, shelfId, bookId, (maxOrder?.max_order ?? 0) + 1, now]
+      `INSERT INTO shelf_books (id, user_id, shelf_id, book_id, sort_order, added_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, userId, shelfId, bookId, maxOrder + 1, now]
     )
   }, [db, bookId])
 

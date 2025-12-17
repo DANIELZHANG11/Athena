@@ -17,20 +17,20 @@ const books = new Table({
   user_id: column.text,
   title: column.text,
   author: column.text,
-  cover_url: column.text,
-  file_type: column.text,
-  file_size: column.integer,
+  cover_url: column.text,      // 来自 cover_image_key
+  file_type: column.text,      // 来自 original_format
+  file_size: column.integer,   // 来自 size
   content_sha256: column.text,
-  storage_key: column.text,
+  storage_key: column.text,    // 来自 minio_key
   
   // 元数据状态
-  metadata_extracted: column.integer, // boolean as 0/1
   metadata_confirmed: column.integer,
-  pdf_type: column.text, // 'text' | 'image' | 'mixed'
+  is_digitalized: column.integer, // boolean as 0/1, true = 有文字层
+  initial_digitalization_confidence: column.real, // 0.0 - 1.0, OCR 置信度
+  page_count: column.integer,  // 来自 meta->>'page_count'
   
   // OCR 状态
   ocr_status: column.text, // 'pending' | 'processing' | 'completed' | 'failed'
-  ocr_version: column.text,
   
   // 格式转换
   conversion_status: column.text,
@@ -55,6 +55,7 @@ const reading_progress = new Table({
   progress: column.real, // 0.0 - 1.0
   last_position: column.text, // JSON: CFI 或页码
   last_location: column.text, // JSON: 位置对象
+  finished_at: column.text, // ISO 8601: 完成阅读时间
   updated_at: column.text,
 }, {
   indexes: {
@@ -158,12 +159,14 @@ const shelves = new Table({
 
 // ============ 书架书籍关联表 ============
 const shelf_books = new Table({
+  user_id: column.text,  // 2025-12-15: 添加 user_id 以支持 PowerSync 同步
   shelf_id: column.text,
   book_id: column.text,
   sort_order: column.integer,
   added_at: column.text,
 }, {
   indexes: {
+    by_user: ['user_id'],
     by_shelf: ['shelf_id'],
     by_book: ['book_id'],
   }
@@ -178,21 +181,6 @@ const user_settings = new Table({
 }, {
   indexes: {
     by_user: ['user_id'],
-  }
-})
-
-// ============ 阅读统计表 (只读) ============
-const reading_stats = new Table({
-  user_id: column.text,
-  date: column.text, // ISO date: YYYY-MM-DD
-  total_seconds: column.integer,
-  pages_read: column.integer,
-  books_finished: column.integer,
-  updated_at: column.text,
-}, {
-  indexes: {
-    by_user: ['user_id'],
-    by_date: ['date'],
   }
 })
 
@@ -250,7 +238,7 @@ const local_cover_cache = new Table({
 // ============ 导出 Schema ============
 
 export const AppSchema = new Schema({
-  // 同步表
+  // 同步表 (共 9 个)
   books,
   reading_progress,
   reading_sessions,
@@ -260,7 +248,6 @@ export const AppSchema = new Schema({
   shelves,
   shelf_books,
   user_settings,
-  reading_stats,
   
   // 本地表 (不同步)
   local_book_files,
@@ -278,7 +265,6 @@ export type BookmarksRecord = Database['bookmarks']
 export type ShelvesRecord = Database['shelves']
 export type ShelfBooksRecord = Database['shelf_books']
 export type UserSettingsRecord = Database['user_settings']
-export type ReadingStatsRecord = Database['reading_stats']
 export type LocalBookFilesRecord = Database['local_book_files']
 export type LocalOcrDataRecord = Database['local_ocr_data']
 export type LocalCoverCacheRecord = Database['local_cover_cache']

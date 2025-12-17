@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { useQuery } from '@powersync/react'
-import { usePowerSyncDatabase } from '@/lib/powersync'
+import { usePowerSyncDatabase, usePowerSyncState } from '@/lib/powersync'
 import { useAuthStore } from '@/stores/auth'
 
 export interface DashboardData {
@@ -27,9 +27,15 @@ export interface DashboardData {
     }
 }
 
+/**
+ * reading_sessions 表行结构
+ * @see web/src/lib/powersync/schema.ts
+ * @see docker/powersync/sync_rules.yaml
+ * 字段: id, user_id, book_id, device_id, is_active, total_ms, created_at, updated_at
+ */
 interface ReadingSessionRow {
-    duration_seconds: number
-    started_at: string
+    total_ms: number      // 阅读时长（毫秒）
+    created_at: string    // 会话创建时间
 }
 
 interface ReadingStatsRow {
@@ -55,27 +61,48 @@ function getLocalDateString(date: Date = new Date()): string {
 
 export function useDashboardData() {
     const db = usePowerSyncDatabase()
+    const { isInitialized } = usePowerSyncState()
     const accessToken = useAuthStore(s => s.accessToken)
+
+    // 检查 PowerSync 是否准备就绪
+    const isReady = isInitialized && db !== null
 
     // 1. 获取今日阅读时间 (实时计算)
     // 统计今天所有阅读会话的时长
     const todayStr = getLocalDateString()
-    const { data: todaySessions } = useQuery<ReadingSessionRow>(
-        `SELECT duration_seconds, started_at FROM reading_sessions 
-     WHERE date(started_at) = date('now', 'localtime')
-     AND duration_seconds > 0`
-    )
+    
+    // 空查询占位符 - 当数据库未就绪时使用，保持 Hook 调用顺序一致
+    // 字段名参考: total_ms (毫秒), created_at (ISO8601)
+    const EMPTY_SESSIONS_QUERY = 'SELECT total_ms, created_at FROM reading_sessions WHERE 1=0'
+    const EMPTY_SETTINGS_QUERY = 'SELECT settings_json FROM user_settings WHERE 1=0'
+    // reading_sessions.total_ms 是毫秒，转换为秒
+    const EMPTY_WEEKLY_QUERY = 'SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds FROM reading_sessions WHERE 1=0 GROUP BY date(created_at)'
+    const EMPTY_ALL_STATS_QUERY = 'SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds FROM reading_sessions WHERE 1=0 GROUP BY date(created_at)'
+    // reading_progress.progress 是进度(0-1)，finished_at 是完成时间
+    const EMPTY_FINISHED_QUERY = 'SELECT b.id FROM reading_progress rp JOIN books b ON rp.book_id = b.id WHERE 1=0'
+
+    // 查询今日会话 - 使用正确的字段名 total_ms 和 created_at
+    const todaySessionsQuery = isReady 
+        ? `SELECT total_ms, created_at FROM reading_sessions 
+     WHERE date(created_at) = date('now', 'localtime')
+     AND total_ms > 0`
+        : EMPTY_SESSIONS_QUERY
+
+    const { data: todaySessions } = useQuery<ReadingSessionRow>(todaySessionsQuery)
 
     const todayMinutes = useMemo(() => {
         if (!todaySessions) return 0
-        const totalSeconds = todaySessions.reduce((sum, row) => sum + row.duration_seconds, 0)
-        return Math.round(totalSeconds / 60)
+        // total_ms 是毫秒，转换为分钟
+        const totalMs = todaySessions.reduce((sum, row) => sum + (row.total_ms || 0), 0)
+        return Math.round(totalMs / 60000)
     }, [todaySessions])
 
     // 2. 获取用户设置 (Goals)
-    const { data: settingsData } = useQuery<UserSettingsRow>(
-        `SELECT settings_json FROM user_settings LIMIT 1`
-    )
+    const settingsQuery = isReady
+        ? `SELECT settings_json FROM user_settings LIMIT 1`
+        : EMPTY_SETTINGS_QUERY
+    
+    const { data: settingsData } = useQuery<UserSettingsRow>(settingsQuery)
 
     const userSettings = useMemo(() => {
         if (!settingsData?.[0]?.settings_json) return { daily_minutes: 30, yearly_books: 10 }
@@ -92,12 +119,16 @@ export function useDashboardData() {
     }, [settingsData])
 
     // 3. 获取最近7天活动数据
-    // 使用 reading_stats (历史) + reading_sessions (今天)
-    const { data: weeklyStats } = useQuery<ReadingStatsRow>(
-        `SELECT date, total_seconds FROM reading_stats 
-     WHERE date >= date('now', '-6 days', 'localtime') 
+    // 使用 reading_sessions 聚合每日阅读时长 (reading_stats 表不存在)
+    const weeklyStatsQuery = isReady
+        ? `SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds 
+     FROM reading_sessions 
+     WHERE date(created_at) >= date('now', '-6 days', 'localtime') 
+     GROUP BY date(created_at)
      ORDER BY date ASC`
-    )
+        : EMPTY_WEEKLY_QUERY
+
+    const { data: weeklyStats } = useQuery<ReadingStatsRow>(weeklyStatsQuery)
 
     const weeklyActivity = useMemo(() => {
         // 初始化过去7天（含今天）
@@ -122,10 +153,10 @@ export function useDashboardData() {
             })
         }
 
-        // 覆盖/累加今天的数据 (因为 reading_stats 可能不是实时的)
+        // 今天的数据已经在 weeklyStats 聚合中包含
+        // 但如果 todayMinutes 更大（基于 duration_seconds），使用较大值
         const todayDay = days.find(d => d.date === todayStr)
         if (todayDay) {
-            // 优先使用 reading_sessions 的实时统计，如果它比 stats 大
             todayDay.minutes = Math.max(todayDay.minutes, todayMinutes)
         }
 
@@ -147,11 +178,16 @@ export function useDashboardData() {
 
     // 4. 计算 Streak
     // 获取更长历史数据用于计算 Streak (例如过去365天)
-    const { data: allStats } = useQuery<ReadingStatsRow>(
-        `SELECT date, total_seconds FROM reading_stats 
-         WHERE date >= date('now', '-365 days', 'localtime') 
+    // 使用 reading_sessions 聚合每日阅读时长
+    const allStatsQuery = isReady
+        ? `SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds 
+         FROM reading_sessions 
+         WHERE date(created_at) >= date('now', '-365 days', 'localtime') 
+         GROUP BY date(created_at)
          ORDER BY date DESC`
-    )
+        : EMPTY_ALL_STATS_QUERY
+
+    const { data: allStats } = useQuery<ReadingStatsRow>(allStatsQuery)
 
     const streak = useMemo(() => {
         if (!allStats) return { current_streak: 0, longest_streak: 0 }
@@ -166,7 +202,7 @@ export function useDashboardData() {
         // 检查今日是否达标
         const todayGoal = userSettings.daily_minutes
 
-        // 如果 reading_stats 还没包含今日，或者今日实时数据更多，更新 Map
+        // 如果今日实时数据更大，更新 Map
         const currentTodayMinutes = Math.max(dailyMinutesMap.get(todayStr) || 0, todayMinutes)
         dailyMinutesMap.set(todayStr, currentTodayMinutes)
 
@@ -244,11 +280,9 @@ export function useDashboardData() {
 
         // 注意 sorted dates 是升序 (old -> new)
         // 我们需要由连续的日期串联
-        // 简单处理：遍历所有 stats 记录 (只包含有记录的天数?? 不，必须每一天都检查)
-        // Map 只包含有记录(reading_stats)的天。如果某天没记录，minutes=0，failed.
-        // 所以我们只需要遍历 Map 里的日期吗？不行， map key 不连续。
-        // 但我们只需要找到连续的达标区间。
-        // 我们可以只遍历 sortedDates，检测日期是否连续且达标。
+        // 简单处理：遍历所有 stats 记录
+        // Map 只包含有阅读记录的天。如果某天没记录，minutes=0。
+        // 我们只需要遍历 Map 里的日期，检测日期是否连续且达标。
 
         if (sortedDates.length > 0) {
             const dayMs = 24 * 60 * 60 * 1000
@@ -286,13 +320,16 @@ export function useDashboardData() {
     }, [allStats, todayMinutes, todayStr, userSettings.daily_minutes])
 
     // 5. 年度阅读目标完成情况
-    const { data: finishedBooks } = useQuery<FinishedBookRow>(
-        `SELECT b.id FROM reading_progress rp
+    // 使用正确的字段名: progress (进度 0-1), finished_at (完成时间)
+    const finishedBooksQuery = isReady
+        ? `SELECT b.id FROM reading_progress rp
      JOIN books b ON rp.book_id = b.id
-     WHERE rp.percentage >= 1.0
-     AND strftime('%Y', rp.last_read_at) = strftime('%Y', 'now')
+     WHERE rp.progress >= 1.0
+     AND strftime('%Y', COALESCE(rp.finished_at, rp.updated_at)) = strftime('%Y', 'now')
      AND b.deleted_at IS NULL`
-    )
+        : EMPTY_FINISHED_QUERY
+
+    const { data: finishedBooks } = useQuery<FinishedBookRow>(finishedBooksQuery)
 
     const yearlyFinished = useMemo(() => {
         const count = finishedBooks?.length || 0
@@ -320,9 +357,9 @@ export function useDashboardData() {
         const json = JSON.stringify(newSettings)
         const now = new Date().toISOString()
 
-        // 获取当前用户ID (需要从 auth store 或者上下文获取，这里简化假设只有单用户或 user_settings 有唯一记录)
-        // 更好的做法是查询当前记录
-        const existing = await db.get<{ user_id: string }>('SELECT user_id FROM user_settings LIMIT 1')
+        // 获取当前用户ID - 使用 getAll 避免空结果异常
+        const existingRows = await db.getAll<{ user_id: string }>('SELECT user_id FROM user_settings LIMIT 1')
+        const existing = existingRows[0]
 
         if (existing) {
             await db.execute('UPDATE user_settings SET settings_json = ?, updated_at = ? WHERE user_id = ?',
@@ -342,6 +379,7 @@ export function useDashboardData() {
             yearly_finished: yearlyFinished
         },
         updateGoals,
-        isLoading: !todaySessions && !settingsData,
+        isLoading: !isReady || (!todaySessions && !settingsData),
+        isReady,
     }
 }

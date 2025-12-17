@@ -50,7 +50,13 @@ _mem = {}
 def issue_tokens(user_id: str, session_id: str):
     now = int(time.time())
     access = jwt.encode(
-        {"sub": user_id, "sid": session_id, "iat": now, "exp": now + ACCESS_EXPIRE},
+        {
+            "sub": user_id,
+            "sid": session_id,
+            "iat": now,
+            "exp": now + ACCESS_EXPIRE,
+            "aud": "authenticated",  # PowerSync 要求的 aud 声明
+        },
         AUTH_SECRET,
         algorithm="HS256",
     )
@@ -69,7 +75,9 @@ def require_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="unauthorized")
     token = authorization.split(" ", 1)[1]
     try:
-        payload = jwt.decode(token, AUTH_SECRET)
+        # 支持带 aud 字段的新 token 和不带 aud 字段的旧 token
+        # 使用 options 跳过 aud 验证，因为 API 接受所有来源的请求
+        payload = jwt.decode(token, AUTH_SECRET, options={"verify_aud": False})
         return payload["sub"], payload.get("sid")
     except Exception:
         raise HTTPException(status_code=401, detail="invalid_token")

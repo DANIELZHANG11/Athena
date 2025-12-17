@@ -247,13 +247,14 @@ export default function UploadManager({
       // 广播上传成功事件，供其他组件监听
       window.dispatchEvent(new CustomEvent('book_uploaded', { detail: result }))
       
-      // 获取文件扩展名，判断是否需要转换
-      const ext = result.title.split('.').pop()?.toLowerCase() || ''
-      const originalFormat = pendingFile?.name.split('.').pop()?.toLowerCase() || ext
+      // 从 pendingFile 或 fileName 状态获取文件扩展名
+      // 注意：result.title 是书名，不是文件名！
+      const currentFileName = pendingFile?.name || fileName || ''
+      const originalFormat = currentFileName.split('.').pop()?.toLowerCase() || ''
       const directFormats = ['epub', 'pdf']
-      const needsConversion = !directFormats.includes(originalFormat)
+      const needsConversion = originalFormat !== '' && !directFormats.includes(originalFormat)
       
-      console.log(`[UploadManager] Upload success! bookId=${result.id}, format=${originalFormat}, needsConversion=${needsConversion}`)
+      console.log(`[UploadManager] Upload success! bookId=${result.id}, fileName=${currentFileName}, format=${originalFormat}, needsConversion=${needsConversion}`)
       
       // 保存上传信息（包含格式信息）
       lastUploadRef.current = { id: result.id, title: result.title, format: originalFormat }

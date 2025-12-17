@@ -122,7 +122,7 @@ export default function AppLayout() {
   )
   
   return (
-    <div className="bg-system-background min-h-screen font-ui">
+    <div className="bg-system-background min-h-screen font-ui overflow-x-hidden w-full max-w-full">
       {/* 离线状态指示器 */}
       <OfflineIndicator pendingCount={pendingCount} />
       
@@ -131,7 +131,7 @@ export default function AppLayout() {
       
       {/* 阅读页面不需要 pb-24，因为导航栏是沉浸式隐藏的 */}
       <main className={cn(
-        'bg-system-background',
+        'bg-system-background w-full max-w-full overflow-x-hidden',
         !isOnline && 'pt-10',
         !isReaderPage && 'pb-24'
       )}>

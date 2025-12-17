@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan, FolderPlus } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, generateUUID, getDeviceId } from '@/lib/utils'
 import { usePowerSync } from '@powersync/react'
+import { useAuthStore } from '@/stores/auth'
 import { bookStorage } from '@/lib/bookStorage'
 import BookMetadataDialog from './BookMetadataDialog'
 import OcrTriggerDialog from './OcrTriggerDialog'
@@ -122,12 +123,41 @@ export default function BookCardMenu({
     setLoading(true)
     
     const newFinishedState = !isFinished
+    const now = new Date().toISOString()
+    const userId = useAuthStore.getState().user?.id || ''
+    const deviceId = getDeviceId()
     
     try {
-      // 使用 PowerSync 更新状态
+      // 使用 reading_progress 表更新进度
+      // progress = 1.0 表示已读完, finished_at 记录完成时间
+      const newProgress = newFinishedState ? 1.0 : 0.0
+      const finishedAt = newFinishedState ? now : null
+      
+      // 检查是否已有进度记录 - 使用 book_id + user_id 匹配
+      const existing = await db.getAll<{ id: string }>(
+        'SELECT id FROM reading_progress WHERE book_id = ? AND user_id = ?',
+        [bookId, userId]
+      )
+      
+      if (existing.length > 0) {
+        // 更新现有记录 - 使用 book_id + user_id 匹配
+        await db.execute(
+          'UPDATE reading_progress SET progress = ?, finished_at = ?, updated_at = ? WHERE book_id = ? AND user_id = ?',
+          [newProgress, finishedAt, now, bookId, userId]
+        )
+      } else {
+        // 插入新记录
+        await db.execute(
+          `INSERT INTO reading_progress (id, book_id, user_id, device_id, progress, finished_at, updated_at) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [generateUUID(), bookId, userId, deviceId, newProgress, finishedAt, now]
+        )
+      }
+      
+      // 同时更新 books 表的 updated_at
       await db.execute(
-        'UPDATE books SET is_finished = ?, progress = ?, updated_at = datetime("now") WHERE id = ?',
-        [newFinishedState ? 1 : 0, newFinishedState ? 100 : 0, bookId]
+        'UPDATE books SET updated_at = ? WHERE id = ?',
+        [now, bookId]
       )
       
       console.log('[BookCardMenu] Updated finished status:', bookId, newFinishedState)
@@ -144,21 +174,43 @@ export default function BookCardMenu({
   const handleDelete = async () => {
     setLoading(true)
     try {
-      console.log('[BookCardMenu] Deleting book:', bookId)
+      console.log('[BookCardMenu] Soft deleting book:', bookId)
+      console.log('[BookCardMenu] Database instance:', db)
       
-      // 1. 删除 PowerSync 数据
-      await db.execute('DELETE FROM books WHERE id = ?', [bookId])
+      if (!db) {
+        console.error('[BookCardMenu] Database not available!')
+        return
+      }
       
-      // 2. 删除本地文件
-      await bookStorage.deleteBook(bookId)
+      // 软删除：设置 deleted_at 时间戳，保留30天
+      const now = new Date().toISOString()
+      console.log('[BookCardMenu] Executing UPDATE with:', { now, bookId })
       
-      console.log('[BookCardMenu] Book deleted successfully')
+      await db.execute(
+        'UPDATE books SET deleted_at = ?, updated_at = ? WHERE id = ?',
+        [now, now, bookId]
+      )
+      
+      console.log('[BookCardMenu] Execute completed, checking CRUD queue...')
+      
+      // 检查 CRUD 队列
+      try {
+        const crudCount = await db.getAll('SELECT count(*) as count FROM ps_crud')
+        console.log('[BookCardMenu] CRUD queue count:', crudCount)
+      } catch (e) {
+        console.log('[BookCardMenu] Could not check CRUD queue:', e)
+      }
+      
+      // 注意：不删除本地文件，保留用于恢复
+      // await bookStorage.deleteBook(bookId) // 移除硬删除
+      
+      console.log('[BookCardMenu] Book soft deleted successfully')
       setShowConfirm(false)
       setOpen(false)
       
       onDeleted?.()
     } catch (e) {
-      console.error('[BookCardMenu] Failed to delete book:', e)
+      console.error('[BookCardMenu] Failed to soft delete book:', e)
     } finally {
       setLoading(false)
     }
@@ -368,7 +420,7 @@ export default function BookCardMenu({
 
               {/* 标题 */}
               <h3 className="text-lg font-bold text-label mb-2">
-                {t('book_menu.confirm_remove_title')}
+                {t('book_menu.confirm_remove_title', '确认删除')}
               </h3>
 
               {/* 书名 */}
@@ -376,10 +428,12 @@ export default function BookCardMenu({
                 "{bookTitle}"
               </p>
 
-              {/* 警告文案 */}
-              <p className="text-sm text-secondary-label mb-6">
-                {t('book_menu.confirm_remove_message')}
-              </p>
+              {/* 30天恢复提示 */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mb-6 w-full">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  {t('book_menu.soft_delete_notice', '书籍将移至「最近删除」，30天后自动永久删除。在此期间可随时恢复。')}
+                </p>
+              </div>
 
               {/* 按钮组 */}
               <div className="flex gap-3 w-full">
@@ -395,7 +449,7 @@ export default function BookCardMenu({
                     'disabled:opacity-50'
                   )}
                 >
-                  {t('common.cancel')}
+                  {t('common.cancel', '取消')}
                 </button>
                 <button
                   onClick={handleDelete}
@@ -410,7 +464,7 @@ export default function BookCardMenu({
                   )}
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {t('book_menu.remove_confirm')}
+                  {t('book_menu.remove_confirm', '确认删除')}
                 </button>
               </div>
             </div>

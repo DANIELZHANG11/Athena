@@ -71,9 +71,25 @@
 | :--- | :--- | :--- |
 | `powersync` 容器 | 镜像 `powersync/service:latest`，端口 `8090` | 通过 gRPC/WebSocket 为 SDK 提供流式同步 |
 | PostgreSQL 连接 | 复用 `POSTGRES_HOST/USER/PASSWORD`，单独 schema `powersync` | 存储订阅 offset、上传队列、冲突日志 |
-| download_config.yaml | 定义 `books`, `reading_sessions`, `notes`, `highlights`, `tags`, `user_settings` 的列映射与过滤条件 | 与 `04_DB` 同步维护 |
-| upload_config.yaml | 限定可写表、字段白名单、RLS 检查、触发器 | 结合 `device_id`、`_updated_at` 进行审计 |
-| 监控 | `/metrics` 暴露 Prometheus 指标：`powersync_stream_lag`, `powersync_upload_errors_total` | 纳入 07_DevOps | 
+| sync_rules.yaml | 定义 10 个同步表（见下表）的列映射与过滤条件 | 与 `04_DB` 同步维护 |
+| 监控 | `/metrics` 暴露 Prometheus 指标：`powersync_stream_lag`, `powersync_upload_errors_total` | 纳入 07_DevOps |
+
+**PowerSync 同步表清单（共 9 个）**：
+| # | 表名 | 同步方向 | 冲突策略 |
+|---|:-----|:--------|:---------|
+| 1 | `books` | ↕ 双向 | LWW（仅元数据：title/author/deleted_at） |
+| 2 | `reading_progress` | ↕ 双向 | LWW |
+| 3 | `reading_sessions` | ↕ 双向 | LWW |
+| 4 | `notes` | ↕ 双向 | Conflict Copy |
+| 5 | `highlights` | ↕ 双向 | Conflict Copy |
+| 6 | `bookmarks` | ↕ 双向 | 无 |
+| 7 | `shelves` | ↕ 双向 | 字段合并 |
+| 8 | `shelf_books` | ↕ 双向 | 无 |
+| 9 | `user_settings` | ↕ 双向 | JSONB 合并 |
+
+> **权威来源**：`docker/powersync/sync_rules.yaml` + `web/src/lib/powersync/schema.ts`  
+> **详细字段映射**：见 `04_Database_Schema.md` Section 3.2
+> **注意**：阅读统计通过前端聚合 `reading_sessions` + `reading_progress` 计算，不作为独立同步表。 
 
 ### 3.2 客户端 SQLite 实现
 
@@ -89,18 +105,17 @@
 
 | 实体 | 策略 | 技术实现 |
 | :--- | :--- | :--- |
-| `reading_progress` | LWW (last_write_wins) | `_updated_at` 由客户端生成，PostgreSQL 触发器比较并拒绝旧写入 |
+| `reading_progress` | LWW (last_write_wins) | `updated_at` 由客户端生成，PostgreSQL 触发器比较并拒绝旧写入 |
 | `notes`/`highlights` | Conflict Copy | 触发器检测同书籍+位置冲突，写入 `conflict_of` 副本，由前端提示合并 |
 | `shelves`/`user_settings` | 字段级合并 (merge) | PowerSync `merge_columns` 特性 + JSONB patch |
-| `books` metadata | 服务端权威 | 仅允许 PATCH API 修改，PowerSync 只读 |
+| `books` metadata | LWW（客户端可修改） | PowerSync 允许修改 title/author/deleted_at，文件相关字段（minio_key, sha256）服务端控制 |
 
 ### 3.4 Feature Flag 设计
 
 | 名称 | 位置 | 默认值 | 行为 |
 | :--- | :--- | :--- | :--- |
-| `APP_FIRST_ENABLED` | `web/src/config/featureFlags.ts` | `false` → `true` (Phase 5) | 控制是否注入 PowerSync Provider、隐藏 Dexie hook |
-| `POWERSYNC_UPLOAD_ENABLED` | 后端环境变量 | `true` in staging | 控制 PowerSync Service 是否允许写回，方便只读演练 |
-| `DEXIE_FALLBACK_ENABLED` | Web localStorage override | `true` | 提供 QA 手动切换入口 |
+| `APP_FIRST_ENABLED` | `web/src/config/featureFlags.ts` | `true` | 控制是否注入 PowerSync Provider（已启用） |
+| `POWERSYNC_UPLOAD_ENABLED` | 后端环境变量 | `true` | 控制 PowerSync Service 是否允许写回 |
 
 ---
 

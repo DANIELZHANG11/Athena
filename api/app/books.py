@@ -361,21 +361,21 @@ async def upload_complete(
     if idempotency_key:
         r.setex(idem_key, 24 * 3600, str(data))
     
-    # 根据格式决定任务流程
+    # 【统一架构】所有格式均使用 Calibre 提取元数据
+    # Calibre ebook-meta 支持 PDF, EPUB, MOBI, AZW3, FB2 等 20+ 种格式
+    # 对于 PDF 还会检测是否为图片型（需要 OCR）
     try:
-        if not needs_conversion:
-            # EPUB/PDF: 使用合并任务一次性提取封面和元数据（只下载一次文件）
-            # extract_book_cover_and_metadata 已经包含了 PDF 类型检测逻辑
-            celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
-            # 注意：不自动触发 deep_analyze_book (OCR)
-            # OCR 是收费服务，需要用户在前端主动触发
-            # 图片型 PDF 上传后，前端会检测 is_image_based 并弹窗提示用户选择
-        else:
-            # 其他格式（AZW3, MOBI 等）先转换为 EPUB，转换完成后会自动触发封面和元数据提取
-            print(f"[Upload] Non-EPUB/PDF format ({fmt_lower}), triggering Calibre conversion...")
+        print(f"[Upload] Using Calibre for metadata extraction (format: {fmt_lower})...")
+        celery_app.send_task("tasks.extract_ebook_metadata_calibre", args=[book_id, user_id])
+        
+        # 非 EPUB/PDF 格式：额外启动转换任务，供阅读器使用
+        if fmt_lower not in ('epub', 'pdf'):
+            print(f"[Upload] Non-EPUB/PDF format, also starting conversion to EPUB...")
             celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
-    except Exception:
-        pass
+            
+    except Exception as e:
+        print(f"[Upload] Failed to queue background tasks: {e}")
+        
     return {"status": "success", "data": data}
 
 
@@ -652,7 +652,8 @@ async def get_book_cover(
         raise HTTPException(status_code=401, detail="unauthorized")
     
     try:
-        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"])
+        # 【重要】verify_aud=False 因为 token 包含 aud: authenticated (PowerSync 要求)
+        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"], options={"verify_aud": False})
         user_id = payload["sub"]
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"invalid_token: {str(e)}")
@@ -720,7 +721,8 @@ async def get_book_content(
         raise HTTPException(status_code=401, detail="unauthorized")
     
     try:
-        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"])
+        # 【重要】verify_aud=False 因为 token 包含 aud: authenticated (PowerSync 要求)
+        payload = jwt.decode(auth_token, AUTH_SECRET, algorithms=["HS256"], options={"verify_aud": False})
         user_id = payload["sub"]
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"invalid_token: {str(e)}")

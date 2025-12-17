@@ -18,6 +18,15 @@ export default function Home() {
 
   const loading = isDashboardLoading || isBooksLoading
 
+  // 调试日志
+  console.log('[Home] render:', { 
+    loading,
+    dashboardToday: dashboard?.today,
+    dashboardWeekly: dashboard?.weekly,
+    recentBooksCount: recentBooks?.length,
+    recentBooks: recentBooks?.slice(0, 3)
+  })
+
   // 转换最近阅读书籍数据格式
   const items = recentBooks.map(item => ({
     book_id: item.bookId,

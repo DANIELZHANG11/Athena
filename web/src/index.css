@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* 全局移动端优化 */
+html {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+  position: relative;
+}
+
+#root {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* 防止所有元素超出屏幕宽度 */
+* {
+  max-width: 100vw;
+}
+
 @layer utilities {
   .mask-linear-fade {
     mask-image: linear-gradient(to right, transparent 0%, black 2%, black 98%, transparent 100%);

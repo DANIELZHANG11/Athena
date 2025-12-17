@@ -254,6 +254,262 @@ def _extract_pdf_cover(pdf_data: bytes) -> bytes | None:
 
 # Calibre 容器地址（Docker 内部网络）
 CALIBRE_HOST = os.getenv("CALIBRE_HOST", "calibre")
+CALIBRE_BOOKS_DIR = os.getenv("CALIBRE_CONVERT_DIR", "/calibre_books")
+
+
+@shared_task(name="tasks.extract_ebook_metadata_calibre")
+def extract_ebook_metadata_calibre(book_id: str, user_id: str):
+    """
+    使用 Calibre ebook-meta 命令即时提取电子书的元数据和封面。
+    
+    支持所有格式：PDF, EPUB, MOBI, AZW3, FB2 等 20+ 格式。
+    
+    对于 PDF：
+    - 提取元数据和封面
+    - 额外检测是否为图片型 PDF（需要 OCR）
+    
+    通过共享卷与 calibre-metadata 容器交互：
+    1. Worker 将电子书写入共享卷
+    2. Worker 创建 .metadata.request 请求文件
+    3. calibre-metadata 容器执行 ebook-meta
+    4. Worker 轮询等待 .done 文件
+    """
+    import asyncio
+    import time
+    import re
+    import uuid as _uuid
+    
+    async def _run():
+        # 获取书籍信息
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            res = await conn.execute(
+                text("SELECT minio_key, original_format, title, author FROM books WHERE id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            row = res.fetchone()
+            if not row:
+                print(f"[CalibreMeta] Book not found: {book_id}")
+                return
+            
+            minio_key, original_format, current_title, current_author = row[0], row[1], row[2], row[3]
+            fmt_lower = (original_format or '').lower()
+            
+            print(f"[CalibreMeta] Extracting metadata for {book_id} (format: {fmt_lower})")
+        
+        # 下载文件到共享卷
+        job_id = str(_uuid.uuid4())[:8]
+        input_filename = f"meta-{job_id}.{fmt_lower}"
+        cover_filename = f"cover-{job_id}.jpg"
+        
+        # Worker 容器中的路径 (/calibre_books) 和 Calibre 容器中的路径 (/books) 不同
+        worker_input_path = os.path.join(CALIBRE_BOOKS_DIR, input_filename)
+        worker_cover_path = os.path.join(CALIBRE_BOOKS_DIR, cover_filename)
+        worker_metadata_path = os.path.join(CALIBRE_BOOKS_DIR, f"metadata-{job_id}.txt")
+        worker_request_path = os.path.join(CALIBRE_BOOKS_DIR, f"metadata-{job_id}.metadata.request")
+        worker_done_path = os.path.join(CALIBRE_BOOKS_DIR, f"metadata-{job_id}.done")
+        worker_error_path = os.path.join(CALIBRE_BOOKS_DIR, f"metadata-{job_id}.error")
+        
+        # Calibre 容器中的路径
+        calibre_input_path = f"/books/{input_filename}"
+        calibre_cover_path = f"/books/{cover_filename}"
+        
+        # 用于存储下载的文件数据（PDF 需要额外分析）
+        book_data = None
+        
+        try:
+            # 从 S3 下载文件
+            client = get_s3()
+            ensure_bucket(client, BUCKET)
+            resp = client.get_object(Bucket=BUCKET, Key=minio_key)
+            book_data = resp["Body"].read()
+            
+            os.makedirs(CALIBRE_BOOKS_DIR, exist_ok=True)
+            with open(worker_input_path, 'wb') as f:
+                f.write(book_data)
+            print(f"[CalibreMeta] Downloaded {len(book_data)} bytes to {worker_input_path}")
+            
+            # 创建元数据提取请求文件
+            with open(worker_request_path, 'w') as f:
+                f.write(f"{calibre_input_path}\n{calibre_cover_path}\n")
+            print(f"[CalibreMeta] Created request file: {worker_request_path}")
+            
+            # 轮询等待完成（最多等待 60 秒，PDF 可能较慢）
+            max_wait = 60
+            wait_interval = 0.5
+            waited = 0
+            
+            while waited < max_wait:
+                if os.path.exists(worker_done_path):
+                    print(f"[CalibreMeta] Metadata extraction completed!")
+                    break
+                if os.path.exists(worker_error_path):
+                    with open(worker_error_path, 'r') as f:
+                        error_msg = f.read()
+                    print(f"[CalibreMeta] Extraction failed: {error_msg}")
+                    # 清理文件
+                    for p in [worker_request_path, worker_error_path, worker_input_path]:
+                        try:
+                            if os.path.exists(p):
+                                os.remove(p)
+                        except:
+                            pass
+                    return
+                
+                time.sleep(wait_interval)
+                waited += wait_interval
+            
+            if waited >= max_wait:
+                print(f"[CalibreMeta] Timeout waiting for metadata extraction")
+                # 继续处理，可能部分成功
+            
+            # 解析元数据输出
+            metadata = {"title": None, "author": None, "page_count": None}
+            if os.path.exists(worker_metadata_path):
+                with open(worker_metadata_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    output = f.read()
+                print(f"[CalibreMeta] ebook-meta output:\n{output}")
+                
+                # 解析元数据
+                title_match = re.search(r'^Title\s*:\s*(.+)$', output, re.MULTILINE)
+                if title_match:
+                    metadata["title"] = title_match.group(1).strip()
+                
+                author_match = re.search(r'^Author\(s\)\s*:\s*(.+)$', output, re.MULTILINE)
+                if author_match:
+                    author_str = author_match.group(1).strip()
+                    # 移除排序名称部分 [xxx]
+                    author_str = re.sub(r'\s*\[.*?\]', '', author_str)
+                    metadata["author"] = author_str.strip()
+                
+                # 尝试提取页数
+                pages_match = re.search(r'^Pages?\s*:\s*(\d+)', output, re.MULTILINE | re.IGNORECASE)
+                if pages_match:
+                    metadata["page_count"] = int(pages_match.group(1))
+            
+            # 读取封面
+            cover_key = None
+            if os.path.exists(worker_cover_path):
+                with open(worker_cover_path, 'rb') as f:
+                    cover_data = f.read()
+                
+                if cover_data and len(cover_data) > 1000:  # 至少 1KB
+                    # 优化封面
+                    optimized_data, content_type = _optimize_cover_image(cover_data, max_width=400, quality=80)
+                    cover_key = make_object_key(user_id, f"covers/{book_id}.webp")
+                    upload_bytes(BUCKET, cover_key, optimized_data, content_type)
+                    print(f"[CalibreMeta] Uploaded cover: {cover_key} ({len(optimized_data)} bytes)")
+                else:
+                    print(f"[CalibreMeta] Cover too small or empty, skipping")
+            else:
+                print(f"[CalibreMeta] No cover file found")
+            
+            # 【PDF 特殊处理】检测是否为图片型 PDF（需要 OCR）
+            is_image_based = False
+            digitalization_confidence = 1.0
+            
+            if fmt_lower == 'pdf' and book_data:
+                print(f"[CalibreMeta] Analyzing PDF for OCR requirement...")
+                pdf_analysis = _extract_pdf_metadata(book_data)
+                is_image_based = pdf_analysis.get("is_image_based", False)
+                digitalization_confidence = pdf_analysis.get("digitalization_confidence", 1.0)
+                if pdf_analysis.get("page_count"):
+                    metadata["page_count"] = pdf_analysis["page_count"]
+                print(f"[CalibreMeta] PDF analysis: is_image_based={is_image_based}, confidence={digitalization_confidence:.2f}")
+            
+            # 更新数据库
+            updates = []
+            params = {"id": book_id}
+            
+            if cover_key:
+                updates.append("cover_image_key = :cover_key")
+                params["cover_key"] = cover_key
+            
+            # 更新作者（如果当前为空）
+            if metadata.get("author") and (not current_author or current_author.strip() == ""):
+                updates.append("author = :author")
+                params["author"] = metadata["author"]
+                print(f"[CalibreMeta] Will update author to: {metadata['author']}")
+            
+            # 更新标题（如果需要）
+            if metadata.get("title"):
+                extracted_title = metadata["title"].strip()
+                should_update = (
+                    not current_title or 
+                    current_title.strip() == "" or 
+                    "_" in current_title or 
+                    current_title.endswith(('.epub', '.pdf', '.mobi', '.azw3')) or
+                    ("-" in (current_title or "") and "-" not in extracted_title and len(extracted_title) < len(current_title or ""))
+                )
+                if should_update:
+                    updates.append("title = :title")
+                    params["title"] = extracted_title
+                    print(f"[CalibreMeta] Will update title to: '{extracted_title}'")
+            
+            # 更新页数
+            meta_updates = []
+            if metadata.get("page_count"):
+                meta_updates.append(f"'page_count', {metadata['page_count']}::int")
+            
+            # PDF 特殊：更新图片型检测结果
+            if fmt_lower == 'pdf':
+                updates.append("is_digitalized = true")
+                updates.append("initial_digitalization_confidence = :confidence")
+                params["confidence"] = digitalization_confidence
+            
+            # 标记元数据已提取（合并所有 meta 更新，使用 JSON 字面量避免类型推断问题）
+            meta_updates.append("'metadata_extracted', true::boolean")
+            meta_updates.append("'extraction_method', 'calibre'::text")
+            updates.append(f"meta = COALESCE(meta, '{{}}'::jsonb) || jsonb_build_object({', '.join(meta_updates)})")
+            
+            if updates:
+                updates.append("updated_at = now()")
+                update_sql = f"UPDATE books SET {', '.join(updates)} WHERE id = cast(:id as uuid)"
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+                    )
+                    await conn.execute(text(update_sql), params)
+                    print(f"[CalibreMeta] Updated book: {book_id}")
+            
+            # 广播更新事件
+            try:
+                event_data = {
+                    "event": "METADATA_EXTRACTED",
+                    "cover_key": cover_key,
+                    "title": metadata.get("title"),
+                    "author": metadata.get("author"),
+                    "extraction_method": "calibre",
+                    "format": fmt_lower,
+                }
+                # PDF 特殊：包含 OCR 检测信息
+                if fmt_lower == 'pdf':
+                    event_data["is_image_based"] = is_image_based
+                    event_data["digitalization_confidence"] = digitalization_confidence
+                    event_data["needs_ocr"] = is_image_based and digitalization_confidence < 0.8
+                
+                await ws_broadcast(f"book:{book_id}", json.dumps(event_data))
+                print(f"[CalibreMeta] WebSocket event broadcasted")
+            except Exception as e:
+                print(f"[CalibreMeta] Failed to broadcast: {e}")
+            
+        except Exception as e:
+            print(f"[CalibreMeta] Error: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 清理临时文件
+            for path in [worker_input_path, worker_cover_path, worker_metadata_path, 
+                         worker_request_path, worker_done_path, worker_error_path]:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except:
+                    pass
+    
+    asyncio.get_event_loop().run_until_complete(_run())
 
 
 @shared_task(name="tasks.convert_to_epub")
@@ -471,9 +727,26 @@ def convert_to_epub(book_id: str, user_id: str):
                 pass
             return
         
-        # 转换完成后，触发封面和元数据提取（使用合并任务）
-        print(f"[Convert] Triggering cover and metadata extraction for: {book_id}")
-        celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
+        # 【架构变更】转换完成后，检查是否已有封面
+        # extract_ebook_metadata_calibre 任务已经并行提取了元数据和封面
+        # 只有在封面不存在时才触发补充提取
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
+            )
+            res = await conn.execute(
+                text("SELECT cover_image_key FROM books WHERE id = cast(:id as uuid)"),
+                {"id": book_id},
+            )
+            row = res.fetchone()
+            has_cover = row and row[0]
+        
+        if not has_cover:
+            # 封面还没有，使用转换后的 EPUB 提取封面
+            print(f"[Convert] No cover found, triggering EPUB cover extraction for: {book_id}")
+            celery_app.send_task("tasks.extract_book_cover_and_metadata", args=[book_id, user_id])
+        else:
+            print(f"[Convert] Cover already exists, skipping extraction for: {book_id}")
     
     asyncio.get_event_loop().run_until_complete(_run())
 
