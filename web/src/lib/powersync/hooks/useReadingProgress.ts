@@ -19,7 +19,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@powersync/react'
 import { usePowerSyncDatabase, useIsAppFirstEnabled } from '../PowerSyncProvider'
 import { useAuthStore } from '@/stores/auth'
-import { generateUUID } from '@/lib/utils'
+import { generateUUID, getDeviceId } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义 - 与 PostgreSQL 完全一致
