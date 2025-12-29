@@ -22,11 +22,20 @@ jobs:
           node-version: 20
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Install pnpm
         run: npm i -g pnpm@9
       - name: Install deps
         working-directory: web
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Architecture Probe
+        working-directory: .
+        run: python scripts/ci/check_architecture.py
+      - name: Schema Integrity
+        working-directory: .
+        run: python scripts/ci/check_schema.py
       - name: Lint
         working-directory: web
         run: pnpm lint

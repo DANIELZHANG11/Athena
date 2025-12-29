@@ -9,6 +9,8 @@
  * @ai-generated Claude Opus 4.5 (2025-12-13)
  */
 
+export const SCHEMA_VERSION = 1;
+
 import { column, Schema, Table } from '@powersync/web'
 
 // ============ 书籍元数据表 ============
