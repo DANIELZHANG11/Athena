@@ -55,8 +55,18 @@ Run pnpm run typecheck
 > athena-web@0.0.1 typecheck /home/runner/work/Athena/Athena/web
 > tsc --noEmit
 
-Error: src/components/BookCardMenu.tsx(127,22): error TS2552: Cannot find name 'getDeviceId'. Did you mean 'deviceId'?
-Error: src/lib/powersync/hooks/useReadingProgress.ts(216,22): error TS2552: Cannot find name 'getDeviceId'. Did you mean 'deviceId'?
- ELIFECYCLE  Command failed with exit code 2.
-Error: Process completed with exit code 2.
 
+> athena-web@0.0.1 lint /home/runner/work/Athena/Athena/web
+> eslint "src/**/*.{ts,tsx}"
+
+
+/home/runner/work/Athena/Athena/web/src/components/readers/EpubReader.tsx
+Warning:   243:8  warning  React Hook useEffect has missing dependencies: 'clearAutoHideTimer', 'initialLocation', 'onLocationChanged', and 'startAutoHideTimer'. Either include them or remove the dependency array. If 'onLocationChanged' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+
+/home/runner/work/Athena/Athena/web/src/pages/LibraryPage.tsx
+Error:   21:90  error  'Plus' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 2 problems (1 error, 1 warning)
+
+ ELIFECYCLE  Command failed with exit code 1.
+Error: Process completed with exit code 1.

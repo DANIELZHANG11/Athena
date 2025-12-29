@@ -240,6 +240,7 @@ export default function EpubReader({
                 viewRef.current = null
             }
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data])
 
     // 翻页函数

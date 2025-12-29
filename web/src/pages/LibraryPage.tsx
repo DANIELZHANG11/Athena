@@ -18,7 +18,7 @@ import { useBooksData, useShelvesWithBooks } from '@/hooks/useBooksData'
 import { useBookFileCache } from '@/hooks/useBookFileCache'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { toast } from '@/components/ui/sonner'
-import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, WifiOff, RefreshCw, Plus, Layers } from 'lucide-react'
+import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, WifiOff, RefreshCw, Layers } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
