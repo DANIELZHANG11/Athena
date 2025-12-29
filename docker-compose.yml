@@ -165,7 +165,7 @@ services:
       - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "49200:9200"
+      - "59200:9200"
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     healthcheck:
@@ -181,32 +181,26 @@ services:
         max-size: "50m"
         max-file: "3"
   pgbouncer:
-    image: zukubq0aouv2k2.xuanyuan.run/bitnami/pgbouncer:1.22.0
+    image: zukubq0aouv2k2.xuanyuan.run/edoburu/pgbouncer:latest
     environment:
-      # Bitnami PgBouncer 配置 - 使用 md5 认证
-      - POSTGRESQL_HOST=postgres
-      - POSTGRESQL_PORT=5432
-      - POSTGRESQL_USERNAME=athena
-      - POSTGRESQL_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRESQL_DATABASE=athena
-      - PGBOUNCER_DATABASE=athena
-      - PGBOUNCER_PORT=6432
-      - PGBOUNCER_AUTH_TYPE=md5
-      - PGBOUNCER_POOL_MODE=session
-      - PGBOUNCER_MAX_CLIENT_CONN=200
-      - PGBOUNCER_DEFAULT_POOL_SIZE=20
-      - PGBOUNCER_IGNORE_STARTUP_PARAMETERS=extra_float_digits,search_path
-      # 使用自定义 userlist.txt (含 md5 hash)
-      - PGBOUNCER_USERLIST_FILE=/bitnami/pgbouncer/conf/userlist.txt
-    volumes:
-      - ./docker/pgbouncer/userlist.txt:/bitnami/pgbouncer/conf/userlist.txt:ro
+      # edoburu/pgbouncer 配置
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=athena
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=athena
+      - POOL_MODE=session
+      - MAX_CLIENT_CONN=200
+      - DEFAULT_POOL_SIZE=20
+      - LISTEN_PORT=6432
+      - AUTH_TYPE=md5
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - athena-network
     healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "timeout 2 bash -c '</dev/tcp/localhost/6432' || exit 1"]
+      test: [ "CMD", "/bin/sh", "-c", "pg_isready -h localhost -p 6432 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -221,13 +215,13 @@ services:
   # -------------------------------------------------------------------------
   mongo:
     image: zukubq0aouv2k2.xuanyuan.run/mongo:7
-    command: ["--replSet", "rs0", "--bind_ip_all"]
+    command: [ "--replSet", "rs0", "--bind_ip_all" ]
     ports:
       - "47017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "rs.status().ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok"]
+      test: [ "CMD", "mongosh", "--eval", "rs.status().ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok" ]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -249,7 +243,7 @@ services:
     image: zukubq0aouv2k2.xuanyuan.run/journeyapps/powersync-service:latest
     ports:
       - "${POWERSYNC_PORT:-48080}:8080"
-      - "49091:9090"  # Prometheus metrics
+      - "49091:9090" # Prometheus metrics
     environment:
       # PowerSync 要求 PS_ 前缀的环境变量
       - PS_DATABASE_URI=postgresql://athena:${POSTGRES_PASSWORD}@postgres:5432/athena
@@ -270,7 +264,7 @@ services:
         condition: service_healthy
     healthcheck:
       # PowerSync 正确的健康检查端点是 /probes/liveness
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/probes/liveness', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:8080/probes/liveness', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))" ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -317,7 +311,7 @@ services:
       - calibre_books:/books
       - ./scripts/calibre-convert-watcher.sh:/scripts/convert-watcher.sh:ro
     # 启动时运行 watcher 脚本
-    entrypoint: ["/bin/bash", "/scripts/convert-watcher.sh"]
+    entrypoint: [ "/bin/bash", "/scripts/convert-watcher.sh" ]
     command: []
     depends_on:
       - calibre
@@ -340,7 +334,7 @@ services:
     volumes:
       - calibre_books:/books
       - ./scripts/calibre-metadata-watcher.sh:/scripts/metadata-watcher.sh:ro
-    entrypoint: ["/bin/bash", "/scripts/metadata-watcher.sh"]
+    entrypoint: [ "/bin/bash", "/scripts/metadata-watcher.sh" ]
     command: []
     depends_on:
       - calibre
@@ -357,7 +351,7 @@ services:
     build:
       context: ./api
       args:
-        SKIP_HEAVY: "false"  # 安装 PaddleOCR + BGE-M3 + EdgeTTS
+        SKIP_HEAVY: "false" # 安装 PaddleOCR + BGE-M3 + EdgeTTS
     environment:
       - CELERY_BROKER_URL=redis://valkey:6379/0
       - CELERY_BACKEND_URL=redis://valkey:6379/1
@@ -379,7 +373,7 @@ services:
       - FLAGS_fraction_of_gpu_memory_to_use=0.5
     # 3 Workers (RTX 3060 12GB GPU，最佳并发)
     # PaddleOCR + BGE-M3 约占用 6-7GB，剩余约 5GB 用于推理缓冲
-    command: ["celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=3", "--pool=prefork", "--max-tasks-per-child=100"]
+    command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=3", "--pool=prefork", "--max-tasks-per-child=100" ]
     depends_on:
       - valkey
       - pgbouncer
@@ -396,7 +390,7 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]
     networks:
       - athena-network
     logging:
@@ -425,64 +419,16 @@ services:
 # =========================================================================
 
 volumes:
-  # --- 高性能存储（SSD）---
+  # Docker 默认卷 - 跨平台兼容
+  # 生产环境可通过 docker-compose.override.yml 覆盖为绑定路径
   pg_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/vitiana/Athena/data_ssd/postgres
-  
   valkey_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/vitiana/Athena/data_ssd/valkey
-  
   opensearch_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/vitiana/Athena/data_ssd/opensearch
-  
   hf_cache:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/vitiana/Athena/data_ssd/hf_cache
-  
-  # --- 大容量存储（bcache HDD）---
   seaweed_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /data/athena/seaweed
-  
   calibre_books:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /data/athena/calibre_books
-  
   calibre_config:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /data/athena/calibre_config
-
-  # MongoDB 数据（PowerSync 存储）
   mongo_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /data/athena/mongo
 
 
 networks:

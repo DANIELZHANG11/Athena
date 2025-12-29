@@ -95,7 +95,7 @@ export function useProgressData(bookId: string | null) {
 
     const row = data[0]
     const location = parseLastLocation(row.last_location)
-    
+
     return {
       bookId: row.book_id,
       currentCfi: row.last_position ?? undefined,
@@ -121,14 +121,14 @@ export function useProgressData(bookId: string | null) {
     },
     immediate = false
   ) => {
-    console.log('[useProgressData] saveProgress called:', { 
-      updates, 
-      immediate, 
-      hasDb: !!db, 
+    console.log('[useProgressData] saveProgress called:', {
+      updates,
+      immediate,
+      hasDb: !!db,
       bookId,
-      isReady 
+      isReady
     })
-    
+
     if (!db || !bookId) {
       console.warn('[useProgressData] Cannot save: db or bookId not available', { hasDb: !!db, bookId })
       return
@@ -189,8 +189,11 @@ export function useProgressData(bookId: string | null) {
 
         if (existing) {
           // 更新现有记录 - 使用 book_id + user_id 匹配
-          const fields: string[] = ['updated_at = ?']
-          const values: (string | number | null)[] = [now]
+          // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
+          // 这是因为 PowerSync 只同步 SET 子句中的字段到服务器！
+          const deviceId = getDeviceId()
+          const fields: string[] = ['updated_at = ?', 'book_id = ?', 'user_id = ?', 'device_id = ?']
+          const values: (string | number | null)[] = [now, bookId, userId, deviceId]
 
           if (pending.currentCfi !== undefined) {
             fields.push('last_position = ?')
@@ -261,7 +264,7 @@ export function useProgressData(bookId: string | null) {
         const pending = pendingUpdateRef.current
         const now = new Date().toISOString()
         const userId = useAuthStore.getState().user?.id || ''
-        
+
         db.getAll<{ id: string; last_location: string | null }>('SELECT id, last_location FROM reading_progress WHERE book_id = ? AND user_id = ?', [bookId, userId])
           .then(rows => {
             const existing = rows[0]
@@ -272,14 +275,16 @@ export function useProgressData(bookId: string | null) {
                 currentPage: pending.currentPage ?? currentLoc.currentPage,
                 totalPages: pending.totalPages ?? currentLoc.totalPages,
               })
-              
+
               // 归一化进度值
               const rawProgress = pending.percentage ?? 0
               const normalizedProgress = rawProgress > 1 ? rawProgress / 100 : rawProgress
-              
+
+              // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
+              const deviceId = getDeviceId()
               db.execute(
-                'UPDATE reading_progress SET last_position = ?, last_location = ?, progress = ?, updated_at = ? WHERE book_id = ? AND user_id = ?',
-                [pending.currentCfi ?? null, newLocation, normalizedProgress, now, bookId, userId]
+                'UPDATE reading_progress SET last_position = ?, last_location = ?, progress = ?, updated_at = ?, book_id = ?, user_id = ?, device_id = ? WHERE book_id = ? AND user_id = ?',
+                [pending.currentCfi ?? null, newLocation, normalizedProgress, now, bookId, userId, deviceId, bookId, userId]
               )
             }
           })
@@ -310,7 +315,7 @@ export function useAllProgressData(options: { limit?: number } = {}) {
   const { limit = 10 } = options
 
   const EMPTY_QUERY = 'SELECT * FROM reading_progress WHERE 1=0'
-  
+
   // 使用正确的字段名：progress, last_position, last_location, updated_at
   // books 表使用 cover_url (来自 sync_rules.yaml 映射)
   const sql = isReady
@@ -371,6 +376,8 @@ export function useReadingSession(bookId: string | null) {
   const db = usePowerSyncDatabase()
   const sessionIdRef = useRef<string | null>(null)
   const startTimeRef = useRef<Date | null>(null)
+  const bookIdRef = useRef<string | null>(null)  // 保存 bookId 以便组件卸载时使用
+  const userIdRef = useRef<string | null>(null)  // 保存 userId 以便组件卸载时使用
 
   const startSession = useCallback(async () => {
     console.log('[useReadingSession] startSession called:', { hasDb: !!db, bookId })
@@ -396,6 +403,8 @@ export function useReadingSession(bookId: string | null) {
 
       sessionIdRef.current = id
       startTimeRef.current = now
+      bookIdRef.current = bookId  // 保存 bookId
+      userIdRef.current = userId  // 保存 userId
       console.log('[useReadingSession] Session started:', id)
       return id
     } catch (err) {
@@ -405,17 +414,19 @@ export function useReadingSession(bookId: string | null) {
   }, [db, bookId])
 
   const endSession = useCallback(async () => {
-    if (!db || !sessionIdRef.current || !startTimeRef.current) return
+    if (!db || !sessionIdRef.current || !startTimeRef.current || !bookIdRef.current) return
 
     // 计算持续时间（毫秒）
     const durationMs = Date.now() - startTimeRef.current.getTime()
     const now = new Date().toISOString()
 
     try {
-      // 使用正确的字段名: is_active=0 表示结束, total_ms 存储毫秒
+      // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
+      const userId = userIdRef.current || useAuthStore.getState().user?.id || ''
+      const deviceId = getDeviceId()
       await db.execute(
-        'UPDATE reading_sessions SET is_active = 0, total_ms = ?, updated_at = ? WHERE id = ?',
-        [durationMs, now, sessionIdRef.current]
+        'UPDATE reading_sessions SET is_active = 0, total_ms = ?, updated_at = ?, book_id = ?, user_id = ?, device_id = ? WHERE id = ?',
+        [durationMs, now, bookIdRef.current, userId, deviceId, sessionIdRef.current]
       )
 
       console.log('[useReadingSession] Session ended:', {
@@ -426,6 +437,8 @@ export function useReadingSession(bookId: string | null) {
 
       sessionIdRef.current = null
       startTimeRef.current = null
+      bookIdRef.current = null
+      userIdRef.current = null
     } catch (err) {
       console.error('[useReadingSession] Failed to end session:', err)
     }
@@ -434,13 +447,15 @@ export function useReadingSession(bookId: string | null) {
   // 组件卸载时结束会话
   useEffect(() => {
     return () => {
-      if (sessionIdRef.current && startTimeRef.current && db) {
+      if (sessionIdRef.current && startTimeRef.current && bookIdRef.current && db) {
         const durationMs = Date.now() - startTimeRef.current.getTime()
         const now = new Date().toISOString()
-        
+        // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
+        const userId = userIdRef.current || ''
+        const deviceId = getDeviceId()
         db.execute(
-          'UPDATE reading_sessions SET is_active = 0, total_ms = ?, updated_at = ? WHERE id = ?',
-          [durationMs, now, sessionIdRef.current]
+          'UPDATE reading_sessions SET is_active = 0, total_ms = ?, updated_at = ?, book_id = ?, user_id = ?, device_id = ? WHERE id = ?',
+          [durationMs, now, bookIdRef.current, userId, deviceId, sessionIdRef.current]
         ).catch(console.error)
       }
     }

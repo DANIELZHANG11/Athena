@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foliate Reader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        #reader {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        foliate-view {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            font-family: system-ui, -apple-system, sans-serif;
+            z-index: 10;
+        }
+
+        .error {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+            background: #fff;
+            color: red;
+            font-family: system-ui, -apple-system, sans-serif;
+            z-index: 10;
+        }
+
+        /* 透明翻页区域 */
+        .nav-zone {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 20%;
+            min-width: 60px;
+            max-width: 150px;
+            z-index: 1000;
+            cursor: pointer;
+            background: transparent;
+        }
+
+        .nav-zone--left {
+            left: 0;
+        }
+
+        .nav-zone--right {
+            right: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="reader">
+        <div class="loading" id="loading">加载中...</div>
+    </div>
+
+    <!-- 翻页区域 -->
+    <div class="nav-zone nav-zone--left" id="nav-left"></div>
+    <div class="nav-zone nav-zone--right" id="nav-right"></div>
+
+    <script type="module">
+        // 只导入 view.js - 官方做法
+        import './view.js';
+
+        // 全局 view 变量
+        let view = null;
+
+        // 翻页区域点击事件 - 使用官方的 goLeft/goRight 方法
+        document.getElementById('nav-left').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[FoliateReader] goLeft clicked');
+            if (view) {
+                view.goLeft();
+            }
+        });
+
+        document.getElementById('nav-right').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[FoliateReader] goRight clicked');
+            if (view) {
+                view.goRight();
+            }
+        });
+
+        // 键盘导航 - 按照官方示例
+        document.addEventListener('keydown', (e) => {
+            if (!view) return;
+            if (e.key === 'ArrowLeft' || e.key === 'h') view.goLeft();
+            else if (e.key === 'ArrowRight' || e.key === 'l') view.goRight();
+        });
+
+        // 从父窗口接收消息
+        window.addEventListener('message', async (event) => {
+            const { type, data } = event.data;
+
+            try {
+                switch (type) {
+                    case 'LOAD_BOOK':
+                        await loadBook(data.arrayBuffer, data.initialLocation);
+                        break;
+                    case 'PREV':
+                        console.log('[FoliateReader] goLeft via postMessage');
+                        if (view) view.goLeft();
+                        break;
+                    case 'NEXT':
+                        console.log('[FoliateReader] goRight via postMessage');
+                        if (view) view.goRight();
+                        break;
+                    case 'GO_TO':
+                        if (view) view.goTo(data.href);
+                        break;
+                }
+            } catch (error) {
+                console.error('[FoliateReader] Error:', error);
+                postMessage({ type: 'ERROR', error: error.message });
+            }
+        });
+
+        // 发送消息给父窗口
+        function postMessage(data) {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(data, '*');
+            }
+        }
+
+        // 加载书籍
+        async function loadBook(arrayBuffer, initialLocation) {
+            try {
+                console.log('[FoliateReader] Loading book, size:', arrayBuffer.byteLength);
+
+                // 隐藏加载提示
+                document.getElementById('loading').style.display = 'none';
+
+                // 创建 File 对象
+                const blob = new Blob([arrayBuffer], { type: 'application/epub+zip' });
+                const file = new File([blob], 'book.epub', { type: 'application/epub+zip' });
+
+                // 创建 view - 使用官方方式
+                view = document.createElement('foliate-view');
+                document.getElementById('reader').appendChild(view);
+
+                // 监听 load 事件，在文档加载时添加键盘监听（官方做法）
+                view.addEventListener('load', ({ detail: { doc } }) => {
+                    doc.addEventListener('keydown', (e) => {
+                        if (e.key === 'ArrowLeft' || e.key === 'h') view.goLeft();
+                        else if (e.key === 'ArrowRight' || e.key === 'l') view.goRight();
+                    });
+                });
+
+                // 监听 relocate 事件
+                view.addEventListener('relocate', (e) => {
+                    const { fraction, tocItem, cfi } = e.detail;
+                    console.log('[FoliateReader] Relocated:', (fraction * 100).toFixed(2) + '%');
+                    postMessage({
+                        type: 'RELOCATED',
+                        fraction: fraction || 0,
+                        cfi: cfi,
+                        tocItem: tocItem ? { label: tocItem.label, href: tocItem.href } : null
+                    });
+                });
+
+                // 打开文件 - 直接传入 file 对象，view.js 会自动处理
+                await view.open(file);
+
+                // 获取 book 对象
+                const { book } = view;
+                console.log('[FoliateReader] Book opened:', book.metadata?.title);
+
+                // 发送目录
+                if (book.toc) {
+                    postMessage({ type: 'TOC', toc: book.toc });
+                }
+
+                // 设置样式 - 按官方示例
+                view.renderer.setStyles?.(`
+                    @namespace epub "http://www.idpf.org/2007/ops";
+                    html { color-scheme: light dark; }
+                    p, li, blockquote, dd {
+                        line-height: 1.6;
+                        text-align: justify;
+                        -webkit-hyphens: auto;
+                        hyphens: auto;
+                    }
+                `);
+
+                // 翻到第一页
+                view.renderer.next();
+
+                // 初始化位置
+                if (initialLocation && typeof initialLocation === 'string') {
+                    await view.goTo(initialLocation);
+                }
+
+                console.log('[FoliateReader] Initialization complete!');
+                postMessage({ type: 'READY' });
+
+            } catch (error) {
+                console.error('[FoliateReader] Load error:', error);
+                document.getElementById('loading').style.display = 'none';
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.innerHTML = `<p>加载失败: ${error.message}</p>`;
+                document.getElementById('reader').appendChild(errorDiv);
+
+                postMessage({ type: 'ERROR', error: error.message });
+            }
+        }
+
+        // 通知父窗口已就绪
+        postMessage({ type: 'IFRAME_READY' });
+    </script>
+</body>
+
+</html>

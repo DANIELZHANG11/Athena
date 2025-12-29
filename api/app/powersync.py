@@ -87,7 +87,7 @@ TABLE_COLUMNS = {
     },
     "reading_progress": {
         "id", "user_id", "book_id", "device_id", "progress",
-        "last_position", "last_location", "updated_at"
+        "last_position", "last_location", "finished_at", "updated_at"  # 添加 finished_at
     },
     "reading_sessions": {
         "id", "user_id", "book_id", "device_id", "is_active",
@@ -167,8 +167,10 @@ async def sync_upload(
                 # 根据操作类型处理
                 if op.op == "DELETE":
                     await _handle_delete(conn, op, user_id)
-                elif op.op in ("PUT", "PATCH"):
+                elif op.op == "PUT":
                     await _handle_upsert(conn, op, user_id)
+                elif op.op == "PATCH":
+                    await _handle_patch(conn, op, user_id)  # PATCH 使用专门的 UPDATE 逻辑
                 else:
                     errors.append({
                         "id": op.id,
@@ -251,6 +253,90 @@ async def _handle_delete(conn, op: SyncOperation, user_id: str):
             """),
             {"id": record_id}
         )
+
+
+async def _handle_patch(conn, op: SyncOperation, user_id: str):
+    """
+    处理 PATCH 操作 - 只更新已存在的记录
+    
+    PATCH 与 PUT 的区别：
+    - PUT: 完整替换（UPSERT，可以创建新记录）
+    - PATCH: 部分更新（只 UPDATE，记录必须存在）
+    
+    PowerSync SDK 会将 UPDATE 语句转换为 PATCH 操作，
+    只发送实际变更的字段（不包括 book_id, user_id 等不变的字段）
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    from dateutil.parser import isoparse
+    
+    table = op.table
+    record_id = op.id
+    data = op.data or {}
+    
+    logger.info(f"[PowerSync PATCH] table={table}, id={record_id}, data={data}")
+    
+    # 获取允许的字段
+    allowed_columns = TABLE_COLUMNS.get(table, set())
+    
+    # 过滤数据，只保留允许的字段
+    filtered_data = {
+        k: v for k, v in data.items()
+        if k in allowed_columns and k not in {"id", "user_id"}
+    }
+    
+    # 确保有更新时间
+    if "updated_at" in allowed_columns:
+        filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    if not filtered_data:
+        logger.warning(f"[PowerSync PATCH] No valid fields to update for {table}/{record_id}")
+        return
+    
+    # 构建 UPDATE SQL（不是 UPSERT！）
+    timestamp_columns = {"added_at", "created_at", "updated_at", "deleted_at", "finished_at"}
+    boolean_columns = {"is_active"}
+    
+    set_clauses = []
+    params = {"id": record_id, "user_id": user_id}
+    
+    for k, v in filtered_data.items():
+        param_name = f"p_{k}"
+        
+        # 类型转换
+        if k in timestamp_columns and v is not None and isinstance(v, str):
+            try:
+                params[param_name] = isoparse(v)
+            except Exception:
+                params[param_name] = v
+        elif k in boolean_columns:
+            params[param_name] = bool(v) if v is not None else None
+        else:
+            params[param_name] = v
+        
+        # 构建 SET 子句
+        if k in {"book_id", "shelf_id"}:
+            set_clauses.append(f"{k} = cast(:{param_name} as uuid)")
+        else:
+            set_clauses.append(f"{k} = :{param_name}")
+    
+    # PATCH 只更新已存在的记录（通过 id + user_id 匹配）
+    sql = f"""
+        UPDATE {table}
+        SET {', '.join(set_clauses)}
+        WHERE id = cast(:id as uuid)
+        AND user_id = cast(:user_id as uuid)
+    """
+    
+    logger.info(f"[PowerSync PATCH] SQL: {sql}")
+    logger.info(f"[PowerSync PATCH] Params: {params}")
+    
+    result = await conn.execute(text(sql), params)
+    logger.info(f"[PowerSync PATCH] Result rowcount: {result.rowcount}")
+    
+    if result.rowcount == 0:
+        logger.warning(f"[PowerSync PATCH] No record found to update: {table}/{record_id}")
+
 
 
 async def _handle_books_update(conn, record_id: str, filtered_data: dict, user_id: str, logger):
@@ -352,10 +438,10 @@ async def _handle_upsert(conn, op: SyncOperation, user_id: str):
     columns = ["id"] + list(filtered_data.keys())
     
     # 时间戳字段列表 - 需要转换 ISO 字符串为 datetime
-    timestamp_columns = {"added_at", "created_at", "updated_at", "deleted_at"}
+    timestamp_columns = {"added_at", "created_at", "updated_at", "deleted_at", "finished_at"}
     
     placeholders = ["cast(:id as uuid)"] + [
-        f"cast(:p_{k} as uuid)" if k in {"user_id", "book_id", "shelf_id", "device_id"}
+        f"cast(:p_{k} as uuid)" if k in {"user_id", "book_id", "shelf_id"}  # device_id 是 TEXT 类型，不是 UUID！
         else f":p_{k}"
         for k in filtered_data.keys()
     ]
@@ -374,12 +460,17 @@ async def _handle_upsert(conn, op: SyncOperation, user_id: str):
     from dateutil.parser import isoparse
     
     params = {"id": record_id}
+    boolean_columns = {"is_active"}  # 需要转换为 boolean 的字段
+    
     for k, v in filtered_data.items():
         if k in timestamp_columns and v is not None and isinstance(v, str):
             try:
                 params[f"p_{k}"] = isoparse(v)
             except Exception:
                 params[f"p_{k}"] = v  # 转换失败则保留原值
+        elif k in boolean_columns:
+            # 转换 int (0/1) 为 boolean (False/True)
+            params[f"p_{k}"] = bool(v) if v is not None else None
         else:
             params[f"p_{k}"] = v
 

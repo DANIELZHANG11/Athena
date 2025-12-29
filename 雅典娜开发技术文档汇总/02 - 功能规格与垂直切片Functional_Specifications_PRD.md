@@ -614,35 +614,77 @@ const menuItems = [
 
 ### 2.3 Reader Core
 
-#### A. 数据库模型（Database Schema）
+#### A. 技术栈选型（Technology Stack）
+
+> **架构决策 ADR-009**: EPUB 阅读器使用 **epub.js** 直接实现（而非 react-reader 包装器）
+
+| 组件 | 技术选型 | 说明 |
+|------|---------|------|
+| EPUB 渲染 | **epub.js v0.3.x** | 直接使用，不通过 react-reader 包装 |
+| PDF 渲染 | **PDF.js (pdfjs-dist)** | Mozilla 官方库 |
+| 文件加载 | **ArrayBuffer** | epub.js 官方推荐方式，避免 Blob URL 问题 |
+| 位置标识 | **EpubCFI** | epub.js 标准，用于定位和注释 |
+
+**为什么不用 react-reader**:
+1. react-reader 只是 epub.js 的简单包装，不提供额外功能
+2. 直接使用 epub.js 可获得更精细的控制（分页、注释、高亮）
+3. Koodo Reader 等成功项目验证了直接使用 epub.js 的可行性
+4. App-First 架构需要与 PowerSync 深度集成，直接控制更方便
+
+#### B. 数据库模型（Database Schema）
 - **Core Principle**: **App-First & Local-First**. 
 - **Server Database**: `reading_sessions` (PostgreSQL) - Source of Truth for "Last Read Position" across devices.
 - **Local Database**: `reading_progress` (SQLite) - The only DB the UI interacts with directly.
 - **Sync**: PowerSync syncs `reading_sessions` (Server) <--> `reading_progress` (Local).
 
-#### B. 后端逻辑与 API 契约（Backend & Contract）
+#### C. 后端逻辑与 API 契约（Backend & Contract）
 - **Sync Architecture (PowerSync)**:
   - 后端不提供直接的 Restful API 给阅读器 UI。
   - **Reading Progress** 通过 PowerSync 流式写入 PostgreSQL `reading_sessions` 表。
   - **Heartbeat**: 传统的 RESTful 心跳 API (`POST /heartbeat`) **被废弃**，改为本地写入 SQLite，由 PowerSync 后台自动同步。
   
-#### C. 前端组件契约（Frontend Contract）
-- 组件：`Reader`
-  - Props:
-    ```ts
-    interface ReaderProps {
-      bookId: string
-      initialLocation?: string // From SQLite
-    }
-    ```
-  - **Interaction**:
-    - **Page Turn**: Writes `cfi` to SQLite `reading_progress` table immediately.
-    - **Sync**: PowerSync SDK watches SQLite changes and pushes to server automatically.
-    - **Offline**: No extra logic needed; SQLite is always available.
+#### D. 前端组件契约（Frontend Contract）
+
+**组件：`EpubReader`（EPUB 阅读器）**
+```typescript
+interface EpubReaderProps {
+  data: ArrayBuffer        // EPUB 文件内容（ArrayBuffer 格式）
+  bookTitle: string        // 书籍标题
+  initialLocation?: string // 初始位置（EpubCFI 格式）
+  onLocationChanged?: (cfi: string, percentage: number) => void
+  onBack?: () => void
+}
+
+// 内部使用 epub.js API
+// - book = ePub(arrayBuffer)
+// - rendition = book.renderTo(container, options)
+// - rendition.display(location)
+// - rendition.next() / rendition.prev()
+// - rendition.annotations.add() / remove()
+```
+
+**组件：`PdfReader`（PDF 阅读器）**
+```typescript
+interface PdfReaderProps {
+  url: string              // PDF 文件 URL（Blob URL）
+  bookId: string
+  bookTitle: string
+  initialPage?: number
+  onPageChanged?: (page: number, total: number, percentage: number) => void
+  onBack?: () => void
+}
+```
+
+**交互流程**:
+- **Page Turn**: 调用 `rendition.next()` / `rendition.prev()`，自动触发 `relocated` 事件
+- **Progress Save**: `relocated` 事件 → 获取 CFI → 写 SQLite `reading_progress` 表
+- **Sync**: PowerSync SDK 监听 SQLite 变化并自动推送到服务器
+- **Offline**: 无需额外逻辑，SQLite 始终可用
   
 ### ✔ Definition of Done (DoD)
 - [ ] SQLite Schema defined for `reading_progress`
 - [ ] PowerSync Sync Rules configured for `reading_sessions`
+- [x] **epub.js 直接集成（不使用 react-reader）**
 - [ ] Reader component reading/writing from/to SQLite
 - [ ] Conflict resolution (LWW) verified via PowerSync configuration
 
@@ -689,43 +731,102 @@ const menuItems = [
 
 ### 2.5 AI Knowledge Engine
 
-#### A. 数据库模型（Database Schema）
-- [待确认/待实现] 对话与上下文表结构将随后续迁移补齐（参考 05 契约）。
+> **架构决策**：AI 功能**必须**通过 REST API 实现（非 PowerSync），因为：
+> 1. AI 功能需要网络连接才能使用
+> 2. SSE 流式响应无法通过 PowerSync 实现
+> 3. 需要服务端计费和限流控制
+>
+> **对话记录存储**：AI 对话历史通过 PowerSync 同步到本地 SQLite，实现离线查看历史对话。
 
-#### B. 后端逻辑与 API 契约（Backend & Contract）
-- 端点：`POST /ai/chat`、`GET /ai/history`、`POST /ai/context`（参考 05 契约）。
-- 规则：
-  - AI Chat 不受只读锁影响。
-  - Credits 不足 → 返回 `INSUFFICIENT_CREDITS`。
-  - 计费顺序：月度赠礼 → 加油包 → Wallet → 拒绝。
-  - 会话版本冲突：使用 `ETag/If-Match` 或 Session Version，冲突返回 409。
-- RAG 流程：
-  1) Query Rewrite：基于 Prompt 结合用户上下文（选中文本/笔记）重写查询。
-  2) Vector Search：使用嵌入模型生成向量，在 OpenSearch/向量索引中检索 Top-K 片段。
-  3) Re-rank：对 Top-K 进行重排序（Cross-Encoder 或 LLM 评分）。
-  4) LLM 生成：以重排后的证据生成回答，包含引用与跳转锚点。
-  5) 流式输出：使用 SSE/WebSocket 推送；支持“停止/继续”。
-  6) 预算与节流：计费消耗 Credits；达到配额阈值时提示降级为检索或摘要模式。
-> Status: Contract Available；Backend = To Implement（按此管线实现）。
+#### A. 技术栈
+| 组件 | 技术选型 | 说明 |
+|------|---------|------|
+| 后端框架 | **FastAPI** | 异步支持、SSE 流式响应 |
+| RAG 框架 | **LlamaIndex** | 向量检索、Query Rewrite、Rerank |
+| PDF 解析 | **IBM Docling** | 提取章节结构、表格、图表 |
+| 前端 AI SDK | **Vercel AI SDK** | 统一流式接口、`onFinish` Token 计数 |
+| 向量存储 | **OpenSearch** | 向量索引与全文检索 |
+| LLM 调用 | **OpenAI / Claude API** | 可配置模型 |
 
-#### C. 前端组件契约（Frontend Contract）
-- 组件：`AIConversationsPanel`
-  - Props：
-    ```ts
-    interface AIConversationsPanelProps {
-      sessionId?: string
-      onMessage?: (msg: { id: string; role: 'user' | 'assistant'; content: string }) => void
-      onStop?: () => void
-    }
-    ```
+#### B. 三种 AI 模式
+
+| 模式 | 触发场景 | 技术实现 | 费用 |
+|------|---------|----------|------|
+| **聊天模式** | 通用对话/闲聊 | 纯 LLM，无 RAG，无书库上下文 | 低 (约 0.3-1 Credits/次) |
+| **翻译模式** | 选中文本 → 翻译 | 纯 LLM，无 RAG | 低 (约 0.5 Credits/次) |
+| **问答模式** | 书籍内对话/提问 | RAG Pipeline | 中 (约 2-5 Credits/次) |
+
+#### C. RAG 问答模式流程
+
+```
+用户提问
+    ↓
+1. Query Rewrite (LlamaIndex QueryTransform)
+    ↓
+2. Vector Search (OpenSearch Top-K 检索)
+    ↓
+3. IBM Docling 解析 (提取章节/表格结构)
+    ↓
+4. Re-rank (LlamaIndex Reranker + Cross-Encoder)
+    ↓
+5. LLM 生成回答 (含引用与跳转锚点)
+    ↓
+6. SSE 流式输出
+    ↓
+7. onFinish: Token 计数 → Credits 扣费
+```
+
+#### D. 数据库模型（Database Schema）
+
+**`ai_conversations` 表**（启用 RLS）：
+| 字段 | 类型 | 说明 |
+|:-----|:-----|:-----|
+| `id` | UUID, PK | 会话 ID |
+| `user_id` | UUID, FK | 用户 ID |
+| `title` | TEXT | 会话标题 |
+| `book_id` | UUID, Nullable | 关联书籍（可选） |
+| `conversation_history` | JSONB | 消息历史数组 |
+| `version` | INTEGER | 乐观锁版本号 |
+| `deleted_at` | TIMESTAMPTZ | 软删除时间 |
+| `created_at` | TIMESTAMPTZ | 创建时间 |
+| `updated_at` | TIMESTAMPTZ | 更新时间 |
+
+#### E. 后端逻辑与 API 契约
+
+| 端点 | 方法 | 说明 |
+|:-----|:-----|:-----|
+| `/api/v1/ai/conversations` | GET | 列出会话 |
+| `/api/v1/ai/conversations` | POST | 创建会话 |
+| `/api/v1/ai/conversations/{id}/messages` | POST | 追加消息（SSE 流式） |
+| `/api/v1/ai/translate` | POST | 翻译选中文本 |
+| `/api/v1/ai/chat` | POST | 通用聊天 |
+
+**规则**：
+- Credits 不足 → 返回 `INSUFFICIENT_CREDITS`
+- 计费顺序：月度赠礼 → 加油包 → Wallet → 拒绝
+
+#### F. 前端组件契约（Vercel AI SDK）
+
+```typescript
+import { useChat } from 'ai/react';
+
+function AIChat({ conversationId }: { conversationId: string }) {
+  const { messages, input, handleInputChange, handleSubmit, stop } = useChat({
+    api: '/api/v1/ai/conversations/' + conversationId + '/messages',
+    onFinish: (message, { usage }) => {
+      console.log('Token usage:', usage?.totalTokens);
+    },
+  });
+  return (/* UI 组件 */);
+}
+```
 
 ### ✔ Definition of Done (DoD)
-- [ ] API 契约与 SSE/WebSocket 行为对齐
+- [ ] LlamaIndex RAG 各阶段可替换/Mock 的测试策略
+- [ ] IBM Docling PDF 解析集成测试
+- [ ] Vercel AI SDK `onFinish` Token 计数验证
+- [ ] API 契约与 SSE 行为对齐
 - [ ] Credits 扣费顺序与不足错误用例
-- [ ] RAG 各阶段可替换/Mock 的测试策略
-- [ ] ETag/Session Version 冲突处理测试
-- [ ] 前端消息流与停止/继续契约实现
-- [ ] 账单联动与台账记录验证
 ---
 
 ### 2.6 Billing & Account

@@ -27,3 +27,4 @@ trigger: always_on
 05 - API 契约与协议API_Contracts_and_Protocols.md
 06 - UIUX设计系统UI_UX_Design_system.md
 07 - 部署与 SRE 手册DevOps_and_SRE_Manual.md
+09 - APP-FIRST架构改造计划.md

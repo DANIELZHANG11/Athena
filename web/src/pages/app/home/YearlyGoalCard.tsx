@@ -226,7 +226,7 @@ export default function YearlyGoalCard({ count, target, covers, onGoalUpdate }: 
           })
         ) : (
           <div className="w-20 h-32 rounded-md bg-gray-200 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
-            <span className="text-xs text-secondary-label">No books</span>
+            <span className="text-xs text-secondary-label">{t('yearly_goal.no_books')}</span>
           </div>
         )}
       </div>
@@ -257,8 +257,8 @@ export default function YearlyGoalCard({ count, target, covers, onGoalUpdate }: 
                     key={num}
                     onClick={() => setNewTarget(num)}
                     className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm font-medium transition-colors ${newTarget === num
-                        ? 'bg-system-blue text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'bg-system-blue text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
                       }`}
                   >
                     {num}
@@ -271,7 +271,7 @@ export default function YearlyGoalCard({ count, target, covers, onGoalUpdate }: 
                   {t('common.cancel')}
                 </Button>
                 <Button className="flex-1 text-sm" onClick={handleUpdate} disabled={updating}>
-                  {updating ? '...' : t('common.save')}
+                  {updating ? t('common.saving') : t('common.save')}
                 </Button>
               </div>
             </div>

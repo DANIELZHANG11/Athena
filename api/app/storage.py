@@ -13,6 +13,9 @@ from urllib.parse import urlparse, urlunparse
 
 import boto3
 
+# 默认存储桶名称
+BUCKET = os.getenv("MINIO_BUCKET", "athena")
+
 
 def get_s3():
     endpoint = os.getenv("MINIO_ENDPOINT", "seaweed:8333")

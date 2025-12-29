@@ -240,7 +240,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div className="text-secondary-label text-sm font-medium uppercase tracking-wide mb-1">{t('home.today_reading')}</div>
           <div className="text-4xl font-bold text-label mb-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {todayMinutes} <span className="text-xl font-medium text-secondary-label">min</span>
+            {todayMinutes} <span className="text-xl font-medium text-secondary-label">{t('common.min')}</span>
           </div>
         </div>
       </div>
@@ -249,7 +249,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
         className="flex items-center gap-2 text-system-blue font-medium cursor-pointer hover:opacity-80 transition-opacity"
         onClick={() => { setNewGoal(goalMinutes); setShowAdjust(true) }}
       >
-        <span>{t('home.daily_goal')}: {goalMinutes} min</span>
+        <span>{t('home.daily_goal')}: {goalMinutes} {t('common.min')}</span>
       </div>
 
       {showAdjust && (
@@ -278,8 +278,8 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
                     key={mins}
                     onClick={() => setNewGoal(mins)}
                     className={`px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs md:text-sm font-medium transition-colors ${newGoal === mins
-                        ? 'bg-system-blue text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
+                      ? 'bg-system-blue text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-label hover:bg-gray-200 dark:hover:bg-gray-600'
                       }`}
                   >
                     {mins}
@@ -292,7 +292,7 @@ export default function ReadingGoalCard({ todaySeconds, goalMinutes, onGoalUpdat
                   {t('common.cancel')}
                 </Button>
                 <Button className="flex-1 text-sm" onClick={handleUpdate} disabled={updating}>
-                  {updating ? '...' : t('common.save')}
+                  {updating ? t('common.saving') : t('common.save')}
                 </Button>
               </div>
             </div>

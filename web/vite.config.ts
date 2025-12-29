@@ -101,12 +101,16 @@ export default defineConfig({
   },
   server: {
     port: 48173,
-    host: '0.0.0.0', // 允许外部访问（Android 模拟器）
-    hmr: { 
-      protocol: 'ws',
-      host: '192.168.0.122', // 使用服务器 IP，让 Android 模拟器能连接
-      port: 48173
-    },
+    host: 'localhost', // 本地开发模式，避免 HMR 连接错误
+    // ========================================================
+    // 移动端开发配置（启动 Android/iOS 模拟器时取消注释）：
+    // host: '0.0.0.0',
+    // hmr: { 
+    //   protocol: 'ws',
+    //   host: '你的本机IP地址',  // 例如: 192.168.0.xxx
+    //   port: 48173
+    // },
+    // ========================================================
     proxy: {
       '/api': {
         target: 'http://localhost:48000',

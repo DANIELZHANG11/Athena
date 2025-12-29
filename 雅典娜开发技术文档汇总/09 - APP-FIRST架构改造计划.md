@@ -48,35 +48,37 @@
 
 ## 4. 代码删除清单 (Deprecation & Removal Manifest)
 
+
 ### 4.1 前端 - Dexie 数据层
 | 文件路径 | 说明 | 状态 | 删除条件 |
 | :--- | :--- | :--- | :--- |
-| `web/src/lib/db.ts` | Dexie 数据库定义 (AthenaDatabase) | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/services/db.ts` | 服务层数据库实例 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/bookStorage.ts` | 书籍本地缓存 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/notesStorage.ts` | 笔记离线存储 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/shelvesStorage.ts` | 书架离线存储 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/syncStorage.ts` | 同步队列底层存储 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/syncQueue.ts` | 同步队列管理器 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/homeStorage.ts` | Dashboard 缓存 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/libraryStorage.ts` | 书库页面缓存 | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/profileStorage.ts` | 用户资料缓存 (已标记 @deprecated) | ⚠️ 待删除 | Phase 3 完成 |
-| `web/src/lib/aiChatStorage.ts` | AI 对话缓存 (已标记 @deprecated) | ⚠️ 待删除 | Phase 3 完成 |
+| `web/src/lib/db.ts` | Dexie 数据库定义 (AthenaDatabase) | ✅ 已删除 | Phase 3 完成 |
+| `web/src/services/db.ts` | 服务层数据库实例 | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/bookStorage.ts` | 书籍本地缓存 | ⚡ 已重构 | 保留用于 IndexedDB 文件 Blob，不再使用 Dexie |
+| `web/src/lib/notesStorage.ts` | 笔记离线存储 | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/shelvesStorage.ts` | 书架离线存储 | ✅ 已删除 | 2025-12-26 清理 |
+| `web/src/lib/syncStorage.ts` | 同步队列底层存储 | ⚡ 已空化 | 改为 stub，返回 0 |
+| `web/src/lib/syncQueue.ts` | 同步队列管理器 | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/homeStorage.ts` | Dashboard 缓存 | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/libraryStorage.ts` | 书库页面缓存 | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/profileStorage.ts` | 用户资料缓存 (已标记 @deprecated) | ✅ 已删除 | Phase 3 完成 |
+| `web/src/lib/aiChatStorage.ts` | AI 对话缓存 | ⚡ 保留 | AI 对话是 Web-First 场景，保留只读缓存 |
 
 ### 4.2 前端 - 同步引擎与 Hooks
 | 文件路径 | 说明 | 状态 | 删除条件 |
 | :--- | :--- | :--- | :--- |
-| `web/src/lib/syncEngine.ts` | 自建同步引擎 | ⚠️ 待删除 | PowerSync 接管 |
-| `web/src/hooks/useSmartHeartbeat.ts` | 智能心跳 Hook | ⚠️ 待删除 | PowerSync 接管 |
-| `web/src/hooks/useReaderHeartbeat.ts` | 阅读会话心跳 | ⚠️ 待删除 | PowerSync 接管 |
-| `web/src/hooks/useOfflineNotes.ts` | 离线笔记 Hook | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useOfflineNotesV2.ts` | 离线笔记 V2 | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useOfflineShelves.ts` | 离线书架 Hook | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useOfflineShelvesV2.ts` | 离线书架 V2 | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useOfflineProgressV2.ts` | 离线进度 V2 | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useReadingProgress.ts` | 阅读进度 Hook | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useLocalBookCache.ts` | 本地书籍缓存 | ⚠️ 待删除 | Phase 3 迁移 |
-| `web/src/hooks/useConflictDetection.ts` | 冲突检测 Hook | ⚠️ 待删除 | PowerSync 冲突处理 |
+| `web/src/lib/syncEngine.ts` | 自建同步引擎 | ✅ 已删除 | PowerSync 接管 |
+| `web/src/hooks/useSmartHeartbeat.ts` | 智能心跳 Hook | ✅ 已删除 | PowerSync 接管 |
+| `web/src/hooks/useReaderHeartbeat.ts` | 阅读会话心跳 | ✅ 已删除 | PowerSync 接管 |
+| `web/src/hooks/useOfflineNotes.ts` | 离线笔记 Hook | ✅ 已删除 | Phase 3 迁移 |
+| `web/src/hooks/useOfflineNotesV2.ts` | 离线笔记 V2 | ✅ 已删除 | Phase 3 迁移 |
+| `web/src/hooks/useOfflineShelves.ts` | 离线书架 Hook | ✅ 已删除 | Phase 3 迁移 |
+| `web/src/hooks/useOfflineShelvesV2.ts` | 离线书架 V2 | ✅ 已删除 | Phase 3 迁移 |
+| `web/src/hooks/useOfflineProgressV2.ts` | 离线进度 V2 | ✅ 已删除 | Phase 3 迁移 |
+| `web/src/hooks/useReadingProgress.ts` | 阅读进度 Hook | ✅ 已删除 | Phase 3 迁移 (替代: `useProgressData.ts`) |
+| `web/src/hooks/useLocalBookCache.ts` | 本地书籍缓存 | ✅ 已删除 | Phase 3 迁移 (替代: `useBookFileCache.ts`) |
+| `web/src/hooks/useConflictDetection.ts` | 冲突检测 Hook | ✅ 已删除 | PowerSync 冲突处理 |
+
 
 ### 4.3 前端 - Service Worker
 | 文件路径 | 删除范围 | 状态 | 删除条件 |
@@ -198,21 +200,22 @@
 
 | 功能 | 旧方案 (Dexie/Heartbeat) | 新方案 (PowerSync/SQLite) | 状态 |
 | :--- | :--- | :--- | :--- |
-| 书籍列表 | API → Dexie 缓存 (`libraryStorage.ts`) | SQLite Live Query | 待完成 |
-| 阅读进度同步 | Heartbeat LWW (`useReadingProgress.ts`) | PowerSync LWW | 待完成 |
-| 笔记/高亮 | Heartbeat + 冲突副本 (`useOfflineNotes*.ts`) | PowerSync Conflict Copy | 待完成 |
-| 书架管理 | Dexie 队列 + Heartbeat (`useOfflineShelves*.ts`) | SQLite + PowerSync Upload | 待完成 |
-| 本地书籍文件 | Dexie Blob (`bookStorage.ts`) | IndexedDB (OPFS) + SQLite meta | 待完成 |
-| 本地书籍缓存 | `useLocalBookCache.ts` | `useBookFileCache` + IndexedDB | 待完成 |
-| Service Worker 背景同步 | Workbox + Queue (`sw.ts`) | PowerSync SDK (内建重试) | 待完成 |
-| OCR 状态更新 | 事件 + Heartbeat | PowerSync 事件 | 待完成 |
-| Dashboard 数据 | `homeStorage.ts` | SQLite Live Query | 待完成 |
-| 用户设置 | `settingsRepo.ts` | SQLite + PowerSync | 待完成 |
-| 阅读会话 | `reader.py` `/heartbeat` | PowerSync 直接同步 | 待完成 |
-| 冲突检测 | `useConflictDetection.ts` | PowerSync 内建冲突处理 | 待完成 |
-| 同步队列状态 | `syncQueue.ts` + `SyncQueueManager` | PowerSync SDK 状态 | 待完成 |
+| 书籍列表 | API → Dexie 缓存 (`libraryStorage.ts`) | SQLite Live Query (`useBooksData.ts`) | ✅ 已完成 |
+| 阅读进度同步 | Heartbeat LWW (`useReadingProgress.ts`) | PowerSync LWW (`useProgressData.ts`) | ✅ 已完成 |
+| 笔记/高亮 | Heartbeat + 冲突副本 (`useOfflineNotes*.ts`) | PowerSync Conflict Copy (`useNotesData.ts`) | ✅ 已完成 |
+| 书架管理 | Dexie 队列 + Heartbeat (`useOfflineShelves*.ts`) | SQLite + PowerSync Upload (`useShelvesData.ts`) | ✅ 已完成 |
+| 本地书籍文件 | Dexie Blob (`bookStorage.ts`) | IndexedDB (OPFS) + SQLite meta | ✅ 已完成 |
+| 本地书籍缓存 | `useLocalBookCache.ts` | `useBookFileCache` + IndexedDB | ✅ 已完成 |
+| Service Worker 背景同步 | Workbox + Queue (`sw.ts`) | PowerSync SDK (内建重试) | ✅ 已完成 |
+| OCR 状态更新 | 事件 + Heartbeat | PowerSync 事件 | ✅ 已完成 |
+| Dashboard 数据 | `homeStorage.ts` | SQLite Live Query (`useDashboardData.ts`) | ✅ 已完成 |
+| 用户设置 | `settingsRepo.ts` | SQLite + PowerSync (`user_settings` 表) | ⚠️ 待验证 |
+| 阅读会话 | `reader.py` `/heartbeat` | PowerSync 直接同步 (`reading_sessions` 表) | ✅ 已完成 |
+| 冲突检测 | `useConflictDetection.ts` | PowerSync 内建冲突处理 | ✅ 已完成 |
+| 同步队列状态 | `syncQueue.ts` + `SyncQueueManager` | PowerSync SDK 状态 | ✅ 已完成 |
 
->  所有功能待完成。
+> **更新日期**: 2025-12-26
+> 12/13 项已完成，1 项待验证（用户设置功能）。
 
 ---
 

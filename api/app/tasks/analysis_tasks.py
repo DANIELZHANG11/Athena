@@ -19,7 +19,7 @@ from ..storage import (
     BUCKET,
 )
 from ..realtime import ws_broadcast
-from ..ocr import get_ocr
+from ..services.ocr import get_ocr
 from .common import _quick_confidence
 from .ocr_tasks import _pdf_to_images
 

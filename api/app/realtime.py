@@ -19,6 +19,20 @@ _versions: dict[str, int] = {}
 _counters: dict[str, int] = {}
 _last_snapshot_at: dict[str, float] = {}
 
+# 广播频道客户端映射
+_broadcast_clients: dict[str, set] = {}
+
+
+async def ws_broadcast(channel: str, message: str):
+    """向指定频道的所有 WebSocket 客户端广播消息"""
+    clients = _broadcast_clients.get(channel, set())
+    for ws in list(clients):
+        try:
+            await ws.send_text(message)
+        except Exception:
+            # 客户端可能已断开
+            clients.discard(ws)
+
 
 async def _load_version(user_id: str, note_id: str) -> int:
     async with engine.begin() as conn:

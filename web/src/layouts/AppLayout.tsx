@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { Home, Library, Bot, Search } from 'lucide-react'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { UpdatePrompt } from '@/components/UpdatePrompt'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
@@ -24,10 +24,10 @@ export default function AppLayout() {
   const { t } = useTranslation('common')
   const loc = useLocation()
   const active = (p: string) => loc.pathname.startsWith(p)
-  
+
   // 待同步项数量
   const [pendingCount, setPendingCount] = useState(0)
-  
+
   // 网络状态监听，在线/离线切换时显示 toast
   const { isOnline } = useOnlineStatus({
     onOnline: () => {
@@ -37,7 +37,7 @@ export default function AppLayout() {
       toast.warning(t('offline.disconnected', '网络已断开，进入离线模式'))
     },
   })
-  
+
   // 定期更新待同步项数量
   useEffect(() => {
     const updatePendingCount = async () => {
@@ -48,55 +48,24 @@ export default function AppLayout() {
         console.error('[AppLayout] Failed to get sync queue count:', e)
       }
     }
-    
+
     // 立即更新一次
     updatePendingCount()
-    
+
     // 每 5 秒更新一次
     const interval = setInterval(updatePendingCount, 5000)
-    
+
     return () => clearInterval(interval)
   }, [])
 
   // 判断是否在阅读页面
   const isReaderPage = loc.pathname.startsWith('/app/read/')
-  const [isNavVisible, setIsNavVisible] = useState(!isReaderPage)
-  const hideTimerRef = useRef<number | null>(null)
 
-  // 阅读页面交互显示逻辑
-  useEffect(() => {
-    if (!isReaderPage) {
-      setIsNavVisible(true)
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-      return
-    }
+  // 阅读页面时完全隐藏底部导航栏
+  // 用户只能通过阅读器顶部的返回按钮离开，这确保会话能正确关闭
+  const isNavVisible = !isReaderPage
 
-    // 进入阅读页，默认隐藏
-    setIsNavVisible(false)
 
-    const showNav = () => {
-      setIsNavVisible(true)
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-      hideTimerRef.current = setTimeout(() => {
-        setIsNavVisible(false)
-      }, 3000) as unknown as number // 3秒无操作后隐藏
-    }
-
-    // 监听全局交互
-    window.addEventListener('mousemove', showNav)
-    window.addEventListener('touchstart', showNav)
-    window.addEventListener('click', showNav)
-    window.addEventListener('scroll', showNav)
-
-    return () => {
-      window.removeEventListener('mousemove', showNav)
-      window.removeEventListener('touchstart', showNav)
-      window.removeEventListener('click', showNav)
-      window.removeEventListener('scroll', showNav)
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    }
-  }, [isReaderPage])
-  
   // 导航项组件
   const NavItem = ({ to, icon: Icon, isActive }: { to: string, icon: typeof Home, isActive: boolean }) => (
     <NavLink to={to} className="flex items-center justify-center p-2">
@@ -110,25 +79,25 @@ export default function AppLayout() {
         // 选中状态：移除蓝色光环，增加轻微缩放
         isActive ? "scale-105 shadow-lg" : "scale-100"
       )}>
-        <Icon 
-          className="w-6 h-6 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]" 
+        <Icon
+          className="w-6 h-6 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
           // 选中：黑色(Label色)，未选中：灰色
-          color={isActive ? 'var(--label)' : 'var(--secondary-label)'} 
+          color={isActive ? 'var(--label)' : 'var(--secondary-label)'}
           // 选中：加粗线条 (3)
           strokeWidth={isActive ? 3 : 1.5}
         />
       </div>
     </NavLink>
   )
-  
+
   return (
     <div className="bg-system-background min-h-screen font-ui overflow-x-hidden w-full max-w-full">
       {/* 离线状态指示器 */}
       <OfflineIndicator pendingCount={pendingCount} />
-      
+
       {/* PWA 更新提示 */}
       <UpdatePrompt />
-      
+
       {/* 阅读页面不需要 pb-24，因为导航栏是沉浸式隐藏的 */}
       <main className={cn(
         'bg-system-background w-full max-w-full overflow-x-hidden',
@@ -138,7 +107,7 @@ export default function AppLayout() {
         <Outlet />
       </main>
 
-      <motion.nav 
+      <motion.nav
         initial={false}
         animate={{ y: isNavVisible ? 0 : '100%' }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}

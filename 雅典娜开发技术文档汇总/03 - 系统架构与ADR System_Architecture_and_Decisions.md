@@ -132,4 +132,54 @@
 
 > 详见 `02_Functional_Specifications_PRD.md` 中 B.1.1 节完整说明。
 
+### [NEW] ADR-009: EPUB 阅读器使用 epub.js 直接实现
+> **版本**: v1.0
+> **状态**: **APPROVED** ✅
+> **日期**: 2025-12-29
+
+#### 背景
+项目最初使用 `react-reader` 库作为 EPUB 阅读器。在实际测试中发现严重的分页问题：点击"下一页"时会跳过整章内容，而非逐页翻页。
+
+#### 核心决策
+1. **弃用 react-reader**：移除 `react-reader` 依赖，改为直接使用底层 `epub.js` 库。
+2. **ArrayBuffer 加载**：EPUB 文件使用 `ArrayBuffer` 格式加载（而非 Blob URL），这是 epub.js 官方推荐的方式。
+3. **直接控制渲染**：通过 `book.renderTo()` 直接创建 rendition，获得完整的分页和注释控制权。
+
+#### 理由
+| 对比项 | react-reader | epub.js 直接使用 |
+|-------|-------------|-----------------|
+| 分页控制 | ❌ 包装层可能引入问题 | ✅ 直接调用 API |
+| 注释/高亮 | ⚠️ 需要穿透包装层 | ✅ 直接使用 annotations API |
+| 调试难度 | ❌ 多层包装增加复杂度 | ✅ 单一依赖，易于调试 |
+| 成功案例 | - | ✅ Koodo Reader 等项目验证 |
+| App-First 集成 | ⚠️ 需要额外适配 | ✅ 更容易与 PowerSync 集成 |
+
+#### 实现要点
+```typescript
+// epub.js 直接使用模式
+import ePub from 'epubjs'
+
+const book = ePub(arrayBuffer)  // ArrayBuffer 加载
+const rendition = book.renderTo(container, {
+  flow: 'paginated',
+  spread: 'none',
+  width: '100%',
+  height: '100%'
+})
+
+// 翻页
+rendition.next()
+rendition.prev()
+
+// 注释（用于笔记和高亮功能）
+rendition.annotations.add('highlight', cfiRange, { color: 'yellow' })
+```
+
+#### 影响范围
+- `web/src/components/readers/EpubReader.tsx` - 完全重写
+- `web/src/pages/ReaderPage.tsx` - 适配新接口
+- `package.json` - 可移除 `react-reader` 依赖（epub.js 保留）
+
+> 详见 `02_Functional_Specifications_PRD.md` 中 2.3 节 Reader Core 完整说明。
+
 ... (Existing Content Preserved: ADR-001 to ADR-005) ...
