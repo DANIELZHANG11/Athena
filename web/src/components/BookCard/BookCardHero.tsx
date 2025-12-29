@@ -19,7 +19,6 @@ interface BookCardHeroProps extends NormalizedBookProps, BookCardCallbacks {
 export default function BookCardHero(props: BookCardHeroProps) {
   const { t } = useTranslation('common')
   const {
-    id,
     title,
     author,
     coverUrl,

@@ -152,7 +152,6 @@ export function useProgressData(bookId: string | null) {
       pendingUpdateRef.current = null
       const now = new Date().toISOString()
       const userId = useAuthStore.getState().user?.id || ''
-      const deviceId = getDeviceId()
 
       try {
         // 检查是否已存在进度记录 - 使用 book_id + user_id 匹配

@@ -11,7 +11,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@powersync/react'
 import { usePowerSyncDatabase, useIsAppFirstEnabled } from '../PowerSyncProvider'
 import { useAuthStore } from '@/stores/auth'
-import { generateUUID, getDeviceId } from '@/lib/utils'
+import { generateUUID } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义

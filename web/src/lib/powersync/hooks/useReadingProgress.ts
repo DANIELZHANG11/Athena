@@ -19,7 +19,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@powersync/react'
 import { usePowerSyncDatabase, useIsAppFirstEnabled } from '../PowerSyncProvider'
 import { useAuthStore } from '@/stores/auth'
-import { generateUUID, getDeviceId } from '@/lib/utils'
+import { generateUUID } from '@/lib/utils'
 
 // ============================================================================
 // 类型定义 - 与 PostgreSQL 完全一致
@@ -276,46 +276,6 @@ export function useReadingProgressMutations() {
         ]
       )
 
-      return id
-    }
-  }
-
-  /**
-   * 标记书籍已读完
-   * 修复：使用 book_id + user_id 进行匹配，而不是 id
-   */
-  const markAsFinished = async (bookId: string) => {
-    if (!db || !isAppFirstEnabled) {
-      throw new Error('PowerSync not available')
-    }
-
-    const now = new Date().toISOString()
-    const userId = useAuthStore.getState().user?.id || ''
-    const deviceId = getDeviceId()
-
-    // 先查询是否存在记录 - 使用 book_id + user_id 匹配
-    const existingRows = await db.getAll<{ id: string }>(
-      'SELECT id FROM reading_progress WHERE book_id = ? AND user_id = ?',
-      [bookId, userId]
-    )
-    const existing = existingRows[0]
-
-    if (existing) {
-      // 更新现有记录 - 使用 book_id + user_id 匹配
-      await db.execute(
-        'UPDATE reading_progress SET progress = 1.0, finished_at = ?, updated_at = ? WHERE book_id = ? AND user_id = ?',
-        [now, now, bookId, userId]
-      )
-      return existing.id
-    } else {
-      // 插入新记录
-      const id = generateUUID()
-
-      await db.execute(
-        `INSERT INTO reading_progress (id, user_id, device_id, book_id, progress, finished_at, updated_at)
-         VALUES (?, ?, ?, ?, 1.0, ?, ?)`,
-        [id, userId, deviceId, bookId, now, now]
-      )
       return id
     }
   }

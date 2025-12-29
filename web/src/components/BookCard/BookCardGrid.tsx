@@ -5,7 +5,7 @@
  * 
  * @see 06 - UIUX设计系统UI_UX_Design_system.md
  */
-import { Check, Loader2, Scan } from 'lucide-react'
+import { Check, Scan } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 import { toast } from '@/components/ui/sonner'

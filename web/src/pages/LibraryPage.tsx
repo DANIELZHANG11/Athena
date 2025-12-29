@@ -19,7 +19,6 @@ import { useBookFileCache } from '@/hooks/useBookFileCache'
 import { useOnlineStatus } from '@/hooks/useOnlineStatus'
 import { toast } from '@/components/ui/sonner'
 import { MoreVertical, Grid3X3, List, Clock, BookOpen, User, Upload, WifiOff, RefreshCw, Plus, Layers } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,

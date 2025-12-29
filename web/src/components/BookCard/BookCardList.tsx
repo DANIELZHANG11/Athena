@@ -13,7 +13,7 @@ import { toast } from '@/components/ui/sonner'
 import { extractDominantColor, getLuminance } from '@/lib/color-utils'
 import { ScrollText } from '@/components/ui/ScrollText'
 import BookCardMenu from '../BookCardMenu'
-import { BookCover, ProcessingPlaceholder, StatusIcon } from './BookCardParts'
+import { BookCover, StatusIcon } from './BookCardParts'
 import type { NormalizedBookProps, BookCardCallbacks } from './types'
 
 interface BookCardListProps extends NormalizedBookProps, BookCardCallbacks {

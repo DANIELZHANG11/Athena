@@ -23,7 +23,7 @@ import {
   AlertCircle,
   FolderPlus,
 } from 'lucide-react'
-import { cn, generateUUID, getDeviceId } from '@/lib/utils'
+import { cn, generateUUID } from '@/lib/utils'
 import { usePowerSync, useQuery } from '@powersync/react'
 import { useAuthStore } from '@/stores/auth'
 

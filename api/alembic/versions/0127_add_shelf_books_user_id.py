@@ -50,6 +50,12 @@ def upgrade() -> None:
     op.execute("""
         DO $$
         BEGIN
+            -- 检查 publication 是否存在，不存在则创建
+            IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'powersync') THEN
+                CREATE PUBLICATION powersync;
+            END IF;
+
+            -- 检查表是否已经在 publication 中
             IF NOT EXISTS (
                 SELECT 1 FROM pg_publication_tables 
                 WHERE pubname = 'powersync' AND tablename = 'shelf_books'
