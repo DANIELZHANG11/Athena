@@ -136,7 +136,9 @@ jobs:
           cache-dependency-path: 'web/pnpm-lock.yaml'
       - name: Install deps
         working-directory: web
-        run: pnpm install --no-frozen-lockfile
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm exec cypress install
       - name: Run Cypress
         uses: cypress-io/github-action@v6
         with:
