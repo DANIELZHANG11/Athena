@@ -139,6 +139,7 @@ export default function Login() {
 
       {/* 发送验证码按钮 */}
       <Button
+        data-testid="login-send"
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         disabled={loading || !email || countdown > 0}
         onClick={sendCode}
@@ -184,6 +185,7 @@ export default function Login() {
 
       {/* 登录按钮 */}
       <Button
+        data-testid="login-submit"
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         disabled={loading || !email || !code}
         onClick={login}
