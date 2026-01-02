@@ -3,7 +3,13 @@
 describe('Reader Functionality', () => {
     beforeEach(() => {
         cy.login()
-        cy.visit('/')
+        cy.visit('/', {
+            onBeforeLoad(win) {
+                Object.defineProperty(win.navigator, 'language', { value: 'zh-CN' })
+                Object.defineProperty(win.navigator, 'languages', { value: ['zh-CN'] })
+                win.localStorage.setItem('i18nextLng', 'zh-CN')
+            }
+        })
     })
 
     it('should allow opening a book and viewing reader UI', () => {
