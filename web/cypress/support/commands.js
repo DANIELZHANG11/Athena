@@ -5,12 +5,19 @@ Cypress.Commands.add('login', () => {
 
   // optional: profile fetch not required in current app flow
 
-  cy.visit('/login')
-  cy.get('input[aria-label="邮箱"]').type('e2e@example.com')
+  cy.visit('/login', {
+    onBeforeLoad(win) {
+      Object.defineProperty(win.navigator, 'language', { value: 'zh-CN' })
+      Object.defineProperty(win.navigator, 'languages', { value: ['zh-CN'] })
+      win.localStorage.setItem('i18nextLng', 'zh-CN')
+    }
+  })
+
+  cy.get('#email').type('e2e@example.com')
   cy.get('[data-testid="login-send"]').click()
   cy.wait('@sendCode')
 
-  cy.get('input[aria-label="验证码"]').type('123456')
+  cy.get('#code').type('123456')
   cy.log('[E2E DEBUG] Preparing to click Login button...')
   cy.get('[data-testid="login-submit"]').debug()
   cy.get('[data-testid="login-submit"]').click()
