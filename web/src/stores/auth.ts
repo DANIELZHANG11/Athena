@@ -11,6 +11,7 @@
  */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { apiFetch } from '@/lib/apiUrl'
 
 interface User {
   id: string
@@ -85,7 +86,7 @@ export const useAuthStore = create<AuthState>()(
 
         refreshPromise = (async () => {
           try {
-            const response = await fetch('/api/v1/auth/refresh', {
+            const response = await apiFetch('/api/v1/auth/refresh', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ refresh_token: refreshToken })
@@ -156,7 +157,7 @@ export const useAuthStore = create<AuthState>()(
         // 调用后端登出接口
         if (accessToken) {
           try {
-            await fetch('/api/v1/auth/logout', {
+            await apiFetch('/api/v1/auth/logout', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

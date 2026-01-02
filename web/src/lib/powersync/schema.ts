@@ -22,22 +22,24 @@ const books = new Table({
   cover_url: column.text,      // 来自 cover_image_key
   file_type: column.text,      // 来自 original_format
   file_size: column.integer,   // 来自 size
-  content_sha256: column.text,
+  // 【双SHA256去重】原始文件SHA256和当前文件SHA256
+  original_content_sha256: column.text, // 原始上传文件的SHA256
+  content_sha256: column.text, // 当前存储文件的SHA256（可能是转换后的EPUB）
   storage_key: column.text,    // 来自 minio_key
-  
+
   // 元数据状态
   metadata_confirmed: column.integer,
   is_digitalized: column.integer, // boolean as 0/1, true = 有文字层
   initial_digitalization_confidence: column.real, // 0.0 - 1.0, OCR 置信度
   page_count: column.integer,  // 来自 meta->>'page_count'
-  
+
   // OCR 状态
   ocr_status: column.text, // 'pending' | 'processing' | 'completed' | 'failed'
-  
+
   // 格式转换
   conversion_status: column.text,
   converted_epub_key: column.text,
-  
+
   // 时间戳
   created_at: column.text, // ISO 8601
   updated_at: column.text,
@@ -46,6 +48,7 @@ const books = new Table({
   indexes: {
     by_user: ['user_id'],
     by_sha256: ['content_sha256'],
+    by_original_sha256: ['original_content_sha256'],
   }
 })
 
@@ -186,6 +189,44 @@ const user_settings = new Table({
   }
 })
 
+// ============ 阅读模式设置表 ============
+// 2025-12-30: 新增，支持每本书独立的阅读外观设置
+const reading_settings = new Table({
+  user_id: column.text,
+  book_id: column.text,       // NULL 表示全局默认设置
+  device_id: column.text,
+
+  // 主题设置
+  theme_id: column.text,      // 'white'|'sepia'|'toffee'|'gray'|'dark'|'black'|'custom'
+  background_color: column.text, // #RRGGBB
+  text_color: column.text,    // #RRGGBB
+
+  // 文字设置
+  font_family: column.text,   // 'system'|'noto-serif-sc'|'noto-sans-sc'|'lxgw-wenkai'|...
+  font_size: column.integer,  // 12-32
+  font_weight: column.integer, // 400/500/600/700
+
+  // 间距设置
+  line_height: column.real,   // 1.0-2.5
+  paragraph_spacing: column.real, // 段间距倍数
+  margin_horizontal: column.integer, // px
+
+  // 显示设置
+  text_align: column.text,    // 'left'|'justify'
+  hyphenation: column.integer, // boolean as 0/1
+
+  // 元数据
+  is_deleted: column.integer,
+  deleted_at: column.text,
+  created_at: column.text,
+  updated_at: column.text,
+}, {
+  indexes: {
+    by_user: ['user_id'],
+    by_user_book: ['user_id', 'book_id'],
+  }
+})
+
 // ============ 本地专用表 (不同步到服务端) ============
 
 // 书籍文件缓存元数据 (实际文件存储在 OPFS/Filesystem)
@@ -240,7 +281,7 @@ const local_cover_cache = new Table({
 // ============ 导出 Schema ============
 
 export const AppSchema = new Schema({
-  // 同步表 (共 9 个)
+  // 同步表 (共 10 个)
   books,
   reading_progress,
   reading_sessions,
@@ -250,7 +291,8 @@ export const AppSchema = new Schema({
   shelves,
   shelf_books,
   user_settings,
-  
+  reading_settings,  // 2025-12-30: 新增阅读模式设置
+
   // 本地表 (不同步)
   local_book_files,
   local_ocr_data,
@@ -261,12 +303,15 @@ export const AppSchema = new Schema({
 export type Database = (typeof AppSchema)['types']
 export type BooksRecord = Database['books']
 export type ReadingProgressRecord = Database['reading_progress']
+export type ReadingSessionsRecord = Database['reading_sessions']
 export type NotesRecord = Database['notes']
 export type HighlightsRecord = Database['highlights']
 export type BookmarksRecord = Database['bookmarks']
 export type ShelvesRecord = Database['shelves']
 export type ShelfBooksRecord = Database['shelf_books']
 export type UserSettingsRecord = Database['user_settings']
+export type ReadingSettingsRecord = Database['reading_settings']  // 2025-12-30: 新增
 export type LocalBookFilesRecord = Database['local_book_files']
 export type LocalOcrDataRecord = Database['local_ocr_data']
 export type LocalCoverCacheRecord = Database['local_cover_cache']
+

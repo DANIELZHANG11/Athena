@@ -21,6 +21,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@fontsource/noto-sans-sc": "^5.2.8",
+    "@fontsource/noto-serif-sc": "^5.2.8",
     "@journeyapps/wa-sqlite": "^1.4.1",
     "@powersync/react": "^1.8.2",
     "@powersync/web": "^1.30.0",
@@ -62,6 +64,7 @@
     "i18next-http-backend": "^2.6.2",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.460.0",
+    "lxgw-wenkai-webfont": "^1.7.0",
     "react": "^18.3.1",
     "react-day-picker": "^9.11.1",
     "react-dom": "^18.3.1",

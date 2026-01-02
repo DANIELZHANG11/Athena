@@ -7,7 +7,7 @@ export default function Hero() {
   const { t } = useTranslation('landing')
   useEffect(() => { const timer = setTimeout(() => { }, 2000); return () => clearTimeout(timer) }, [])
   return (
-    <div className="relative bg-white text-gray-900 overflow-hidden pt-20 pb-0">
+    <div className="relative bg-system-background text-label overflow-hidden pt-20 pb-0">
       <div className="max-w-6xl mx-auto px-6 text-center">
         <motion.div
           initial={{ scale: 5, y: 200, opacity: 1 }}
@@ -22,7 +22,7 @@ export default function Hero() {
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 1.3, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         >
-          <h1 className="text-6xl md:text-7xl text-gray-900 mb-8" style={{ fontWeight: 700, lineHeight: 1.05, letterSpacing: '-0.015em', textShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>{t('hero.title')}</h1>
+          <h1 className="text-6xl md:text-7xl text-label mb-8 font-bold leading-[1.05] tracking-tight drop-shadow-lg">{t('hero.title')}</h1>
         </motion.div>
         <motion.div
           initial={{ y: 50, opacity: 0 }}
@@ -30,7 +30,7 @@ export default function Hero() {
           transition={{ delay: 1.6, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
           className="mb-20"
         >
-          <p className="text-xl md:text-2xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
+          <p className="text-xl md:text-2xl text-secondary-label max-w-4xl mx-auto leading-relaxed">
             {t('hero.subtitle')}
           </p>
         </motion.div>

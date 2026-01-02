@@ -32,10 +32,10 @@
 > **Architecture Pivot**: Moved from Dexie.js (IndexedDB) to SQLite (via Capacitor/WASM) for "App-First" architecture. 
 > **Sync Engine**: PowerSync (streaming replication).
 
-### 3.1 PowerSync 同步表列表（共 9 个）
+### 3.1 PowerSync 同步表列表（共 10 个）
 
 > **权威来源**：`web/src/lib/powersync/schema.ts` + `docker/powersync/sync_rules.yaml`
-> **最后更新**：2025-12-17
+> **最后更新**：2025-12-30
 
 | # | SQLite 表名 | PostgreSQL 源表 | 同步策略 | 说明 |
 |---|:-----------|:---------------|:---------|:-----|
@@ -48,6 +48,8 @@
 | 7 | `shelves` | `shelves` | ↕ 双向同步 | 书架定义 |
 | 8 | `shelf_books` | `shelf_books` | ↕ 双向同步 | 书架-书籍关联 |
 | 9 | `user_settings` | `user_settings` | ↕ 双向同步 | 用户偏好设置 |
+| 10 | `reading_settings` | `reading_settings` | ↕ 双向同步 | **阅读模式设置（每本书独立）** |
+
 
 > **注意**：阅读统计数据通过前端聚合 `reading_sessions` + `reading_progress` 计算，不作为独立同步表。
 > PostgreSQL 有 `reading_daily` 表用于服务端统计，但不同步到客户端。
@@ -510,7 +512,79 @@ def delete_book(book_id, user_id):
 *   `yearly_books` (INTEGER, Default: 10)
 *   `updated_at` (TIMESTAMPTZ)
 
-### 3.5 商业与计费 (Billing)
+### 3.5 阅读模式设置 (Reading Settings) 🆕
+
+> **用途**：支持每本书独立的阅读外观设置，可跨设备同步
+> **添加版本**：2025-12-30
+
+#### `reading_settings`
+阅读模式设置表（启用 RLS，支持 PowerSync 双向同步）。
+
+**表结构**：
+*   `id` (UUID, PK)
+*   `user_id` (UUID, FK `users.id`) - 用户 ID
+*   `book_id` (UUID, FK `books.id`, Nullable) - **NULL 表示全局默认设置**
+*   `device_id` (TEXT, Nullable) - 创建/修改设备 ID
+
+**主题设置**：
+*   `theme_id` (TEXT, Default: 'white') - 预设主题 ID: `white`|`sepia`|`toffee`|`gray`|`dark`|`black`|`custom`
+*   `background_color` (TEXT, Nullable) - 自定义背景色 `#RRGGBB`
+*   `text_color` (TEXT, Nullable) - 自定义文字色 `#RRGGBB`
+
+**文字设置**：
+*   `font_family` (TEXT, Default: 'system') - 字体名称
+*   `font_size` (INTEGER, Default: 18) - 字号 (范围: 12-32)
+*   `font_weight` (INTEGER, Default: 400) - 字重 (400/500/600/700)
+
+**间距设置**：
+*   `line_height` (REAL, Default: 1.6) - 行高倍数 (范围: 1.0-2.5)
+*   `paragraph_spacing` (REAL, Default: 1.0) - 段间距倍数
+*   `margin_horizontal` (INTEGER, Default: 24) - 水平边距 (px)
+
+**显示设置**：
+*   `text_align` (TEXT, Default: 'justify') - 对齐方式: `left`|`justify`
+*   `hyphenation` (BOOLEAN, Default: TRUE) - 自动断字
+
+**元数据**：
+*   `is_deleted` (INTEGER, Default: 0) - 软删除标记
+*   `deleted_at` (TIMESTAMPTZ, Nullable) - 软删除时间
+*   `created_at` (TIMESTAMPTZ)
+*   `updated_at` (TIMESTAMPTZ)
+
+**约束**：
+*   `UNIQUE (user_id, book_id)` - 每个用户每本书只有一条设置记录
+*   当 `book_id IS NULL` 时表示**全局默认设置**
+
+**索引**：
+*   `idx_reading_settings_user_id` ON `reading_settings(user_id)`
+*   `idx_reading_settings_user_book` ON `reading_settings(user_id, book_id)`
+
+**PowerSync 同步策略**：
+*   下载：`WHERE user_id = bucket.user_id`
+*   上传：完整 UPSERT，使用 `updated_at` LWW 策略
+
+**预设主题值**：
+| theme_id | 名称 | background_color | text_color |
+|----------|------|------------------|------------|
+| `white` | 白色 | #FFFFFF | #1D1D1F |
+| `sepia` | 奶白 | #F4ECD8 | #3D3D3D |
+| `toffee` | 太妃糖 | #E8D5B5 | #4A4A4A |
+| `gray` | 灰色 | #E8E8E8 | #2D2D2D |
+| `dark` | 深色 | #1C1C1E | #FFFFFF |
+| `black` | 纯黑 | #000000 | #FFFFFF |
+| `custom` | 自定义 | (用户选择) | (用户选择) |
+
+**预设字体值**：
+| font_family | 显示名称 | 类型 |
+|-------------|----------|------|
+| `system` | 系统默认 | 系统 |
+| `noto-serif-sc` | 思源宋体 | 中文衬线 |
+| `noto-sans-sc` | 思源黑体 | 中文无衬线 |
+| `lxgw-wenkai` | 霞鹜文楷 | 中文楷体 |
+| `georgia` | Georgia | 英文衬线 |
+| `helvetica` | Helvetica | 英文无衬线 |
+
+### 3.6 商业与计费 (Billing)
 
 #### `credit_accounts`
 用户积分账户。

@@ -1,0 +1,73 @@
+{
+    "settings": {
+        "title": "外观",
+        "auto": "自动",
+        "theme": {
+            "label": "主题",
+            "white": "白色",
+            "sepia": "奶白",
+            "toffee": "太妃糖",
+            "gray": "灰色",
+            "dark": "深色",
+            "black": "纯黑",
+            "custom": "自定义"
+        },
+        "fontSize": "文字大小",
+        "fontFamily": "字体",
+        "fonts": {
+            "system": "系统默认",
+            "noto-serif-sc": "思源宋体",
+            "noto-sans-sc": "思源黑体",
+            "lxgw-wenkai": "霞鹜文楷",
+            "georgia": "Georgia",
+            "helvetica": "Helvetica"
+        },
+        "lineHeight": "行间距",
+        "marginHorizontal": "页边距",
+        "saveSuccess": "设置已保存"
+    },
+    "notes": {
+        "addNote": "添加笔记",
+        "editNote": "编辑笔记",
+        "placeholder": "写下你的想法...",
+        "saveHint": "Ctrl + Enter 保存",
+        "highlightColor": "高亮颜色",
+        "delete": "删除笔记",
+        "empty": {
+            "title": "暂无笔记",
+            "description": "选中文字后可以添加笔记"
+        },
+        "count": "条笔记"
+    },
+    "highlights": {
+        "empty": {
+            "title": "暂无高亮",
+            "description": "选中文字后可以添加高亮"
+        },
+        "count": "处高亮"
+    },
+    "annotations": {
+        "title": "笔记与高亮",
+        "all": "全部",
+        "notes": "笔记",
+        "highlights": "高亮",
+        "empty": {
+            "title": "暂无标注",
+            "description": "阅读时选中文字可以添加高亮和笔记"
+        }
+    },
+    "highlight": {
+        "colors": {
+            "yellow": "黄色",
+            "green": "绿色",
+            "blue": "蓝色",
+            "pink": "粉色",
+            "purple": "紫色"
+        }
+    },
+    "common": {
+        "close": "关闭",
+        "save": "保存",
+        "cancel": "取消"
+    }
+}

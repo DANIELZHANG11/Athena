@@ -20,12 +20,10 @@ export interface NoteItem {
   id: string
   bookId: string
   bookTitle?: string
-  chapterIndex?: number
-  cfiRange?: string
+  cfiRange?: string       // 对应 position_cfi
   pageNumber?: number
   content: string
-  color?: string
-  tags?: string[]
+  color?: string          // 高亮颜色
   createdAt: string
   updatedAt: string
 }
@@ -34,42 +32,53 @@ export interface HighlightItem {
   id: string
   bookId: string
   bookTitle?: string
-  chapterIndex?: number
-  cfiRange: string
+  cfiRange: string        // 对应 position_start_cfi (用于跳转)
+  cfiRangeEnd?: string    // 对应 position_end_cfi
   pageNumber?: number
-  textContent: string
+  textContent: string     // 对应 text
   color: string
   note?: string
   createdAt: string
   updatedAt: string
 }
 
+/**
+ * 笔记数据库行类型 (对应 PowerSync schema)
+ * @see web/src/lib/powersync/schema.ts - notes 表
+ */
 interface NoteRow {
   id: string
+  user_id: string
   book_id: string
-  chapter_index: number | null
-  cfi_range: string | null
-  page_number: number | null
+  device_id: string | null
   content: string
+  page_number: number | null
+  position_cfi: string | null
   color: string | null
-  tags: string | null
+  is_deleted: number | null
+  deleted_at: string | null
   created_at: string
   updated_at: string
-  deleted_at: string | null
 }
 
+/**
+ * 高亮数据库行类型 (对应 PowerSync schema)
+ * @see web/src/lib/powersync/schema.ts - highlights 表
+ */
 interface HighlightRow {
   id: string
+  user_id: string
   book_id: string
-  chapter_index: number | null
-  cfi_range: string
+  device_id: string | null
+  text: string
   page_number: number | null
-  text_content: string
+  position_start_cfi: string | null
+  position_end_cfi: string | null
   color: string
-  note: string | null
+  is_deleted: number | null
+  deleted_at: string | null
   created_at: string
   updated_at: string
-  deleted_at: string | null
 }
 
 interface BookTitleRow {
@@ -156,12 +165,10 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
       id: note.id,
       bookId: note.book_id,
       bookTitle: bookTitles.get(note.book_id),
-      chapterIndex: note.chapter_index ?? undefined,
-      cfiRange: note.cfi_range ?? undefined,
+      cfiRange: note.position_cfi ?? undefined,
       pageNumber: note.page_number ?? undefined,
       content: note.content,
       color: note.color ?? undefined,
-      tags: note.tags ? JSON.parse(note.tags) : undefined,
       createdAt: note.created_at,
       updatedAt: note.updated_at,
     }))
@@ -178,19 +185,17 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
     const deviceId = getDeviceId()
 
     await db.execute(
-      `INSERT INTO notes (id, user_id, device_id, book_id, chapter_index, cfi_range, page_number, content, color, tags, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO notes (id, user_id, device_id, book_id, page_number, position_cfi, content, color, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         userId,
         deviceId,
         note.bookId,
-        note.chapterIndex ?? null,
-        note.cfiRange ?? null,
         note.pageNumber ?? null,
+        note.cfiRange ?? null,
         note.content,
         note.color ?? null,
-        note.tags ? JSON.stringify(note.tags) : null,
         now,
         now
       ]
@@ -199,14 +204,20 @@ export function useNotesData(options: UseNotesDataOptions = {}) {
     return id
   }, [db])
 
-  const updateNote = useCallback(async (id: string, content: string, tags?: string[]) => {
+  const updateNote = useCallback(async (id: string, content: string, color?: string) => {
     if (!db) throw new Error('Database not available')
 
     const now = new Date().toISOString()
-    await db.execute(
-      'UPDATE notes SET content = ?, tags = ?, updated_at = ? WHERE id = ?',
-      [content, tags ? JSON.stringify(tags) : null, now, id]
-    )
+    const fields = ['content = ?', 'updated_at = ?']
+    const values: (string | null)[] = [content, now]
+    
+    if (color !== undefined) {
+      fields.push('color = ?')
+      values.push(color)
+    }
+    
+    values.push(id)
+    await db.execute(`UPDATE notes SET ${fields.join(', ')} WHERE id = ?`, values)
   }, [db])
 
   const deleteNote = useCallback(async (id: string) => {
@@ -254,7 +265,7 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
     }
 
     if (search) {
-      conditions.push('text_content LIKE ?')
+      conditions.push('text LIKE ?')
     }
 
     if (conditions.length > 0) {
@@ -299,12 +310,11 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
       id: h.id,
       bookId: h.book_id,
       bookTitle: bookTitles.get(h.book_id),
-      chapterIndex: h.chapter_index ?? undefined,
-      cfiRange: h.cfi_range,
+      cfiRange: h.position_start_cfi || '',
+      cfiRangeEnd: h.position_end_cfi ?? undefined,
       pageNumber: h.page_number ?? undefined,
-      textContent: h.text_content,
+      textContent: h.text,
       color: h.color,
-      note: h.note ?? undefined,
       createdAt: h.created_at,
       updatedAt: h.updated_at,
     }))
@@ -321,19 +331,18 @@ export function useHighlightsData(options: UseNotesDataOptions = {}) {
     const deviceId = getDeviceId()
 
     await db.execute(
-      `INSERT INTO highlights (id, user_id, device_id, book_id, chapter_index, cfi_range, page_number, text_content, color, note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO highlights (id, user_id, device_id, book_id, page_number, position_start_cfi, position_end_cfi, text, color, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         userId,
         deviceId,
         highlight.bookId,
-        highlight.chapterIndex ?? null,
-        highlight.cfiRange,
         highlight.pageNumber ?? null,
+        highlight.cfiRange,
+        highlight.cfiRangeEnd ?? null,
         highlight.textContent,
         highlight.color,
-        highlight.note ?? null,
         now,
         now
       ]

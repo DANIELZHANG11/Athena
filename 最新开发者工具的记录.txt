@@ -1,219 +1,64 @@
-[EpubReader] Relocated: 56.74%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/2,/8/1:252)', percentage: 0.5674316521883562}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-EpubReader.tsx:161 [EpubReader] Relocated: 56.74%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/2,/8/1:252)', percentage: 0.5674316521883562}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useOcrData.ts:169 [useOcrData] Server availability: false {available: false, is_digitalized: true, ocr_status: null, pages: {…}, total_pages: 0, …}
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2,/2,/8/1:252)', percentage: 0.5674316521883562}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "updated_at": "2025-12-29T12:36:54.374Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 56.88%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/8/1:252,/12/1:103)', percentage: 0.5687850481842582}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2,/8/1:252,/12/1:103)', percentage: 0.5687850481842582}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "last_position": "epubcfi(/6/84!/4/2,/8/1:252,/12/1:103)",
-      "progress": 0.568785048184258,
-      "updated_at": "2025-12-29T12:36:57.400Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.01%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/14,/18/1:112)', percentage: 0.5701384441801604}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2,/14,/18/1:112)', percentage: 0.5701384441801604}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "last_position": "epubcfi(/6/84!/4/2,/14,/18/1:112)",
-      "progress": 0.57013844418016,
-      "updated_at": "2025-12-29T12:37:04.398Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.15%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/18/1:112,/22/1:68)', percentage: 0.5714918401760625}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2,/18/1:112,/22/1:68)', percentage: 0.5714918401760625}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "last_position": "epubcfi(/6/84!/4/2,/18/1:112,/22/1:68)",
-      "progress": 0.571491840176062,
-      "updated_at": "2025-12-29T12:37:08.797Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.28%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2/22,/1:68,/1:802)', percentage: 0.5728452361719646}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2/22,/1:68,/1:802)', percentage: 0.5728452361719646}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "last_position": "epubcfi(/6/84!/4/2/22,/1:68,/1:802)",
-      "progress": 0.572845236171965,
-      "updated_at": "2025-12-29T12:37:12.753Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.42%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/22/1:802,/26/1:344)', percentage: 0.5741986321678666}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.56%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/26/1:344,/30/1:271)', percentage: 0.5755520281637687}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.69%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/30/1:271,/34/1:414)', percentage: 0.5769054241596708}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-EpubReader.tsx:245 [EpubReader] goRight()
-EpubReader.tsx:161 [EpubReader] Relocated: 57.83%
-ReaderPage.tsx:215 [ReaderPage] EPUB progress update: {cfi: 'epubcfi(/6/84!/4/2,/34/1:414,/36/1:182)', percentage: 0.5782588201555728}
-useProgressData.ts:124 [useProgressData] saveProgress called: {updates: {…}, immediate: false, hasDb: true, bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', isReady: true}
-useProgressData.ts:242 [useProgressData] Progress saved: {bookId: '123918a4-58c9-4e56-b79b-060f0322fa19', currentCfi: 'epubcfi(/6/84!/4/2,/34/1:414,/36/1:182)', percentage: 0.5782588201555728}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_progress",
-    "op": "PATCH",
-    "id": "176de07d-44ac-4923-ba17-c80f9376735d",
-    "data": {
-      "last_position": "epubcfi(/6/84!/4/2,/34/1:414,/36/1:182)",
-      "progress": 0.578258820155573,
-      "updated_at": "2025-12-29T12:37:17.699Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-useBooksData.ts:150 [useBooksData] Progress data from DB: []
-ReaderPage.tsx:199 [ReaderPage] Component unmounting, ending reading session for book: 123918a4-58c9-4e56-b79b-060f0322fa19
-AuthGuard.tsx:25 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/library'}
-AuthGuard.tsx:51 [AuthGuard] Token valid
-useBooksData.ts:150 [useBooksData] Progress data from DB: []
-paginator.js:314 Uncaught TypeError: Cannot read properties of null (reading 'documentElement')
-    at View.columnize (paginator.js:314:32)
-    at View.render (paginator.js:289:32)
-    at Paginator.render (paginator.js:756:20)
-    at #observer (paginator.js:430:47)
-columnize @ paginator.js:314
-render @ paginator.js:289
-render @ paginator.js:756
-#observer @ paginator.js:430了解此错误
-useProgressData.ts:432 [useReadingSession] Session ended: {id: 'ad6f716c-a9b9-42d1-97eb-37f479aca09c', durationMs: 27906, durationMinutes: 0}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
+chunk-NLPANMJC.js?v=ae71e70f:521 Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?
+
+Check the render method of `NoteEditor`.
+    at Textarea (http://localhost:48173/src/components/ui/textarea.tsx:18:21)
+    at div
+    at div
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:230:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-2EIEE2T5.js?v=ae71e70f:59:7
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:139:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:116:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:230:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-2EIEE2T5.js?v=ae71e70f:258:5
+    at http://localhost:48173/node_modules/.vite/deps/chunk-UKOOM4QC.js?v=ae71e70f:227:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-UKOOM4QC.js?v=ae71e70f:153:58
+    at Presence (http://localhost:48173/node_modules/.vite/deps/chunk-BZGKE6CH.js?v=ae71e70f:24:11)
+    at http://localhost:48173/node_modules/.vite/deps/chunk-UKOOM4QC.js?v=ae71e70f:144:64
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:139:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:116:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:230:13
+    at http://localhost:48173/node_modules/.vite/deps/chunk-2EIEE2T5.js?v=ae71e70f:459:22
+    at Presence (http://localhost:48173/node_modules/.vite/deps/chunk-BZGKE6CH.js?v=ae71e70f:24:11)
+    at Provider (http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:54:15)
+    at DialogPortal (http://localhost:48173/node_modules/.vite/deps/chunk-UKOOM4QC.js?v=ae71e70f:106:11)
+    at SheetPortal
+    at SheetContent (http://localhost:48173/src/components/ui/sheet.tsx:66:25)
+    at Provider (http://localhost:48173/node_modules/.vite/deps/chunk-7QEG24UD.js?v=ae71e70f:54:15)
+    at Dialog (http://localhost:48173/node_modules/.vite/deps/chunk-UKOOM4QC.js?v=ae71e70f:46:5)
+    at Sheet
+    at NoteEditor (http://localhost:48173/src/components/reader/NoteEditor.tsx:66:3)
+    at div
+    at EpubReader (http://localhost:48173/src/components/readers/EpubReader.tsx?t=1767358560669:128:3)
+    at ReaderPage (http://localhost:48173/src/pages/ReaderPage.tsx?t=1767358560669:33:22)
+    at AuthGuard (http://localhost:48173/src/components/auth/AuthGuard.tsx?t=1767358560669:21:37)
+    at RenderedRoute (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:4108:5)
+    at Outlet (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:4514:26)
+    at main
+    at div
+    at AppLayout (http://localhost:48173/src/layouts/AppLayout.tsx:31:17)
+    at RenderedRoute (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:4108:5)
+    at Routes (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:4578:5)
+    at Router (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:4521:15)
+    at BrowserRouter (http://localhost:48173/node_modules/.vite/deps/react-router-dom.js?v=ae71e70f:5267:5)
+    at NoteConflictProvider (http://localhost:48173/src/contexts/NoteConflictContext.tsx?t=1767358560669:30:40)
+    at PowerSyncProvider (http://localhost:48173/src/lib/powersync/PowerSyncProvider.tsx?t=1767358560669:106:37)
+    at App (http://localhost:48173/src/App.tsx?t=1767358560669:45:3)
+
+chunk-UKOOM4QC.js?v=ae71e70f:330 Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+useProgressData.ts:420 [useReadingSession] Heartbeat saved: 
+{sessionId: '83c90c3c-5115-4b89-bcfa-9f2a7d2d0a2c', durationMs: 30025, durationMinutes: 1}
+PowerSyncProvider.tsx:137 [PowerSync] Uploading 1 operations...
+PowerSyncProvider.tsx:138 [PowerSync] Operations: [
   {
     "table": "reading_sessions",
     "op": "PATCH",
-    "id": "ad6f716c-a9b9-42d1-97eb-37f479aca09c",
+    "id": "83c90c3c-5115-4b89-bcfa-9f2a7d2d0a2c",
     "data": {
-      "is_active": 0,
-      "total_ms": 27905,
-      "updated_at": "2025-12-29T12:37:20.988Z"
+      "total_ms": 30025,
+      "updated_at": "2026-01-02T13:04:50.289Z"
     }
   }
 ]
-useBooksData.ts:150 [useBooksData] Progress data from DB: (6) [{…}, {…}, {…}, {…}, {…}, {…}]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "reading_sessions",
-    "op": "PATCH",
-    "id": "ad6f716c-a9b9-42d1-97eb-37f479aca09c",
-    "data": {
-      "total_ms": 27906,
-      "updated_at": "2025-12-29T12:37:20.989Z"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-AuthGuard.tsx:25 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/home'}
-AuthGuard.tsx:51 [AuthGuard] Token valid
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: false, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 6, recentBooks: Array(3)}
-WeeklyActivity.tsx:40 [WeeklyActivity] render: {days: Array(7), goalMinutes: 105, todayStr: '2025-12-29', daysWithStatus: Array(7)}
-ContinueReadingHero.tsx:156 [Hero] Received props - bookId: 123918a4-58c9-4e56-b79b-060f0322fa19 coverUrl: /api/v1/books/123918a4-58c9-4e56-b79b-060f0322fa19/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNzk4N2NmNC1jZTVlLTRhZTAtYmZlNS01YjNjOTg5YTJhOTkiLCJzaWQiOiJjMDU5YTk1YS0xNDVmLTRiYTAtODVhNi04MTU4NTBjOWIyM2IiLCJpYXQiOjE3NjcwMDY3OTYsImV4cCI6MTc2NzA5MzE5NiwiYXVkIjoiYXV0aGVudGljYXRlZCJ9.FeNmj6atSPZMYI1Cbzvzwr6k8QMK7S4x_6GfjMnUXHw
-useBooksData.ts:150 [useBooksData] Progress data from DB: []
-AuthGuard.tsx:25 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/library'}
-AuthGuard.tsx:51 [AuthGuard] Token valid
-useBooksData.ts:150 [useBooksData] Progress data from DB: []
-useBooksData.ts:150 [useBooksData] Progress data from DB: (6) [{…}, {…}, {…}, {…}, {…}, {…}]
-AddToShelfDialog.tsx:243 [AddToShelfDialog] Saved changes: {added: Array(1), removed: Array(0)}
-PowerSyncProvider.tsx:136 [PowerSync] Uploading 1 operations...
-PowerSyncProvider.tsx:137 [PowerSync] Operations: [
-  {
-    "table": "shelf_books",
-    "op": "PUT",
-    "id": "be316a19-355c-40e6-b0f0-5a673b6bf1e6",
-    "data": {
-      "added_at": "2025-12-29T12:37:53.470Z",
-      "book_id": "afe4dda7-c008-4d7c-8bd9-7676be9c0f85",
-      "shelf_id": "631ffdfc-5caf-44ec-82aa-ea1928e2037d",
-      "sort_order": 2,
-      "user_id": "17987cf4-ce5e-4ae0-bfe5-5b3c989a2a99"
-    }
-  }
-]
-PowerSyncProvider.tsx:170 [PowerSync] Upload completed successfully
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-AuthGuard.tsx:25 [AuthGuard] Checking auth... {isAuthenticated: true, path: '/app/home'}
-AuthGuard.tsx:51 [AuthGuard] Token valid
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: true, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 0, recentBooks: Array(0)}
-Home.tsx:22 [Home] render: {loading: false, dashboardToday: {…}, dashboardWeekly: Array(7), recentBooksCount: 6, recentBooks: Array(3)}
-WeeklyActivity.tsx:40 [WeeklyActivity] render: {days: Array(7), goalMinutes: 105, todayStr: '2025-12-29', daysWithStatus: Array(7)}
-ContinueReadingHero.tsx:156 [Hero] Received props - bookId: 123918a4-58c9-4e56-b79b-060f0322fa19 coverUrl: /api/v1/books/123918a4-58c9-4e56-b79b-060f0322fa19/cover?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNzk4N2NmNC1jZTVlLTRhZTAtYmZlNS01YjNjOTg5YTJhOTkiLCJzaWQiOiJjMDU5YTk1YS0xNDVmLTRiYTAtODVhNi04MTU4NTBjOWIyM2IiLCJpYXQiOjE3NjcwMDY3OTYsImV4cCI6MTc2NzA5MzE5NiwiYXVkIjoiYXV0aGVudGljYXRlZCJ9.FeNmj6atSPZMYI1Cbzvzwr6k8QMK7S4x_6GfjMnUXHw
+apiUrl.ts:84 [apiFetch] POST /api/v1/sync/upload
+PowerSyncProvider.tsx:171 [PowerSync] Upload completed successfully
+﻿

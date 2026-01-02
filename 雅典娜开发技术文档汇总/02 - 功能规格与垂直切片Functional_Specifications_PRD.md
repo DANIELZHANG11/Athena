@@ -875,6 +875,163 @@ function AIChat({ conversationId }: { conversationId: string }) {
 
 ---
 
+### 2.11 阅读模式设置 (Reading Settings) 🆕
+
+> **添加版本**：2025-12-30
+> **定位**：支持每本书独立的阅读外观设置，可跨设备同步
+
+#### A. 数据库模型（Database Schema）
+
+- `reading_settings`：
+  - **核心字段**：`id (UUID, PK)`、`user_id (UUID, FK)`、`book_id (UUID, FK, Nullable)`
+  - **特殊约束**：`book_id = NULL` 表示**全局默认设置**
+  - **主题设置**：`theme_id`、`background_color`、`text_color`
+  - **文字设置**：`font_family`、`font_size`、`font_weight`
+  - **间距设置**：`line_height`、`paragraph_spacing`、`margin_horizontal`
+  - **显示设置**：`text_align`、`hyphenation`
+  - **详细字段定义见**：04 号文档 3.5 节
+
+#### B. 同步策略（PowerSync）
+
+- **同步表**：`reading_settings` (第 10 个 PowerSync 同步表)
+- **冲突策略**：LWW (Last Write Wins)，基于 `updated_at` 比较
+- **设置优先级**：书籍独立设置 > 全局默认设置 > 系统默认值
+
+```
+设置加载优先级：
+1. SELECT * FROM reading_settings WHERE user_id = ? AND book_id = ?
+   └─ 如果存在 → 使用书籍独立设置
+2. SELECT * FROM reading_settings WHERE user_id = ? AND book_id IS NULL
+   └─ 如果存在 → 使用全局默认设置
+3. 系统默认值（theme=white, fontSize=18, ...）
+```
+
+#### C. 预设值定义
+
+**预设主题**：
+| theme_id | 名称 | 背景色 | 文字色 |
+|----------|------|--------|--------|
+| `white` | 白色 | #FFFFFF | #1D1D1F |
+| `sepia` | 奶白 | #F4ECD8 | #3D3D3D |
+| `toffee` | 太妃糖 | #E8D5B5 | #4A4A4A |
+| `gray` | 灰色 | #E8E8E8 | #2D2D2D |
+| `dark` | 深色 | #1C1C1E | #FFFFFF |
+| `black` | 纯黑 | #000000 | #FFFFFF |
+| `custom` | 自定义 | (用户选择) | (用户选择) |
+
+**预设字体**：
+| font_family | 显示名称 | 类型 | 来源 |
+|-------------|----------|------|------|
+| `system` | 系统默认 | 系统 | 跟随系统 |
+| `noto-serif-sc` | 思源宋体 | 中文衬线 | Google Fonts |
+| `noto-sans-sc` | 思源黑体 | 中文无衬线 | Google Fonts |
+| `lxgw-wenkai` | 霞鹜文楷 | 中文楷体 | GitHub |
+| `georgia` | Georgia | 英文衬线 | 系统 |
+| `helvetica` | Helvetica | 英文无衬线 | 系统 |
+
+#### D. 前端组件契约（Frontend Contract）
+
+**Hook: `useReadingSettings`**
+```typescript
+interface ReadingSettings {
+  // 主题
+  themeId: 'white' | 'sepia' | 'toffee' | 'gray' | 'dark' | 'black' | 'custom'
+  backgroundColor?: string  // #RRGGBB
+  textColor?: string        // #RRGGBB
+  
+  // 文字
+  fontFamily: string
+  fontSize: number          // 12-32
+  fontWeight: number        // 400/500/600/700
+  
+  // 间距
+  lineHeight: number        // 1.0-2.5
+  paragraphSpacing: number  // 倍数
+  marginHorizontal: number  // px
+  
+  // 显示
+  textAlign: 'left' | 'justify'
+  hyphenation: boolean
+}
+
+interface UseReadingSettingsReturn {
+  settings: ReadingSettings
+  isLoading: boolean
+  
+  // 更新设置（自动同步）
+  updateSettings: (partial: Partial<ReadingSettings>) => Promise<void>
+  
+  // 重置为默认
+  resetToDefault: () => Promise<void>
+  
+  // 复制到全局默认
+  applyToAllBooks: () => Promise<void>
+}
+
+function useReadingSettings(bookId?: string): UseReadingSettingsReturn
+```
+
+**组件: `ReaderSettingsPanel`**
+```typescript
+interface ReaderSettingsPanelProps {
+  bookId?: string           // 当前书籍 ID
+  onClose: () => void       // 关闭面板
+  position?: 'bottom' | 'overlay'  // 面板位置
+}
+```
+
+**UI 布局（参考 Apple Books）**：
+```
+┌────────────────────────────────────────────────┐
+│  外观                                   [自动] │
+├────────────────────────────────────────────────┤
+│ [白色] [奶白] [太妃糖] [灰色] [深色] [纯黑]     │
+├────────────────────────────────────────────────┤
+│  文字大小     A ────────●────────── A          │
+│  字体                            思源宋体 >    │
+│  行间距       ≡ ────────●────────── ≡          │
+│  页边距       |│| ──────●────────── |│|        │
+├────────────────────────────────────────────────┤
+│  [重置为默认]        [应用到所有书籍]          │
+└────────────────────────────────────────────────┘
+```
+
+#### E. 集成到阅读器
+
+**foliate-js 样式注入**：
+```javascript
+// 在 foliate-view 加载后注入样式
+const applyReadingSettings = (settings: ReadingSettings) => {
+  const style = document.createElement('style')
+  style.textContent = `
+    body {
+      background-color: ${settings.backgroundColor};
+      color: ${settings.textColor};
+      font-family: '${settings.fontFamily}', system-ui;
+      font-size: ${settings.fontSize}px;
+      font-weight: ${settings.fontWeight};
+      line-height: ${settings.lineHeight};
+      text-align: ${settings.textAlign};
+      ${settings.hyphenation ? 'hyphens: auto;' : ''}
+    }
+    p { margin-bottom: ${settings.paragraphSpacing}em; }
+  `
+  document.head.appendChild(style)
+}
+```
+
+### ✔ Definition of Done (DoD)
+- [ ] `reading_settings` 表创建并启用 RLS
+- [ ] PowerSync 双向同步正常工作
+- [ ] 设置优先级逻辑正确（书籍 > 全局 > 默认）
+- [ ] 跨设备同步验证
+- [ ] 6 种预设主题渲染正确
+- [ ] 字体加载（Google Fonts / 本地）正常
+- [ ] "重置为默认" 和 "应用到所有书籍" 功能正常
+- [ ] UI 符合设计规范（Apple Books 风格）
+
+---
+
 ## 3. 统一约束与实现备注
 - [MUST] 禁止硬编码数值与价格；所有阈值与定价从配置与定价表读取（见 04）。
 - [MUST] 前端契约统一：

@@ -38,13 +38,13 @@ export default function BookGrid() {
   const { t } = useTranslation('landing')
   const itemsAll = bookCovers
   const Card = ({ book }: { book: Book }) => (
-    <div className="book-card rounded-lg shadow-lg transition-transform duration-medium hover:scale-x-[1.08] hover:scale-y-[1.12] hover:shadow-2xl hover:z-10 relative flex flex-col items-center justify-start p-1 md:p-2 cursor-default" style={{ width: 180, willChange: 'transform', background: '#fff' }}>
-      <div className="w-full rounded-md overflow-hidden" style={{ aspectRatio: '2 / 3', background: '#f3f4f6' }}>
+    <div className="book-card rounded-lg shadow-lg transition-transform duration-medium hover:scale-x-[1.08] hover:scale-y-[1.12] hover:shadow-2xl hover:z-10 relative flex flex-col items-center justify-start p-1 md:p-2 cursor-default w-[180px] will-change-transform bg-system-background">
+      <div className="w-full rounded-md overflow-hidden bg-secondary-background" style={{ aspectRatio: '2 / 3' }}>
         <img src={book.image} alt={book.title} className="w-full h-full object-cover" />
       </div>
       <div className="w-full text-center mt-1">
-        <div className="text-[10px] md:text-sm mb-0.5" style={{ fontWeight: 700, color: '#111', lineHeight: 1.2 }}>{book.title}</div>
-        <div className="text-[8px] md:text-xs" style={{ fontWeight: 500, color: '#555', opacity: 0.9 }}>{book.author}</div>
+        <div className="text-[10px] md:text-sm mb-0.5 font-bold text-label leading-tight">{book.title}</div>
+        <div className="text-[8px] md:text-xs font-medium text-secondary-label opacity-90">{book.author}</div>
       </div>
     </div>
   )
@@ -57,12 +57,12 @@ export default function BookGrid() {
     </div>
   )
   return (
-    <div className="py-24 bg-gray-50">
+    <div className="py-24 bg-secondary-background">
       <div className="max-w-7xl mx-auto px-6">
         <motion.div initial={{ y: 60, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8 }} className="text-center mb-16">
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-6" style={{ fontWeight: 700, lineHeight: 1.1 }}>{t('bookGrid.titleLine1')}</h2>
-          <h2 className="text-5xl md:text-6xl text-gray-900 mb-8" style={{ fontWeight: 700, lineHeight: 1.1 }}>{t('bookGrid.titleLine2')}</h2>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">{t('bookGrid.description')}</p>
+          <h2 className="text-5xl md:text-6xl text-label mb-6 font-bold leading-tight">{t('bookGrid.titleLine1')}</h2>
+          <h2 className="text-5xl md:text-6xl text-label mb-8 font-bold leading-tight">{t('bookGrid.titleLine2')}</h2>
+          <p className="text-xl text-secondary-label max-w-3xl mx-auto leading-relaxed">{t('bookGrid.description')}</p>
         </motion.div>
         <motion.div initial={{ y: 80, opacity: 0 }} whileInView={{ y: 0, opacity: 1 }} viewport={{ once: true, margin: '-100px' }} transition={{ duration: 0.8, delay: 0.2 }}>
           <Track items={itemsAll} delay={0} />

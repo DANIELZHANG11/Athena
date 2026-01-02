@@ -19,6 +19,7 @@ import React, { createContext, useContext, useEffect, useState, useMemo, useCall
 import { PowerSyncDatabase, WASQLitePowerSyncDatabaseOpenFactory, AbstractPowerSyncDatabase } from '@powersync/web'
 import { PowerSyncContext } from '@powersync/react'
 import { useAuthStore } from '@/stores/auth'
+import { apiFetch } from '@/lib/apiUrl'
 import { AppSchema } from './schema'
 
 // App-First 架构：PowerSync 始终启用，不再使用 Feature Flag
@@ -89,7 +90,7 @@ class AthenaConnector {
    */
   async fetchCredentials() {
     let token = this.getAccessToken()
-    
+
     // 如果没有 token 或 token 过期，尝试刷新
     if (!token) {
       console.log('[PowerSync] No token, attempting refresh...')
@@ -115,7 +116,7 @@ class AthenaConnector {
    */
   async uploadData(database: PowerSyncDatabase): Promise<void> {
     const transaction = await database.getNextCrudTransaction()
-    
+
     if (!transaction) {
       return
     }
@@ -142,7 +143,7 @@ class AthenaConnector {
       })), null, 2))
 
       // 批量发送到后端 API
-      const response = await fetch('/api/v1/sync/upload', {
+      const response = await apiFetch('/api/v1/sync/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -376,12 +377,39 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
 
   // 行业最佳实践：在数据库就绪前显示加载状态
   // 这样子组件中的 useQuery 就不需要每个都检查 isReady
-  if (!state.isInitialized || !state.db) {
+  if (!state.isInitialized) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground text-sm">正在初始化本地数据库...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // 如果初始化失败，显示错误信息但仍然渲染子组件（降级模式）
+  if (state.error && !state.db) {
+    console.error('[PowerSync] Fallback mode due to init error:', state.error)
+    // 在 Android WebView 中可能初始化失败，降级为无同步模式
+    return (
+      <PowerSyncStateContext.Provider value={{
+        ...state,
+        triggerSync,
+        disconnect,
+        reconnect,
+        clearLocalData
+      }}>
+        {children}
+      </PowerSyncStateContext.Provider>
+    )
+  }
+
+  if (!state.db) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-red-500 text-sm">数据库初始化失败</p>
         </div>
       </div>
     )

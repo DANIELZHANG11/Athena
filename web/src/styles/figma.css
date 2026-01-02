@@ -46,27 +46,86 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
   --color-system-blue: #007AFF;
-  --color-label: rgba(0,0,0,0.85);
-  --color-secondary-label: rgba(60,60,67,0.6);
-  --color-system-fill: rgba(120,120,128,0.2);
+  --color-label: rgba(0, 0, 0, 0.85);
+  --color-secondary-label: rgba(60, 60, 67, 0.6);
+  --color-system-fill: rgba(120, 120, 128, 0.2);
 
   /* Apple Design Tokens */
   --system-background: #ffffff;
   --secondary-background: #f2f2f7;
   --tertiary-background: #f7f7f7;
-  --label: rgba(0,0,0,0.85);
-  --secondary-label: rgba(60,60,67,0.6);
-  --tertiary-label: rgba(60,60,67,0.3);
+  --label: rgba(0, 0, 0, 0.85);
+  --secondary-label: rgba(60, 60, 67, 0.6);
+  --tertiary-label: rgba(60, 60, 67, 0.3);
   --system-blue: var(--color-system-blue);
-  --overlay: rgba(255,255,255,0.45);
+  --overlay: rgba(255, 255, 255, 0.45);
   --liquid-glass-blur: 24px;
-  --separator: rgba(60,60,67,0.29);
+  --separator: rgba(60, 60, 67, 0.29);
+
+  /* 灰度色阶 (用于替代硬编码灰色) */
+  --gray-50: #fafafa;
+  --gray-100: #f5f5f5;
+  --gray-200: #e5e5e5;
+  --gray-300: #d4d4d4;
+  --gray-400: #a3a3a3;
+  --gray-500: #737373;
+  --gray-600: #525252;
+  --gray-700: #404040;
+  --gray-800: #262626;
+  --gray-900: #171717;
+
+  /* 系统品牌色 */
+  --color-system-green: #34C759;
+  --color-system-orange: #FF9500;
+  --color-system-purple: #5856D6;
+  --color-system-red: #FF3B30;
+  --color-system-yellow: #FFCC00;
+  --color-system-teal: #5AC8FA;
+  --color-system-pink: #FF2D55;
+
+  /* 高亮颜色 (Apple Books 风格) */
+  --highlight-yellow: #FFCC00;       /* 想法/灵感 */
+  --highlight-green: #34C759;        /* 事实/数据 */
+  --highlight-blue: #007AFF;         /* 引用/优美 */
+  --highlight-pink: #FF2D55;         /* 重要/关键 */
+  --highlight-purple: #AF52DE;       /* 问题/疑问 */
+  /* 高亮背景色 (带透明度用于文本高亮) */
+  --highlight-yellow-bg: rgba(255, 204, 0, 0.35);
+  --highlight-green-bg: rgba(52, 199, 89, 0.35);
+  --highlight-blue-bg: rgba(0, 122, 255, 0.35);
+  --highlight-pink-bg: rgba(255, 45, 85, 0.35);
+  --highlight-purple-bg: rgba(175, 82, 222, 0.35);
+
+  /* 阅读主题色 */
+  --reader-bg-white: #FFFFFF;
+  --reader-text-white: #1D1D1F;
+  --reader-bg-sepia: #F4ECD8;
+  --reader-text-sepia: #3D3D3D;
+  --reader-bg-toffee: #E8D5B5;
+  --reader-text-toffee: #4A4A4A;
+  --reader-bg-gray: #E8E8E8;
+  --reader-text-gray: #2D2D2D;
+  --reader-bg-dark: #1C1C1E;
+  --reader-text-dark: #FFFFFF;
+  --reader-bg-black: #000000;
+  --reader-text-black: #FFFFFF;
+
+  /* Fallback 色 */
+  --color-fallback-gray: #6B7280;
+
+  /* Hover 状态色 */
+  --hover-background: rgba(0, 0, 0, 0.04);
+  --hover-background-dark: rgba(255, 255, 255, 0.08);
 
   /* Motion Tokens (UIUX 设计规范 2.4) */
-  --duration-fast: 150ms;     /* Hover, Click */
-  --duration-medium: 300ms;   /* Panel Slide, Modal Fade */
-  --duration-slow: 500ms;     /* Sheet Slide, 大面积动画 */
-  --easing-apple: cubic-bezier(0.22, 1, 0.36, 1);  /* Apple 风格自然回弹 */
+  --duration-fast: 150ms;
+  /* Hover, Click */
+  --duration-medium: 300ms;
+  /* Panel Slide, Modal Fade */
+  --duration-slow: 500ms;
+  /* Sheet Slide, 大面积动画 */
+  --easing-apple: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Apple 风格自然回弹 */
 }
 
 .dark {
@@ -105,21 +164,60 @@
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
   --color-system-blue: #0A84FF;
-  --color-label: rgba(255,255,255,0.85);
-  --color-secondary-label: rgba(235,235,245,0.6);
-  --color-system-fill: rgba(120,120,128,0.36);
+  --color-label: rgba(255, 255, 255, 0.85);
+  --color-secondary-label: rgba(235, 235, 245, 0.6);
+  --color-system-fill: rgba(120, 120, 128, 0.36);
 
   /* Apple Design Tokens (Dark) */
   --system-background: #000000;
   --secondary-background: #1c1c1e;
   --tertiary-background: #2c2c2e;
-  --label: rgba(255,255,255,0.85);
-  --secondary-label: rgba(235,235,245,0.6);
-  --tertiary-label: rgba(235,235,245,0.3);
+  --label: rgba(255, 255, 255, 0.85);
+  --secondary-label: rgba(235, 235, 245, 0.6);
+  --tertiary-label: rgba(235, 235, 245, 0.3);
   --system-blue: var(--color-system-blue);
-  --overlay: rgba(0,0,0,0.45);
+  --overlay: rgba(0, 0, 0, 0.45);
   --liquid-glass-blur: 24px;
-  --separator: rgba(84,84,88,0.65);
+  --separator: rgba(84, 84, 88, 0.65);
+
+  /* 暗色模式灰度色阶 */
+  --gray-50: #171717;
+  --gray-100: #262626;
+  --gray-200: #404040;
+  --gray-300: #525252;
+  --gray-400: #737373;
+  --gray-500: #a3a3a3;
+  --gray-600: #d4d4d4;
+  --gray-700: #e5e5e5;
+  --gray-800: #f5f5f5;
+  --gray-900: #fafafa;
+
+  /* 暗色模式系统品牌色 */
+  --color-system-green: #30D158;
+  --color-system-orange: #FF9F0A;
+  --color-system-purple: #5E5CE6;
+  --color-system-red: #FF453A;
+  --color-system-yellow: #FFD60A;
+  --color-system-teal: #64D2FF;
+  --color-system-pink: #FF375F;
+
+  /* 暗色模式高亮颜色 (Apple Books 风格) */
+  --highlight-yellow: #FFD60A;
+  --highlight-green: #30D158;
+  --highlight-blue: #0A84FF;
+  --highlight-pink: #FF375F;
+  --highlight-purple: #BF5AF2;
+  --highlight-yellow-bg: rgba(255, 214, 10, 0.4);
+  --highlight-green-bg: rgba(48, 209, 88, 0.4);
+  --highlight-blue-bg: rgba(10, 132, 255, 0.4);
+  --highlight-pink-bg: rgba(255, 55, 95, 0.4);
+  --highlight-purple-bg: rgba(191, 90, 242, 0.4);
+
+  /* Fallback 色 (暗色) */
+  --color-fallback-gray: #9CA3AF;
+
+  /* Hover 状态色 (暗色) */
+  --hover-background: var(--hover-background-dark);
 }
 
 @theme inline {
@@ -164,20 +262,47 @@
 }
 
 /* Tailwind v4 utilities mapping to Apple tokens */
-@utility bg-system-background { background-color: var(--system-background); }
-@utility bg-secondary-background { background-color: var(--secondary-background); }
-@utility bg-tertiary-background { background-color: var(--tertiary-background); }
-@utility text-label { color: var(--label); }
-@utility text-secondary-label { color: var(--secondary-label); }
-@utility text-tertiary-label { color: var(--tertiary-label); }
-@utility bg-system-blue { background-color: var(--system-blue); }
-@utility border-separator { border-color: var(--separator); }
+@utility bg-system-background {
+  background-color: var(--system-background);
+}
+
+@utility bg-secondary-background {
+  background-color: var(--secondary-background);
+}
+
+@utility bg-tertiary-background {
+  background-color: var(--tertiary-background);
+}
+
+@utility text-label {
+  color: var(--label);
+}
+
+@utility text-secondary-label {
+  color: var(--secondary-label);
+}
+
+@utility text-tertiary-label {
+  color: var(--tertiary-label);
+}
+
+@utility bg-system-blue {
+  background-color: var(--system-blue);
+}
+
+@utility border-separator {
+  border-color: var(--separator);
+}
+
 @utility backdrop-liquid-glass {
   backdrop-filter: blur(var(--liquid-glass-blur));
   -webkit-backdrop-filter: blur(var(--liquid-glass-blur));
   background-color: var(--overlay);
 }
-@utility bg-overlay { background-color: var(--overlay); }
+
+@utility bg-overlay {
+  background-color: var(--overlay);
+}
 
 /* 毛玻璃对话框效果 */
 @utility backdrop-glass-heavy {
@@ -187,24 +312,34 @@
 
 /* 骨架屏脉冲动效 - 用于处理中状态 */
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
 }
+
 @utility animate-skeleton-pulse {
   animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* 菜单展开动效 */
 @keyframes menu-expand {
-  from { 
-    opacity: 0; 
-    transform: scale(0.9) translateY(-8px); 
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
   }
-  to { 
-    opacity: 1; 
-    transform: scale(1) translateY(0); 
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
+
 @utility animate-menu-expand {
   animation: menu-expand 200ms cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: top right;
@@ -214,12 +349,15 @@
 @utility duration-fast {
   transition-duration: var(--duration-fast);
 }
+
 @utility duration-medium {
   transition-duration: var(--duration-medium);
 }
+
 @utility duration-slow {
   transition-duration: var(--duration-slow);
 }
+
 @utility ease-apple {
   transition-timing-function: var(--easing-apple);
 }
@@ -237,24 +375,97 @@
 
 @layer base {
   :where(:not(:has([class*=' text-']), :not(:has([class^='text-'])))) {
-    h1 { font-size: var(--text-2xl); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    h2 { font-size: var(--text-xl); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    h3 { font-size: var(--text-lg); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    h4 { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    p  { font-size: var(--text-base); font-weight: var(--font-weight-normal); line-height: 1.5; }
-    label { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    button { font-size: var(--text-base); font-weight: var(--font-weight-medium); line-height: 1.5; }
-    input  { font-size: var(--text-base); font-weight: var(--font-weight-normal); line-height: 1.5; }
+    h1 {
+      font-size: var(--text-2xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h2 {
+      font-size: var(--text-xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h3 {
+      font-size: var(--text-lg);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h4 {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    p {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
+
+    label {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    button {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    input {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
   }
 }
 
-html { font-size: var(--font-size); }
-/* UI 字体栈（含中文系统字体与开源回退） */
-:root { --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", "Noto Sans", sans-serif; }
-.font-ui { font-family: var(--font-ui); }
+html {
+  font-size: var(--font-size);
+}
 
-.marquee-row { overflow-x: hidden; overflow-y: visible; position: relative; padding-block: 12px; }
-.marquee-row:has(.book-card:hover) { z-index: 30; }
-.marquee-track { display: inline-flex; gap: 6px; will-change: transform; }
-@keyframes marquee-left { from { transform: translateX(0%); } to { transform: translateX(-50%); } }
-.marquee-mask { -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,0.25) 40px, rgba(0,0,0,0.7) 100px, black 160px, black calc(100% - 160px), rgba(0,0,0,0.7) calc(100% - 100px), rgba(0,0,0,0.25) calc(100% - 40px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, rgba(0,0,0,0.25) 40px, rgba(0,0,0,0.7) 100px, black 160px, black calc(100% - 160px), rgba(0,0,0,0.7) calc(100% - 100px), rgba(0,0,0,0.25) calc(100% - 40px), transparent 100%); }
+/* UI 字体栈（含中文系统字体与开源回退） */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", "Noto Sans", sans-serif;
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+.marquee-row {
+  overflow-x: hidden;
+  overflow-y: visible;
+  position: relative;
+  padding-block: 12px;
+}
+
+.marquee-row:has(.book-card:hover) {
+  z-index: 30;
+}
+
+.marquee-track {
+  display: inline-flex;
+  gap: 6px;
+  will-change: transform;
+}
+
+@keyframes marquee-left {
+  from {
+    transform: translateX(0%);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0, 0, 0, 0.25) 40px, rgba(0, 0, 0, 0.7) 100px, black 160px, black calc(100% - 160px), rgba(0, 0, 0, 0.7) calc(100% - 100px), rgba(0, 0, 0, 0.25) calc(100% - 40px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, rgba(0, 0, 0, 0.25) 40px, rgba(0, 0, 0, 0.7) 100px, black 160px, black calc(100% - 160px), rgba(0, 0, 0, 0.7) calc(100% - 100px), rgba(0, 0, 0, 0.25) calc(100% - 40px), transparent 100%);
+}

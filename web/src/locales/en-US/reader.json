@@ -1,0 +1,73 @@
+{
+    "settings": {
+        "title": "Appearance",
+        "auto": "Auto",
+        "theme": {
+            "label": "Theme",
+            "white": "White",
+            "sepia": "Sepia",
+            "toffee": "Toffee",
+            "gray": "Gray",
+            "dark": "Dark",
+            "black": "Black",
+            "custom": "Custom"
+        },
+        "fontSize": "Font Size",
+        "fontFamily": "Font",
+        "fonts": {
+            "system": "System Default",
+            "noto-serif-sc": "Noto Serif SC",
+            "noto-sans-sc": "Noto Sans SC",
+            "lxgw-wenkai": "LXGW WenKai",
+            "georgia": "Georgia",
+            "helvetica": "Helvetica"
+        },
+        "lineHeight": "Line Height",
+        "marginHorizontal": "Margins",
+        "saveSuccess": "Settings saved"
+    },
+    "notes": {
+        "addNote": "Add Note",
+        "editNote": "Edit Note",
+        "placeholder": "Write your thoughts...",
+        "saveHint": "Ctrl + Enter to save",
+        "highlightColor": "Highlight Color",
+        "delete": "Delete Note",
+        "empty": {
+            "title": "No Notes",
+            "description": "Select text to add notes"
+        },
+        "count": "notes"
+    },
+    "highlights": {
+        "empty": {
+            "title": "No Highlights",
+            "description": "Select text to add highlights"
+        },
+        "count": "highlights"
+    },
+    "annotations": {
+        "title": "Notes & Highlights",
+        "all": "All",
+        "notes": "Notes",
+        "highlights": "Highlights",
+        "empty": {
+            "title": "No Annotations",
+            "description": "Select text while reading to add highlights and notes"
+        }
+    },
+    "highlight": {
+        "colors": {
+            "yellow": "Yellow",
+            "green": "Green",
+            "blue": "Blue",
+            "pink": "Pink",
+            "purple": "Purple"
+        }
+    },
+    "common": {
+        "close": "Close",
+        "save": "Save",
+        "cancel": "Cancel"
+    }
+}

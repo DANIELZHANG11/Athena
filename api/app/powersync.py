@@ -68,6 +68,7 @@ ALLOWED_TABLES = {
     "books",              # 元数据修改、软删除（硬删除仍需 API）
     "reading_progress",
     "reading_sessions",
+    "reading_settings",   # 2025-12-31: 阅读模式设置（每本书独立）
     "notes",
     "highlights",
     "bookmarks",
@@ -117,6 +118,15 @@ TABLE_COLUMNS = {
     },
     "user_settings": {
         "id", "user_id", "device_id", "settings_json", "updated_at"
+    },
+    # 2025-12-31: 阅读模式设置 - 支持跨设备同步阅读外观
+    "reading_settings": {
+        "id", "user_id", "book_id", "device_id",
+        "theme_id", "background_color", "text_color",
+        "font_family", "font_size", "font_weight",
+        "line_height", "paragraph_spacing", "margin_horizontal",
+        "text_align", "hyphenation",
+        "is_deleted", "deleted_at", "created_at", "updated_at"
     },
 }
 
@@ -339,6 +349,112 @@ async def _handle_patch(conn, op: SyncOperation, user_id: str):
 
 
 
+async def _handle_user_settings_upsert(conn, record_id: str, data: dict, user_id: str, logger):
+    """
+    处理 user_settings 表的 UPSERT 操作 (LWW - Last Write Wins)
+    
+    user_settings 存储用户的阅读目标等个人设置，必须以客户端为准：
+    - 用户在离线状态下调整的目标，重新上线后不应被服务器旧数据覆盖
+    - 使用 updated_at 时间戳进行冲突检测
+    - 只有当客户端 updated_at >= 服务器现有数据时才更新
+    
+    @see 项目原则: 用户终端数据优先
+    """
+    from dateutil.parser import isoparse
+    
+    allowed_columns = TABLE_COLUMNS.get("user_settings", set())
+    
+    # 过滤数据
+    filtered_data = {
+        k: v for k, v in data.items()
+        if k in allowed_columns and k not in {"id", "user_id"}
+    }
+    
+    # 客户端必须提供 updated_at
+    client_updated_at_str = filtered_data.get("updated_at")
+    if not client_updated_at_str:
+        logger.warning(f"[PowerSync user_settings] Missing updated_at, using current time")
+        client_updated_at = datetime.now(timezone.utc)
+    else:
+        try:
+            client_updated_at = isoparse(client_updated_at_str)
+        except Exception:
+            client_updated_at = datetime.now(timezone.utc)
+    
+    # 强制注入 user_id
+    filtered_data["user_id"] = user_id
+    filtered_data["updated_at"] = client_updated_at.isoformat()
+    
+    logger.info(f"[PowerSync user_settings LWW] id={record_id}, client_updated_at={client_updated_at}")
+    
+    # 查询服务器现有记录
+    result = await conn.execute(
+        text("""
+            SELECT updated_at FROM user_settings 
+            WHERE id = cast(:id as uuid) 
+            AND user_id = cast(:user_id as uuid)
+        """),
+        {"id": record_id, "user_id": user_id}
+    )
+    existing = result.fetchone()
+    
+    if existing:
+        server_updated_at = existing[0]
+        
+        # LWW 冲突检测：只有客户端更新时才更新
+        if server_updated_at and client_updated_at <= server_updated_at:
+            logger.info(f"[PowerSync user_settings LWW] Skipped: client={client_updated_at} <= server={server_updated_at}")
+            return  # 跳过更新，服务器数据更新
+        
+        # 执行 UPDATE
+        set_clauses = []
+        params = {"id": record_id, "user_id": user_id}
+        
+        for k, v in filtered_data.items():
+            if k in {"user_id", "id"}:
+                continue
+            param_name = f"p_{k}"
+            if k == "updated_at":
+                params[param_name] = client_updated_at
+            else:
+                params[param_name] = v
+            set_clauses.append(f"{k} = :{param_name}")
+        
+        sql = f"""
+            UPDATE user_settings
+            SET {', '.join(set_clauses)}
+            WHERE id = cast(:id as uuid)
+            AND user_id = cast(:user_id as uuid)
+        """
+        
+        logger.info(f"[PowerSync user_settings LWW UPDATE] SQL: {sql}")
+        await conn.execute(text(sql), params)
+        logger.info(f"[PowerSync user_settings LWW] Updated successfully")
+    else:
+        # 没有现有记录，执行 INSERT
+        columns = ["id"] + list(filtered_data.keys())
+        placeholders = ["cast(:id as uuid)"] + [
+            f"cast(:p_{k} as uuid)" if k == "user_id" else f":p_{k}"
+            for k in filtered_data.keys()
+        ]
+        
+        params = {"id": record_id}
+        for k, v in filtered_data.items():
+            if k == "updated_at":
+                params[f"p_{k}"] = client_updated_at
+            else:
+                params[f"p_{k}"] = v
+        
+        sql = f"""
+            INSERT INTO user_settings ({', '.join(columns)})
+            VALUES ({', '.join(placeholders)})
+        """
+        
+        logger.info(f"[PowerSync user_settings LWW INSERT] SQL: {sql}")
+        await conn.execute(text(sql), params)
+        logger.info(f"[PowerSync user_settings LWW] Inserted successfully")
+
+
 async def _handle_books_update(conn, record_id: str, filtered_data: dict, user_id: str, logger):
     """
     专门处理 books 表的更新操作
@@ -407,6 +523,12 @@ async def _handle_upsert(conn, op: SyncOperation, user_id: str):
     if table == "books":
         return await _handle_books_update(conn, record_id, filtered_data, user_id, logger)
 
+    # user_settings 表特殊处理：使用 LWW (Last Write Wins) 冲突解决
+    # 确保用户在离线状态下修改的阅读目标不会被服务器旧数据覆盖
+    if table == "user_settings":
+        return await _handle_user_settings_upsert(conn, record_id, data, user_id, logger)
+
+
     # 强制注入 user_id (安全措施)
     if "user_id" in allowed_columns:
         filtered_data["user_id"] = user_id
@@ -460,7 +582,8 @@ async def _handle_upsert(conn, op: SyncOperation, user_id: str):
     from dateutil.parser import isoparse
     
     params = {"id": record_id}
-    boolean_columns = {"is_active"}  # 需要转换为 boolean 的字段
+    # 需要转换为 boolean 的字段 (int 0/1 -> False/True)
+    boolean_columns = {"is_active", "hyphenation", "is_deleted"}  # 2025-12-31: 添加 reading_settings 的 boolean 字段
     
     for k, v in filtered_data.items():
         if k in timestamp_columns and v is not None and isinstance(v, str):

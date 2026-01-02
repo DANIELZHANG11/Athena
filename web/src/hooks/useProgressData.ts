@@ -365,18 +365,67 @@ export function useAllProgressData(options: { limit?: number } = {}) {
 /**
  * 记录阅读会话（开始/结束）
  * 
+ * 核心改进：定时心跳保存 + APP后台暂停
+ * - 每30秒自动保存累计阅读时间（心跳）
+ * - APP进入后台时暂停计时并保存
+ * - APP回到前台时恢复计时
+ * - 页面关闭前尝试保存
+ * 
  * reading_sessions 表字段:
  * - id, user_id, book_id, device_id
  * - is_active (INTEGER 0/1)
  * - total_ms (INTEGER 毫秒)
  * - created_at, updated_at
  */
+
+// 心跳间隔：30秒
+const HEARTBEAT_INTERVAL_MS = 30000
+
 export function useReadingSession(bookId: string | null) {
   const db = usePowerSyncDatabase()
   const sessionIdRef = useRef<string | null>(null)
   const startTimeRef = useRef<Date | null>(null)
-  const bookIdRef = useRef<string | null>(null)  // 保存 bookId 以便组件卸载时使用
-  const userIdRef = useRef<string | null>(null)  // 保存 userId 以便组件卸载时使用
+  const bookIdRef = useRef<string | null>(null)
+  const userIdRef = useRef<string | null>(null)
+
+  // 新增：心跳定时器和暂停状态
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pausedAtRef = useRef<Date | null>(null)  // 进入后台的时间
+  const accumulatedPauseRef = useRef<number>(0)  // 累计暂停时间（毫秒）
+
+  // 计算实际阅读时间（排除暂停时间）
+  const getActiveReadingTime = useCallback(() => {
+    if (!startTimeRef.current) return 0
+    const totalElapsed = Date.now() - startTimeRef.current.getTime()
+    const pauseTime = accumulatedPauseRef.current
+    // 如果当前是暂停状态，也要计入当前暂停时长
+    const currentPause = pausedAtRef.current
+      ? Date.now() - pausedAtRef.current.getTime()
+      : 0
+    return Math.max(0, totalElapsed - pauseTime - currentPause)
+  }, [])
+
+  // 心跳保存函数 - 保存当前累计时间
+  const saveHeartbeat = useCallback(async () => {
+    if (!db || !sessionIdRef.current || !startTimeRef.current) return
+
+    const durationMs = getActiveReadingTime()
+    const now = new Date().toISOString()
+
+    try {
+      await db.execute(
+        'UPDATE reading_sessions SET total_ms = ?, updated_at = ? WHERE id = ?',
+        [durationMs, now, sessionIdRef.current]
+      )
+      console.log('[useReadingSession] Heartbeat saved:', {
+        sessionId: sessionIdRef.current,
+        durationMs,
+        durationMinutes: Math.round(durationMs / 60000)
+      })
+    } catch (err) {
+      console.error('[useReadingSession] Heartbeat save failed:', err)
+    }
+  }, [db, getActiveReadingTime])
 
   const startSession = useCallback(async () => {
     console.log('[useReadingSession] startSession called:', { hasDb: !!db, bookId })
@@ -390,8 +439,6 @@ export function useReadingSession(bookId: string | null) {
     const isoNow = now.toISOString()
 
     try {
-      // 使用正确的字段名: is_active, total_ms, created_at, updated_at
-      // 使用正确的 user_id 和 device_id
       const userId = useAuthStore.getState().user?.id || ''
       const deviceId = getDeviceId()
       await db.execute(
@@ -402,25 +449,37 @@ export function useReadingSession(bookId: string | null) {
 
       sessionIdRef.current = id
       startTimeRef.current = now
-      bookIdRef.current = bookId  // 保存 bookId
-      userIdRef.current = userId  // 保存 userId
+      bookIdRef.current = bookId
+      userIdRef.current = userId
+      accumulatedPauseRef.current = 0  // 重置暂停时间
+      pausedAtRef.current = null
+
+      // 启动心跳定时器
+      heartbeatRef.current = setInterval(() => {
+        saveHeartbeat()
+      }, HEARTBEAT_INTERVAL_MS)
+
       console.log('[useReadingSession] Session started:', id)
       return id
     } catch (err) {
       console.error('[useReadingSession] Failed to start session:', err)
       return null
     }
-  }, [db, bookId])
+  }, [db, bookId, saveHeartbeat])
 
   const endSession = useCallback(async () => {
+    // 停止心跳定时器
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
+
     if (!db || !sessionIdRef.current || !startTimeRef.current || !bookIdRef.current) return
 
-    // 计算持续时间（毫秒）
-    const durationMs = Date.now() - startTimeRef.current.getTime()
+    const durationMs = getActiveReadingTime()
     const now = new Date().toISOString()
 
     try {
-      // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
       const userId = userIdRef.current || useAuthStore.getState().user?.id || ''
       const deviceId = getDeviceId()
       await db.execute(
@@ -431,25 +490,76 @@ export function useReadingSession(bookId: string | null) {
       console.log('[useReadingSession] Session ended:', {
         id: sessionIdRef.current,
         durationMs,
-        durationMinutes: Math.round(durationMs / 60000)
+        durationMinutes: Math.round(durationMs / 60000),
+        pausedMs: accumulatedPauseRef.current
       })
 
       sessionIdRef.current = null
       startTimeRef.current = null
       bookIdRef.current = null
       userIdRef.current = null
+      accumulatedPauseRef.current = 0
+      pausedAtRef.current = null
     } catch (err) {
       console.error('[useReadingSession] Failed to end session:', err)
     }
-  }, [db])
+  }, [db, getActiveReadingTime])
+
+  // 处理页面可见性变化（APP进入后台/回到前台）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!sessionIdRef.current || !startTimeRef.current) return
+
+      if (document.visibilityState === 'hidden') {
+        // APP进入后台 - 暂停计时并保存
+        pausedAtRef.current = new Date()
+        console.log('[useReadingSession] Paused - app went to background')
+        saveHeartbeat()  // 立即保存当前进度
+      } else if (document.visibilityState === 'visible') {
+        // APP回到前台 - 恢复计时
+        if (pausedAtRef.current) {
+          const pauseDuration = Date.now() - pausedAtRef.current.getTime()
+          accumulatedPauseRef.current += pauseDuration
+          pausedAtRef.current = null
+          console.log('[useReadingSession] Resumed - paused for:', Math.round(pauseDuration / 1000), 'seconds')
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [saveHeartbeat])
+
+  // 页面关闭前尝试保存（Web平台）
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sessionIdRef.current && startTimeRef.current && db) {
+        // 同步保存最后一次心跳
+        saveHeartbeat()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [db, saveHeartbeat])
 
   // 组件卸载时结束会话
   useEffect(() => {
     return () => {
+      // 清理心跳定时器
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current)
+        heartbeatRef.current = null
+      }
+
       if (sessionIdRef.current && startTimeRef.current && bookIdRef.current && db) {
-        const durationMs = Date.now() - startTimeRef.current.getTime()
+        const totalElapsed = Date.now() - startTimeRef.current.getTime()
+        const pauseTime = accumulatedPauseRef.current
+        const currentPause = pausedAtRef.current
+          ? Date.now() - pausedAtRef.current.getTime()
+          : 0
+        const durationMs = Math.max(0, totalElapsed - pauseTime - currentPause)
         const now = new Date().toISOString()
-        // 重要：SET 子句必须包含 book_id, user_id 和 device_id，否则 PowerSync 的 PATCH 操作会缺少这些必需字段
         const userId = userIdRef.current || ''
         const deviceId = getDeviceId()
         db.execute(
@@ -466,3 +576,4 @@ export function useReadingSession(bookId: string | null) {
     isReady: !!db,
   }
 }
+

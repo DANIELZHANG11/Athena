@@ -837,6 +837,18 @@ export class Paginator extends HTMLElement {
             if (this.#touchScrolled) e.preventDefault()
             return
         }
+
+        // === 雅典娜修改：如果有文本选择正在进行，不阻止默认行为 ===
+        // 这允许用户拖动选择更多文字
+        const doc = this.#view?.document
+        if (doc) {
+            const selection = doc.getSelection()
+            if (selection && selection.type === 'Range' && !selection.isCollapsed) {
+                // 用户正在选择文本，不阻止默认行为
+                return
+            }
+        }
+
         e.preventDefault()
         const touch = e.changedTouches[0]
         const x = touch.screenX, y = touch.screenY
@@ -1001,7 +1013,7 @@ export class Paginator extends HTMLElement {
     #canGoToIndex(index) {
         return index >= 0 && index <= this.sections.length - 1
     }
-    async #goTo({ index, anchor, select}) {
+    async #goTo({ index, anchor, select }) {
         if (index === this.#index) await this.#display({ index, anchor, select })
         else {
             const oldIndex = this.#index

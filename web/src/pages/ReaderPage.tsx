@@ -289,6 +289,7 @@ export default function ReaderPage() {
   return (
     <EpubReader
       data={epubDataRef.current!}
+      bookId={bookId || ''}
       bookTitle={bookTitle}
       initialLocation={getInitialLocation() as string}
       onLocationChanged={handleEpubLocationChanged}

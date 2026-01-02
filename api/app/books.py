@@ -176,51 +176,98 @@ async def upload_init(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             # 1. 先检查当前用户是否已有相同文件（排除软删除的）
+            # 【双SHA256去重】同时检查原始文件SHA256和当前文件SHA256
             res = await conn.execute(
                 text(
-                    "SELECT id::text, title FROM books WHERE user_id = cast(:uid as uuid) AND content_sha256 = :sha AND deleted_at IS NULL"
+                    """SELECT id::text, title, original_format, conversion_status 
+                       FROM books 
+                       WHERE user_id = cast(:uid as uuid) 
+                         AND (original_content_sha256 = :sha OR content_sha256 = :sha)
+                         AND deleted_at IS NULL"""  
                 ),
                 {"uid": user_id, "sha": content_sha256},
             )
             own_row = res.fetchone()
             if own_row:
-                # 用户自己已有相同文件，返回现有记录
+                # 用户自己已有相同文件
+                existing_id, existing_title, orig_fmt, conv_status = own_row
+                # 检查是否需要等待转换完成
+                if conv_status == 'processing':
+                    return {
+                        "status": "success",
+                        "data": {
+                            "dedup_hit": "own_converting",
+                            "existing_book_id": existing_id,
+                            "existing_title": existing_title,
+                            "message": "您已上传过该文件，正在转换中，请稍后"
+                        }
+                    }
                 return {
                     "status": "success",
                     "data": {
                         "dedup_hit": "own",
-                        "existing_book_id": own_row[0],
-                        "existing_title": own_row[1],
+                        "existing_book_id": existing_id,
+                        "existing_title": existing_title,
                         "message": "您已上传过该文件"
                     }
                 }
             
             # 2. 检查全局是否有相同文件（任何用户上传过，包括软删除的）
-            # 存储去重不排除软删除的书籍，因为文件仍然存在于 MinIO
-            # 优先选择未删除的书作为 canonical，否则选择已删除的（文件仍在）
+            # 【双SHA256去重】同时检查原始文件SHA256和当前文件SHA256
+            # 【公共资产】同时获取元数据（title/author/language）用于返回给客户端
+            # 优先选择：未删除 > 转换完成 > 创建时间最早
             res = await conn.execute(
                 text(
-                    """SELECT id::text, minio_key, cover_image_key, deleted_at
-                       FROM books WHERE content_sha256 = :sha 
-                       ORDER BY deleted_at IS NULL DESC, created_at ASC
+                    """SELECT id::text, minio_key, cover_image_key, deleted_at, 
+                              original_format, conversion_status, converted_epub_key,
+                              title, author, language
+                       FROM books 
+                       WHERE (original_content_sha256 = :sha OR content_sha256 = :sha)
+                       ORDER BY deleted_at IS NULL DESC, 
+                                conversion_status = 'completed' DESC,
+                                created_at ASC
                        LIMIT 1"""
                 ),
                 {"sha": content_sha256},
             )
             global_row = res.fetchone()
             if global_row:
-                # 全局已存在，告知客户端可以秒传
-                canonical_id = global_row[0]
-                is_soft_deleted = global_row[3] is not None
-                print(f"[Upload Init] Global dedup hit for SHA256 {content_sha256[:16]}..., canonical={canonical_id}, soft_deleted={is_soft_deleted}")
+                (canonical_id, minio_key, cover_key, deleted_at, orig_fmt, conv_status, epub_key,
+                 c_title, c_author, c_language) = global_row
+                is_soft_deleted = deleted_at is not None
+                
+                # 检查转换状态
+                if conv_status == 'processing':
+                    # 正在转换中，不能秒传，需要等待
+                    print(f"[Upload Init] Found converting book for SHA256 {content_sha256[:16]}..., waiting")
+                    return {
+                        "status": "success",
+                        "data": {
+                            "dedup_hit": "global_converting",
+                            "message": "该文件正在处理中，请稍后重试"
+                        }
+                    }
+                
+                # 全局已存在且可用，告知客户端可以秒传
+                # 对于非EPUB/PDF格式，返回转换后的EPUB key
+                final_key = epub_key if epub_key else minio_key
+                print(f"[Upload Init] Global dedup hit for SHA256 {content_sha256[:16]}..., canonical={canonical_id}, soft_deleted={is_soft_deleted}, conv_status={conv_status}")
                 return {
                     "status": "success",
                     "data": {
                         "dedup_hit": "global",
                         "dedup_available": True,
                         "canonical_book_id": canonical_id,
-                        "canonical_minio_key": global_row[1],
-                        "canonical_cover_key": global_row[2],
+                        "canonical_minio_key": final_key,
+                        "canonical_cover_key": cover_key,
+                        "canonical_format": "epub" if epub_key else orig_fmt,
+                        # 【公共资产】返回原书的元数据，客户端应使用这些值
+                        "canonical_metadata": {
+                            "title": c_title or "",
+                            "author": c_author or "",
+                            "language": c_language or "",
+                            "cover_url": cover_key or "",
+                        },
                         "message": "文件已存在，可快速添加到书库"
                     }
                 }
@@ -323,8 +370,11 @@ async def upload_complete(
         await conn.execute(
             text(
                 """
-        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, is_digitalized, initial_digitalization_confidence, source_etag, content_sha256, storage_ref_count, conversion_status)
-        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, :dig, :conf, :etag, :sha256, 1, :conv_status)
+        INSERT INTO books(id, user_id, title, author, language, original_format, minio_key, size, 
+                          is_digitalized, initial_digitalization_confidence, source_etag, 
+                          original_content_sha256, content_sha256, storage_ref_count, conversion_status)
+        VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt, :key, :size, 
+                :dig, :conf, :etag, :orig_sha256, :curr_sha256, 1, :conv_status)
         """
             ),
             {
@@ -339,7 +389,11 @@ async def upload_complete(
                 "dig": (conf >= 0.8),
                 "conf": conf,
                 "etag": etag,
-                "sha256": content_sha256,
+                # 【双SHA256去重】原始文件SHA256始终保存
+                "orig_sha256": content_sha256,
+                # 对于EPUB/PDF，content_sha256 = original_content_sha256
+                # 对于其他格式，content_sha256 暂时为 NULL，转换完成后更新为 EPUB 的 SHA256
+                "curr_sha256": content_sha256 if not needs_conversion else None,
                 "conv_status": conversion_status,
             },
         )
@@ -414,14 +468,18 @@ async def dedup_reference(
             text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
         )
         
-        # 获取原始书籍信息（包括 OCR 状态和结果）
-        # 存储去重不排除软删除的书籍，因为文件仍然存在于 MinIO
+        # 获取原始书籍信息（包括元数据、OCR 状态和结果）
+        # 【双SHA256去重】同时检查 original_content_sha256 和 content_sha256
+        # 【公共资产】元数据（title/author）是公共资产，秒传时应继承
         res = await conn.execute(
             text(
                 """
                 SELECT minio_key, cover_image_key, size, original_format, is_digitalized, 
-                       initial_digitalization_confidence, meta, ocr_status, ocr_result_key
-                FROM books WHERE id = cast(:cid as uuid) AND content_sha256 = :sha
+                       initial_digitalization_confidence, meta, ocr_status, ocr_result_key,
+                       converted_epub_key, conversion_status, content_sha256, original_content_sha256,
+                       title, author, language
+                FROM books WHERE id = cast(:cid as uuid) 
+                  AND (original_content_sha256 = :sha OR content_sha256 = :sha)
                 """
             ),
             {"cid": canonical_book_id, "sha": content_sha256},
@@ -431,7 +489,25 @@ async def dedup_reference(
             raise HTTPException(status_code=404, detail="canonical_book_not_found")
         
         (c_minio_key, c_cover_key, c_size, c_fmt, c_dig, c_conf, c_meta,
-         c_ocr_status, c_ocr_result_key) = canonical
+         c_ocr_status, c_ocr_result_key, c_epub_key, c_conv_status, c_content_sha256, c_orig_sha256,
+         c_title, c_author, c_language) = canonical
+        
+        # 【公共资产继承】元数据优先使用原书的值（公共资产），客户端传入的值只作为备选
+        # 这确保了已经经过用户确认或后台提取的元数据不会被覆盖
+        final_title = c_title or title or "Untitled"
+        final_author = c_author or author or ""
+        final_language = c_language or language or ""
+        
+        # 【双SHA256去重】确定实际使用的存储 key 和 SHA256
+        # 如果有转换后的 EPUB，使用 EPUB 的 key 和 SHA256
+        if c_epub_key:
+            actual_minio_key = c_epub_key
+            actual_sha256 = c_content_sha256  # 转换后的 EPUB SHA256
+            actual_format = 'epub'
+        else:
+            actual_minio_key = c_minio_key
+            actual_sha256 = c_content_sha256 or c_orig_sha256
+            actual_format = c_fmt
         
         # 增加原始存储的引用计数
         await conn.execute(
@@ -466,39 +542,55 @@ async def dedup_reference(
                 """
                 INSERT INTO books(id, user_id, title, author, language, original_format, 
                                   minio_key, cover_image_key, size, is_digitalized, initial_digitalization_confidence,
-                                  content_sha256, canonical_book_id, storage_ref_count, meta)
+                                  original_content_sha256, content_sha256, canonical_book_id, storage_ref_count, 
+                                  conversion_status, meta)
                 VALUES (cast(:id as uuid), cast(:uid as uuid), :title, :author, :language, :fmt,
-                        :key, :cover, :size, :dig, :conf, :sha256, cast(:cid as uuid), 0, cast(:meta as jsonb))
+                        :key, :cover, :size, :dig, :conf, :orig_sha256, :curr_sha256, cast(:cid as uuid), 0, 
+                        :conv_status, cast(:meta as jsonb))
                 """
             ),
             {
                 "id": book_id,
                 "uid": user_id,
-                "title": title,
-                "author": author,
-                "language": language,
-                "fmt": c_fmt if not original_format else original_format,
-                "key": c_minio_key,
+                # 【公共资产】使用从原书继承的元数据
+                "title": final_title,
+                "author": final_author,
+                "language": final_language,
+                "fmt": actual_format,  # 使用实际格式（可能是转换后的 epub）
+                "key": actual_minio_key,  # 使用实际存储 key（可能是转换后的 EPUB）
                 "cover": c_cover_key,
                 "size": c_size,
                 "dig": new_is_digitalized,
                 "conf": new_confidence,
-                "sha256": content_sha256,
+                # 【双SHA256去重】保存用户上传文件的原始 SHA256
+                "orig_sha256": content_sha256,
+                # 当前存储文件的 SHA256（可能是转换后的 EPUB）
+                "curr_sha256": actual_sha256,
                 "cid": canonical_book_id,
+                # 如果原书已转换完成，新书也标记为完成
+                "conv_status": 'completed' if c_epub_key else c_conv_status,
                 "meta": json.dumps(c_meta) if c_meta else None,
             },
         )
     
-    print(f"[Dedup Reference] Created book {book_id} for user {user_id}, canonical={canonical_book_id}, has_ocr={canonical_has_ocr}")
+    # 【公共资产】返回继承后的元数据，而不是客户端传入的值
+    print(f"[Dedup Reference] Created book {book_id} for user {user_id}, canonical={canonical_book_id}, has_ocr={canonical_has_ocr}, title='{final_title}'")
     
-    download_url = presigned_get(BOOKS_BUCKET, c_minio_key)
-    index_book(book_id, user_id, title, author)
+    download_url = presigned_get(BOOKS_BUCKET, actual_minio_key)
+    index_book(book_id, user_id, final_title, final_author)
     
     data = {
         "id": book_id,
         "download_url": download_url,
         "dedup_hit": "global",
-        "canonical_has_ocr": canonical_has_ocr,  # 原书是否已 OCR（仅供参考，不影响用户付费）
+        "canonical_has_ocr": canonical_has_ocr,
+        # 【公共资产返回】告诉客户端使用原书的元数据
+        "inherited_metadata": {
+            "title": final_title,
+            "author": final_author,
+            "language": final_language,
+            "cover_url": c_cover_key,
+        }
     }
     
     if idempotency_key:

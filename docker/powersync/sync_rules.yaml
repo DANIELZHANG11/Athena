@@ -16,11 +16,13 @@ bucket_definitions:
       # 注意：is_image_based 在前端根据 is_digitalized 和 initial_digitalization_confidence 计算
       # is_image_based = !is_digitalized || (is_digitalized && confidence < 0.8)
       # is_digitalized = true 表示文字型（有文字层）
+      # 【双SHA256去重】原始文件SHA256用于跨格式去重
       - SELECT 
           id, user_id, title, author, 
           cover_image_key as cover_url,
           original_format as file_type, 
           size as file_size, 
+          original_content_sha256,
           content_sha256, 
           minio_key as storage_key,
           metadata_confirmed,
@@ -90,4 +92,16 @@ bucket_definitions:
       - SELECT 
           id, user_id, device_id, settings_json, updated_at
         FROM user_settings
+        WHERE user_id = bucket.user_id
+      
+      # 阅读模式设置 (每本书独立设置)
+      # 2025-12-30: 新增，支持跨设备同步阅读外观
+      - SELECT 
+          id, user_id, book_id, device_id,
+          theme_id, background_color, text_color,
+          font_family, font_size, font_weight,
+          line_height, paragraph_spacing, margin_horizontal,
+          text_align, hyphenation,
+          is_deleted, deleted_at, created_at, updated_at
+        FROM reading_settings
         WHERE user_id = bucket.user_id

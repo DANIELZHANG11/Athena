@@ -3,6 +3,45 @@
 > **版本**：v2.1 (Industry Standard Refined)
 > **SSOT**：`web/src/styles/figma.css` 是 Design Tokens 的代码实现源；本文档是设计规范的真理源。任何样式开发必须遵循本文档。
 
+---
+
+## 0. UI/UX Pro Max 工具使用指南
+
+> **工具来源**: [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+> **本地路径**: `.agent/workflows/ui-ux-pro-max.md` + `.shared/ui-ux-pro-max/`
+
+### 0.1 快速使用
+
+**方式一：Slash 命令** (推荐)
+```
+/ui-ux-pro-max 为阅读器设计一个设置面板
+```
+
+**方式二：直接搜索**
+```bash
+python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --domain <domain>
+```
+
+### 0.2 可用搜索域
+
+| Domain | 用途 | 示例关键词 |
+|--------|------|-----------|
+| `style` | UI 风格 (57种) | glassmorphism, liquid glass, dark mode |
+| `color` | 色彩调色板 (95种) | saas, healthcare, beauty |
+| `typography` | 字体配对 (56种) | elegant, modern, playful |
+| `chart` | 图表类型 (24种) | trend, comparison, funnel |
+| `ux` | UX 准则 (98条) | animation, accessibility, z-index |
+| `landing` | 落地页结构 | hero, pricing, testimonial |
+
+### 0.3 技术栈支持
+
+```bash
+python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
+```
+可用栈: `html-tailwind` (默认), `react`, `nextjs`, `vue`, `svelte`, `swiftui`, `react-native`, `flutter`
+
+---
+
 ## 1. 设计哲学 (Design Philosophy)
 *   **静谧的智慧 (Quiet Intelligence)**：界面应像空气一样存在，仅在用户需要时提供感知，绝不喧宾夺主。
 *   **内容优先 (Content-First)**：阅读体验是核心，UI 只是容器。
@@ -59,10 +98,25 @@
     *   ❌ `阅读，聆听，发现。`
 
 ### 2.3 质感与特效 (Effects)
+
+> [!IMPORTANT]
+> **iOS 26 Liquid Glass 兼容性** (WWDC 2025)
+> 本项目的玻璃效果设计已完全符合 Apple iOS 26 "Liquid Glass" 设计规范。
+
 *   **Liquid Glass (核心视觉特征)**:
     *   **参数**: `backdrop-filter: blur(24px) saturate(180%)`
-    *   **应用场景**: 顶部导航栏 (Sticky Header)、侧边栏 (Sidebar)、浮动工具栏 (Toolbar)。
+    *   **应用场景**: 顶部导航栏 (Sticky Header)、侧边栏 (Sidebar)、浮动工具栏 (Toolbar)、Modal、Dropdown。
     *   **降级策略**: 在不支持 backdrop-filter 的设备上，回退到 `opacity: 0.95` 的纯色背景。
+
+**代码实现映射** (参见 `figma.css`):
+
+| 效果层级 | CSS Utility | 参数 | 应用场景 |
+|----------|-------------|------|----------|
+| 标准玻璃 | `backdrop-liquid-glass` | `blur(24px)` + overlay | 侧边栏、Sheet |
+| 重度玻璃 | `backdrop-glass-heavy` | `blur(40px) saturate(180%)` | Modal、Dialog |
+| 遮罩层 | `bg-black/20 backdrop-blur-sm` | `blur(4px)` | 弹窗背景遮罩 |
+| 内容容器 | `bg-white/95 backdrop-blur-xl` | `blur(24px)` | 弹窗内容区 |
+
 *   **圆角 (Radius)**:
     *   `--radius`: `10px` (标准容器)
     *   `full`: (按钮、胶囊标签)

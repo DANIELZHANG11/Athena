@@ -64,17 +64,24 @@ def convert_to_epub(book_id: str, user_id: str):
             )
             return res.fetchone()
     
-    async def _update_converted_epub(epub_key: str):
-        """独立事务更新转换后的 EPUB 信息"""
+    async def _update_converted_epub(epub_key: str, epub_sha256: str):
+        """独立事务更新转换后的 EPUB 信息，包括 SHA256"""
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
+            # 【双SHA256去重】转换完成后更新 content_sha256 为 EPUB 的哈希值
             await conn.execute(
-                text("UPDATE books SET minio_key = :key, converted_epub_key = :key, conversion_status = 'completed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                {"key": epub_key, "id": book_id},
+                text("""UPDATE books 
+                        SET minio_key = :key, 
+                            converted_epub_key = :key, 
+                            content_sha256 = :sha256,
+                            conversion_status = 'completed', 
+                            updated_at = now() 
+                        WHERE id = cast(:id as uuid)"""),
+                {"key": epub_key, "sha256": epub_sha256, "id": book_id},
             )
-            print(f"[Convert] Updated book with converted EPUB, status='completed': {book_id}")
+            print(f"[Convert] Updated book with converted EPUB (SHA256={epub_sha256[:16]}...), status='completed': {book_id}")
     
     async def _run():
         # 步骤1：更新状态为 processing
@@ -188,6 +195,11 @@ def convert_to_epub(book_id: str, user_id: str):
                 epub_data = f.read()
             print(f"[Convert] Read converted EPUB: {len(epub_data)} bytes")
             
+            # 【双SHA256去重】计算转换后 EPUB 的 SHA256
+            import hashlib
+            epub_sha256 = hashlib.sha256(epub_data).hexdigest()
+            print(f"[Convert] Computed EPUB SHA256: {epub_sha256[:16]}...")
+            
             # 上传到存储
             epub_key = make_object_key(user_id, f"converted/{book_id}.epub")
             upload_bytes(BUCKET, epub_key, epub_data, "application/epub+zip")
@@ -200,8 +212,8 @@ def convert_to_epub(book_id: str, user_id: str):
             except Exception as del_e:
                 print(f"[Convert] Warning: Failed to delete original file: {del_e}")
             
-            # 【关键】使用独立事务更新数据库
-            await _update_converted_epub(epub_key)
+            # 【关键】使用独立事务更新数据库，包括 EPUB 的 SHA256
+            await _update_converted_epub(epub_key, epub_sha256)
             
             # 清理临时文件
             for f in [worker_input_path, worker_output_path, request_file, done_file]:

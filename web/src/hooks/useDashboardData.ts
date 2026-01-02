@@ -38,11 +38,6 @@ interface ReadingSessionRow {
     created_at: string    // 会话创建时间
 }
 
-interface ReadingStatsRow {
-    date: string
-    total_seconds: number
-}
-
 interface UserSettingsRow {
     settings_json: string
 }
@@ -71,20 +66,35 @@ export function useDashboardData() {
     // 统计今天所有阅读会话的时长
     const todayStr = getLocalDateString()
 
+    // 【时区修复】获取用户本地"今天"对应的 UTC 时间范围
+    // 使用 useMemo 稳定计算，避免每次渲染重新计算导致查询重新执行
+    const todayRange = useMemo(() => {
+        const now = new Date()
+        // 用户本地时区的今天 00:00:00
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+        // 用户本地时区的今天 23:59:59.999
+        const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+        const range = {
+            startUTC: todayStart.toISOString(),
+            endUTC: todayEnd.toISOString(),
+        }
+        console.log('[useDashboardData] Today UTC range:', range, 'todayStr:', todayStr)
+        return range
+    }, [todayStr])  // 只在日期变化时重新计算
+
     // 空查询占位符 - 当数据库未就绪时使用，保持 Hook 调用顺序一致
     // 字段名参考: total_ms (毫秒), created_at (ISO8601), is_active (0/1)
     const EMPTY_SESSIONS_QUERY = 'SELECT total_ms, created_at, is_active FROM reading_sessions WHERE 1=0'
     const EMPTY_SETTINGS_QUERY = 'SELECT settings_json FROM user_settings WHERE 1=0'
-    // reading_sessions.total_ms 是毫秒，转换为秒
-    const EMPTY_WEEKLY_QUERY = 'SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds FROM reading_sessions WHERE 1=0 GROUP BY date(created_at)'
-    const EMPTY_ALL_STATS_QUERY = 'SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds FROM reading_sessions WHERE 1=0 GROUP BY date(created_at)'
     // reading_progress.progress 是进度(0-1)，finished_at 是完成时间
     const EMPTY_FINISHED_QUERY = 'SELECT b.id FROM reading_progress rp JOIN books b ON rp.book_id = b.id WHERE 1=0'
 
-    // 查询今日会话 - 包含已结束和活跃的会话
+    // 【时区修复】查询今日会话 - 使用 UTC 时间范围过滤
+    // created_at 存储的是 ISO8601 UTC 时间，直接用字符串比较即可
     const todaySessionsQuery = isReady
         ? `SELECT total_ms, created_at, is_active FROM reading_sessions 
-     WHERE date(created_at) = date('now', 'localtime')`
+     WHERE created_at >= '${todayRange.startUTC}' AND created_at <= '${todayRange.endUTC}'`
         : EMPTY_SESSIONS_QUERY
 
     interface ExtendedSessionRow extends ReadingSessionRow {
@@ -92,6 +102,10 @@ export function useDashboardData() {
     }
 
     const { data: todaySessions } = useQuery<ExtendedSessionRow>(todaySessionsQuery)
+
+    // 调试日志
+    console.log('[useDashboardData] todaySessions:', todaySessions?.length, 'isReady:', isReady)
+
 
     const todayMinutes = useMemo(() => {
         if (!todaySessions) return 0
@@ -104,6 +118,13 @@ export function useDashboardData() {
         todayStart.setHours(0, 0, 0, 0)
         const todayStartMs = todayStart.getTime()
 
+        console.log('[useDashboardData] todayMinutes calc:', {
+            sessionsCount: todaySessions.length,
+            sessions: todaySessions.slice(0, 3),
+            todayStartMs,
+            now
+        })
+
         todaySessions.forEach(row => {
             if (row.is_active === 1) {
                 // 活跃会话：计算从 created_at 到现在的时长
@@ -111,14 +132,19 @@ export function useDashboardData() {
                 const startTime = new Date(row.created_at).getTime()
                 // 如果会话开始时间早于今天0点，只计算从今天0点开始的部分
                 const effectiveStart = Math.max(startTime, todayStartMs)
-                totalMs += now - effectiveStart
+                const sessionMs = now - effectiveStart
+                console.log('[useDashboardData] Active session:', { startTime, effectiveStart, sessionMs })
+                totalMs += sessionMs
             } else {
                 // 已结束会话：使用 total_ms
+                console.log('[useDashboardData] Closed session:', { total_ms: row.total_ms })
                 totalMs += row.total_ms || 0
             }
         })
 
-        return Math.round(totalMs / 60000)
+        const minutes = Math.round(totalMs / 60000)
+        console.log('[useDashboardData] todayMinutes result:', minutes, 'totalMs:', totalMs)
+        return minutes
     }, [todaySessions])
 
 
@@ -135,8 +161,8 @@ export function useDashboardData() {
         try {
             const parsed = JSON.parse(settingsData[0].settings_json)
             return {
-                daily_minutes: parsed.daily_goal_minutes || 30,
-                yearly_books: parsed.yearly_goal_books || 10
+                daily_minutes: parsed.daily_goal_minutes ?? parsed.daily_minutes ?? 30,
+                yearly_books: parsed.yearly_goal_books ?? parsed.yearly_books ?? 10
             }
         } catch (e) {
             console.warn('Failed to parse user settings', e)
@@ -145,16 +171,32 @@ export function useDashboardData() {
     }, [settingsData])
 
     // 3. 获取最近7天活动数据
-    // 使用 reading_sessions 聚合每日阅读时长 (reading_stats 表不存在)
-    const weeklyStatsQuery = isReady
-        ? `SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds 
-     FROM reading_sessions 
-     WHERE date(created_at) >= date('now', '-6 days', 'localtime') 
-     GROUP BY date(created_at)
-     ORDER BY date ASC`
-        : EMPTY_WEEKLY_QUERY
+    // 【时区修复】获取原始数据，在 JavaScript 层面按用户本地时区分组
+    // 计算过7天的 UTC 时间范围
+    const getWeekUTCRange = () => {
+        const now = new Date()
+        // 7天前的本地 00:00:00
+        const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0)
+        // 今天的本地 23:59:59.999
+        const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+        return {
+            startUTC: weekStart.toISOString(),
+            endUTC: weekEnd.toISOString(),
+        }
+    }
+    const weekRange = getWeekUTCRange()
 
-    const { data: weeklyStats } = useQuery<ReadingStatsRow>(weeklyStatsQuery)
+    // 查询过7天的所有会话，不在 SQL 层面分组
+    const weeklySessionsQuery = isReady
+        ? `SELECT total_ms, created_at FROM reading_sessions 
+     WHERE created_at >= '${weekRange.startUTC}' AND created_at <= '${weekRange.endUTC}'`
+        : EMPTY_SESSIONS_QUERY
+
+    interface WeeklySessionRow {
+        total_ms: number
+        created_at: string
+    }
+    const { data: weeklySessions } = useQuery<WeeklySessionRow>(weeklySessionsQuery)
 
     const weeklyActivity = useMemo(() => {
         // 计算本周的周一到周日（周一为一周的第一天）
@@ -176,12 +218,14 @@ export function useDashboardData() {
             })
         }
 
-        // 填充历史数据
-        if (weeklyStats) {
-            weeklyStats.forEach(stat => {
-                const day = days.find(d => d.date === stat.date)
+        // 【时区修复】在 JavaScript 层面按用户本地时区分组
+        if (weeklySessions) {
+            weeklySessions.forEach(session => {
+                // 将 UTC created_at 转换为用户本地日期
+                const localDate = getLocalDateString(new Date(session.created_at))
+                const day = days.find(d => d.date === localDate)
                 if (day) {
-                    day.minutes = Math.round(stat.total_seconds / 60)
+                    day.minutes += Math.round((session.total_ms || 0) / 60000)
                 }
             })
         }
@@ -207,30 +251,47 @@ export function useDashboardData() {
             }
             return { ...day, status }
         })
-    }, [weeklyStats, todayMinutes, todayStr, userSettings.daily_minutes])
+    }, [weeklySessions, todayMinutes, todayStr, userSettings.daily_minutes])
 
 
     // 4. 计算 Streak
     // 获取更长历史数据用于计算 Streak (例如过去365天)
-    // 使用 reading_sessions 聚合每日阅读时长
-    const allStatsQuery = isReady
-        ? `SELECT date(created_at) as date, SUM(total_ms) / 1000 as total_seconds 
-         FROM reading_sessions 
-         WHERE date(created_at) >= date('now', '-365 days', 'localtime') 
-         GROUP BY date(created_at)
-         ORDER BY date DESC`
-        : EMPTY_ALL_STATS_QUERY
+    // 【时区修复】获取原始数据，在 JavaScript 层面按用户本地时区分组
+    const getYearUTCRange = () => {
+        const now = new Date()
+        // 365天前的本地 00:00:00
+        const yearStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 365, 0, 0, 0, 0)
+        // 今天的本地 23:59:59.999
+        const yearEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+        return {
+            startUTC: yearStart.toISOString(),
+            endUTC: yearEnd.toISOString(),
+        }
+    }
+    const yearRange = getYearUTCRange()
 
-    const { data: allStats } = useQuery<ReadingStatsRow>(allStatsQuery)
+    // 查询过去365天的所有会话原始数据
+    const allSessionsQuery = isReady
+        ? `SELECT total_ms, created_at FROM reading_sessions 
+     WHERE created_at >= '${yearRange.startUTC}' AND created_at <= '${yearRange.endUTC}'`
+        : EMPTY_SESSIONS_QUERY
+
+    interface YearlySessionRow {
+        total_ms: number
+        created_at: string
+    }
+    const { data: allSessions } = useQuery<YearlySessionRow>(allSessionsQuery)
 
     const streak = useMemo(() => {
-        if (!allStats) return { current_streak: 0, longest_streak: 0 }
+        if (!allSessions) return { current_streak: 0, longest_streak: 0 }
 
-        // 合并数据：将今日实时数据合并到统计中
+        // 【时区修复】将原始数据按用户本地日期分组
         const dailyMinutesMap = new Map<string, number>()
-        allStats.forEach(s => {
-            const m = Math.round(s.total_seconds / 60)
-            dailyMinutesMap.set(s.date, m)
+        allSessions.forEach(session => {
+            // 将 UTC created_at 转换为用户本地日期
+            const localDate = getLocalDateString(new Date(session.created_at))
+            const currentMinutes = dailyMinutesMap.get(localDate) || 0
+            dailyMinutesMap.set(localDate, currentMinutes + Math.round((session.total_ms || 0) / 60000))
         })
 
         // 如果今日实时数据更大，更新 Map
@@ -309,7 +370,7 @@ export function useDashboardData() {
             current_streak: currentStreak,
             longest_streak: maxStreak
         }
-    }, [allStats, todayMinutes, todayStr])
+    }, [allSessions, todayMinutes, todayStr])
 
 
     // 5. 年度阅读目标完成情况
@@ -350,27 +411,55 @@ export function useDashboardData() {
             return
         }
 
-        const newSettings = {
-            ...userSettings,
-            ...(dailyMinutes !== undefined && { daily_goal_minutes: dailyMinutes }),
-            ...(yearlyBooks !== undefined && { yearly_goal_books: yearlyBooks }),
-        }
-
-        const json = JSON.stringify(newSettings)
         const now = new Date().toISOString()
         const deviceId = typeof window !== 'undefined'
             ? localStorage.getItem('athena_device_id') || 'unknown'
             : 'unknown'
 
         try {
-            // 获取当前用户的设置 - 使用 getAll 避免空结果异常
-            const existingRows = await db.getAll<{ id: string, user_id: string }>(
-                'SELECT id, user_id FROM user_settings WHERE user_id = ?', [authUserId]
+            // 【关键修复】直接从数据库读取当前设置，避免闭包陈旧问题
+            const existingRows = await db.getAll<{ id: string, user_id: string, settings_json: string }>(
+                'SELECT id, user_id, settings_json FROM user_settings WHERE user_id = ?', [authUserId]
             )
             const existing = existingRows[0]
 
+            // 解析当前设置
+            let currentDailyMinutes = 30
+            let currentYearlyBooks = 10
+
+            console.log('[useDashboardData] DEBUG - existing row:', existing)
+            console.log('[useDashboardData] DEBUG - settings_json raw:', existing?.settings_json)
+
+            if (existing?.settings_json) {
+                try {
+                    const parsed = JSON.parse(existing.settings_json)
+                    console.log('[useDashboardData] DEBUG - parsed settings:', parsed)
+                    // 兼容旧格式键名
+                    currentDailyMinutes = parsed.daily_goal_minutes ?? parsed.daily_minutes ?? 30
+                    currentYearlyBooks = parsed.yearly_goal_books ?? parsed.yearly_books ?? 10
+                    console.log('[useDashboardData] DEBUG - after parse:', { currentDailyMinutes, currentYearlyBooks })
+                } catch (e) {
+                    console.warn('[useDashboardData] Failed to parse existing settings:', e)
+                }
+            } else {
+                console.log('[useDashboardData] DEBUG - No existing settings_json found!')
+            }
+
+            // 构建新设置：只更新传入的值，保留其他值
+            const newSettings = {
+                daily_goal_minutes: dailyMinutes !== undefined ? dailyMinutes : currentDailyMinutes,
+                yearly_goal_books: yearlyBooks !== undefined ? yearlyBooks : currentYearlyBooks,
+            }
+
+            const json = JSON.stringify(newSettings)
+            console.log('[useDashboardData] Saving settings:', {
+                dailyMinutes, yearlyBooks,
+                currentDailyMinutes, currentYearlyBooks,
+                newSettings
+            })
+
             if (existing) {
-                // 更新现有记录 - SET 子句必须包含 user_id 和 device_id
+                // 更新现有记录
                 console.log('[useDashboardData] Updating existing user_settings:', existing.id)
                 await db.execute(
                     'UPDATE user_settings SET settings_json = ?, updated_at = ?, user_id = ?, device_id = ? WHERE id = ?',
@@ -389,7 +478,7 @@ export function useDashboardData() {
         } catch (error) {
             console.error('[useDashboardData] Failed to save goals:', error)
         }
-    }, [db, userSettings])
+    }, [db])  // 移除 userSettings 依赖，避免闭包问题
 
     return {
         dashboard: {

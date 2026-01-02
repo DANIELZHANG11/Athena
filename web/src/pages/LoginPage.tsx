@@ -24,14 +24,14 @@ export default function LoginPage() {
     document.documentElement.lang = 'zh'
   }
   return (
-    <div style={{ display: 'grid', placeItems: 'center', height: '100vh', background: 'var(--color-system-background)' }}>
-      <div style={{ width: 360, border: '1px solid #eee', borderRadius: 12, padding: 'var(--space-lg)', background: 'var(--color-secondary-system-background)' }}>
-        <h1 style={{ fontSize: 20, marginBottom: 12 }}>{t('login.title')}</h1>
-        <label htmlFor="email-input">{t('login.email')}</label>
-        <Input id="email-input" aria-label={t('login.email')} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.email')} />
+    <div className="grid place-items-center h-screen bg-system-background">
+      <div className="w-[360px] border border-separator rounded-xl p-6 bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl shadow-lg">
+        <h1 className="text-xl font-semibold mb-3 text-label">{t('login.title')}</h1>
+        <label htmlFor="email-input" className="text-sm text-secondary-label">{t('login.email')}</label>
+        <Input id="email-input" aria-label={t('login.email')} value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.email')} className="mt-1" />
         <Button
           data-testid="login-send"
-          style={{ marginTop: 'var(--space-sm)', width: '100%' }}
+          className="mt-3 w-full"
           onClick={async () => {
             setMsg('')
             try {
@@ -48,11 +48,11 @@ export default function LoginPage() {
             }
           }}
         >{t('login.send_code')}</Button>
-        <label htmlFor="code-input">{t('login.code')}</label>
-        <Input id="code-input" aria-label={t('login.code')} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('login.code')} />
+        <label htmlFor="code-input" className="text-sm text-secondary-label mt-4 block">{t('login.code')}</label>
+        <Input id="code-input" aria-label={t('login.code')} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t('login.code')} className="mt-1" />
         <Button
           data-testid="login-submit"
-          style={{ marginTop: 'var(--space-sm)', width: '100%' }}
+          className="mt-3 w-full"
           onClick={async () => {
             setMsg('')
             try {
@@ -84,7 +84,7 @@ export default function LoginPage() {
             }
           }}
         >{t('login.submit')}</Button>
-        {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
+        {msg && <div className="mt-2 text-sm text-secondary-label">{msg}</div>}
       </div>
     </div>
   )

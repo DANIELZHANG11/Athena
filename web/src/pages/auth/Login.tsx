@@ -11,6 +11,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../components/ui/button'
 import { useAuthStore } from '../../stores/auth'
+import { apiFetch } from '../../lib/apiUrl'
 import { Mail, Lock, AlertCircle, CheckCircle } from 'lucide-react'
 
 export default function Login() {
@@ -24,17 +25,31 @@ export default function Login() {
   const [codeSent, setCodeSent] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [error, setError] = useState('')
+  const [debugInfo, setDebugInfo] = useState('') // 调试信息
 
   const sendCode = async () => {
     setLoading(true)
     setError('')
+    setDebugInfo('Sending request...')
+
     try {
-      const res = await fetch('/api/v1/auth/email/send-code', {
+      // 显示将要请求的 URL
+      const apiPath = '/api/v1/auth/email/send-code'
+      console.log('[Login] Calling apiFetch:', apiPath)
+
+      const res = await apiFetch(apiPath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       })
+
+      console.log('[Login] Response status:', res.status)
+      setDebugInfo(`Response: ${res.status} ${res.statusText}`)
+
       if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        console.log('[Login] Response data:', data)
+        setDebugInfo(`Success! dev_code: ${data.data?.dev_code || 'N/A'}`)
         setCodeSent(true)
         setCountdown(60)
         const timer = setInterval(() => {
@@ -47,10 +62,15 @@ export default function Login() {
           })
         }, 1000)
       } else {
+        const errorData = await res.json().catch(() => ({ message: res.statusText }))
+        console.error('[Login] Error response:', errorData)
         setError(t('send_failed') as string)
+        setDebugInfo(`Error: ${res.status} - ${errorData.message || res.statusText}`)
       }
-    } catch {
+    } catch (err: any) {
+      console.error('[Login] Fetch error:', err)
       setError(t('tip_check_backend') as string)
+      setDebugInfo(`Network Error: ${err?.message || 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -60,7 +80,7 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/v1/auth/email/verify-code', {
+      const res = await apiFetch('/api/v1/auth/email/verify-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code })
@@ -134,6 +154,13 @@ export default function Login() {
             <p className="font-medium">{t('code_sent')}</p>
             <p className="text-green-700 mt-1">{t('check_spam')}</p>
           </div>
+        </div>
+      )}
+
+      {/* 调试信息 */}
+      {debugInfo && (
+        <div className="p-2 bg-gray-100 border border-gray-300 rounded text-xs font-mono text-gray-700">
+          {debugInfo}
         </div>
       )}
 

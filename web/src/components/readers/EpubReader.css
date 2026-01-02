@@ -5,6 +5,7 @@
  * 1. 透明翻页区域（不可见但可点击）
  * 2. 顶部/底部栏自动隐藏
  * 3. 全屏阅读容器
+ * 4. Liquid Glass 玻璃效果
  */
 
 .epub-reader {
@@ -13,12 +14,12 @@
     height: 100vh;
     height: 100dvh;
     width: 100%;
-    background: #fff;
+    background: var(--system-background);
     position: relative;
     overflow: hidden;
 }
 
-/* 顶部工具栏 - 默认隐藏 */
+/* 顶部工具栏 - 默认隐藏，Liquid Glass 效果 */
 .epub-reader__header {
     position: absolute;
     top: 0;
@@ -29,12 +30,13 @@
     justify-content: space-between;
     height: 48px;
     padding: 0 8px;
-    background: rgba(255, 255, 255, 0.95);
-    border-bottom: 1px solid #e5e5e5;
+    background: var(--overlay);
+    border-bottom: 1px solid var(--separator);
     z-index: 100;
     transform: translateY(-100%);
-    transition: transform 0.3s ease;
-    backdrop-filter: blur(8px);
+    transition: transform var(--duration-medium) var(--easing-apple);
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur));
+    backdrop-filter: blur(var(--liquid-glass-blur));
 }
 
 .epub-reader__header--visible {
@@ -42,7 +44,8 @@
 }
 
 .epub-reader__back-btn,
-.epub-reader__menu-btn {
+.epub-reader__menu-btn,
+.epub-reader__settings-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -52,13 +55,21 @@
     background: transparent;
     cursor: pointer;
     border-radius: 8px;
-    color: #333;
-    transition: background 0.2s;
+    color: var(--label);
+    transition: background var(--duration-fast);
 }
 
 .epub-reader__back-btn:hover,
-.epub-reader__menu-btn:hover {
-    background: #f0f0f0;
+.epub-reader__menu-btn:hover,
+.epub-reader__settings-btn:hover {
+    background: var(--hover-background);
+}
+
+/* 右侧操作按钮组 */
+.epub-reader__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .epub-reader__title {
@@ -71,7 +82,7 @@
     display: block;
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--label);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -80,7 +91,7 @@
 .epub-reader__chapter {
     display: block;
     font-size: 11px;
-    color: #888;
+    color: var(--secondary-label);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -100,7 +111,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    background: #fff;
+    background: var(--system-background);
 }
 
 .epub-reader__viewer foliate-view {
@@ -109,39 +120,13 @@
     height: 100%;
 }
 
-/* 透明翻页区域 - 覆盖在 viewer 上层 */
-.epub-reader__nav-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 20%;
-    min-width: 50px;
-    max-width: 120px;
-    z-index: 10;
-    cursor: pointer;
-    /* 完全透明 */
-    background: transparent;
-}
+/* 
+ * 翻页区域已移除 - foliate-js 内部处理所有触摸/鼠标交互
+ * 参考官方 reader.js：翻页使用按钮或键盘，不使用覆盖层
+ */
 
-.epub-reader__nav-zone--left {
-    left: 0;
-}
-
-.epub-reader__nav-zone--right {
-    right: 0;
-}
-
-/* 中间点击区域 - 用于切换工具栏显示/隐藏 */
-.epub-reader__center-zone {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 20%;
-    right: 20%;
-    z-index: 10;
-    cursor: pointer;
-    background: transparent;
-}
+/* 中间点击区域 - 已移除，使用 foliate-js 内部的 iframe 处理交互 */
+/* 点击切换工具栏的功能已移动到 EpubReader.tsx 中的事件处理 */
 
 /* 加载状态 */
 .epub-reader__loading {
@@ -151,7 +136,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #fff;
+    background: var(--system-background);
     gap: 12px;
     z-index: 50;
 }
@@ -159,8 +144,8 @@
 .epub-reader__spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid #e5e5e5;
-    border-top-color: #333;
+    border: 3px solid var(--separator);
+    border-top-color: var(--label);
     border-radius: 50%;
     animation: spin 1s linear infinite;
 }
@@ -171,7 +156,7 @@
     }
 }
 
-/* 底部状态栏 - 默认隐藏 */
+/* 底部状态栏 - 默认隐藏，Liquid Glass 效果 */
 .epub-reader__footer {
     position: absolute;
     bottom: 0;
@@ -182,12 +167,13 @@
     justify-content: center;
     height: 36px;
     padding: 0 16px;
-    background: rgba(255, 255, 255, 0.95);
-    border-top: 1px solid #e5e5e5;
+    background: var(--overlay);
+    border-top: 1px solid var(--separator);
     z-index: 100;
     transform: translateY(100%);
-    transition: transform 0.3s ease;
-    backdrop-filter: blur(8px);
+    transition: transform var(--duration-medium) var(--easing-apple);
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur));
+    backdrop-filter: blur(var(--liquid-glass-blur));
 }
 
 .epub-reader__footer--visible {
@@ -196,10 +182,32 @@
 
 .epub-reader__page-info {
     font-size: 13px;
-    color: #666;
+    color: var(--secondary-label);
 }
 
-/* 目录侧边栏 */
+/* 目录遮罩层 - 点击关闭目录，Liquid Glass 遮罩 */
+.epub-reader__toc-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.2);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    z-index: 150;
+    cursor: pointer;
+    animation: fadeIn var(--duration-fast) ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* 目录侧边栏 - Liquid Glass 效果 */
 .epub-reader__toc {
     position: absolute;
     top: 0;
@@ -207,13 +215,15 @@
     bottom: 0;
     width: 300px;
     max-width: 85%;
-    background: #fff;
-    border-left: 1px solid #e5e5e5;
+    background: var(--overlay);
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--liquid-glass-blur)) saturate(180%);
+    border-left: 1px solid var(--separator);
     box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
     z-index: 200;
     display: flex;
     flex-direction: column;
-    animation: slideIn 0.25s ease-out;
+    animation: slideIn var(--duration-medium) var(--easing-apple);
 }
 
 @keyframes slideIn {
@@ -228,13 +238,40 @@
     }
 }
 
+/* 目录标题区域 - 包含标题和关闭按钮 */
+.epub-reader__toc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--separator);
+    flex-shrink: 0;
+}
+
 .epub-reader__toc-title {
-    padding: 16px;
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    border-bottom: 1px solid #e5e5e5;
-    flex-shrink: 0;
+}
+
+/* 目录关闭按钮 */
+.epub-reader__toc-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 6px;
+    color: var(--secondary-label);
+    transition: all var(--duration-fast);
+}
+
+.epub-reader__toc-close-btn:hover {
+    background: var(--hover-background);
+    color: var(--label);
 }
 
 .epub-reader__toc-list {
@@ -251,13 +288,13 @@
     background: transparent;
     text-align: left;
     font-size: 14px;
-    color: #333;
+    color: var(--label);
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--duration-fast);
 }
 
 .epub-reader__toc-item:hover {
-    background: #f5f5f5;
+    background: var(--hover-background);
 }
 
 /* 响应式设计 */
@@ -278,16 +315,5 @@
         width: 100%;
         max-width: 100%;
         border-left: none;
-    }
-
-    /* 移动端翻页区域更大一些 */
-    .epub-reader__nav-zone {
-        width: 25%;
-        max-width: 100px;
-    }
-
-    .epub-reader__center-zone {
-        left: 25%;
-        right: 25%;
     }
 }

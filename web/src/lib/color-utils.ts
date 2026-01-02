@@ -3,6 +3,10 @@
  * 从图片 URL 提取主色调
  * 使用 canvas 采样中心区域的平均颜色
  */
+
+// Fallback 色 - 使用 CSS 变量定义的色值
+const FALLBACK_GRAY = getComputedStyle(document.documentElement).getPropertyValue('--color-fallback-gray').trim() || '#6B7280'
+
 export function extractDominantColor(imageUrl: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image()
@@ -11,31 +15,31 @@ export function extractDominantColor(imageUrl: string): Promise<string> {
     if (!imageUrl.startsWith('/api/') && !imageUrl.startsWith(window.location.origin)) {
       img.crossOrigin = 'anonymous'
     }
-    
+
     const timeoutId = setTimeout(() => {
       // console.log('[ColorExtract] Timeout for:', imageUrl)
-      resolve('#6B7280')
+      resolve(FALLBACK_GRAY)
     }, 3000)
-    
+
     img.onload = () => {
       clearTimeout(timeoutId)
       try {
         const canvas = document.createElement('canvas')
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          resolve('#6B7280')
+          resolve(FALLBACK_GRAY)
           return
         }
-        
+
         // 使用小尺寸采样以提高性能
         canvas.width = 50
         canvas.height = 75
         ctx.drawImage(img, 0, 0, 50, 75)
-        
+
         // 采样图片中心区域
         const imageData = ctx.getImageData(10, 20, 30, 35)
         const data = imageData.data
-        
+
         let r = 0, g = 0, b = 0, count = 0
         for (let i = 0; i < data.length; i += 4) {
           r += data[i]
@@ -43,21 +47,21 @@ export function extractDominantColor(imageUrl: string): Promise<string> {
           b += data[i + 2]
           count++
         }
-        
+
         r = Math.round(r / count)
         g = Math.round(g / count)
         b = Math.round(b / count)
-        
+
         resolve(`rgb(${r}, ${g}, ${b})`)
       } catch (e) {
         console.warn('[ColorExtract] Canvas error:', e)
-        resolve('#6B7280')
+        resolve(FALLBACK_GRAY)
       }
     }
     img.onerror = (e) => {
       clearTimeout(timeoutId)
       console.warn('[ColorExtract] Image load error:', e)
-      resolve('#6B7280')
+      resolve(FALLBACK_GRAY)
     }
     img.src = imageUrl
   })
