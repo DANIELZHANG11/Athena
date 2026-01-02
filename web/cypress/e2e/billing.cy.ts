@@ -2,8 +2,7 @@
 
 describe('Billing page', () => {
   it('shows balance and ledger list', () => {
-    // Navigate to login to set token (or use cy.login if we want full flow, but manually setting token works for unit-ish e2e)
-    cy.window().then((win) => win.localStorage.setItem('access_token', 'test-token'))
+    cy.login()
 
     cy.intercept('GET', '/api/v1/billing/balance', {
       statusCode: 200,

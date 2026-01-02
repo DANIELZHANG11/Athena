@@ -1,9 +1,10 @@
+```cypress
 /// <reference types="cypress" />
 
 describe('Doc Editor', () => {
   it('open and recover draft', () => {
-    cy.window().then((win) => win.localStorage.setItem('access_token', 'test-token'))
-
+    cy.login()
+    
     cy.intercept('GET', '/api/v1/docs/test-doc-1/conflicts', {
       statusCode: 200,
       body: { status: 'success', data: [{ id: 'c1', base_version: 1, actual_version: 2, created_at: '2025-01-01T00:00:00Z' }] }

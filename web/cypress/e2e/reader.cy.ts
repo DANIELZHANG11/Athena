@@ -2,6 +2,25 @@
 
 describe('Reader Functionality', () => {
     beforeEach(() => {
+        cy.intercept('GET', '/api/v1/books*', {
+            statusCode: 200,
+            body: {
+                status: 'success',
+                data: [
+                    {
+                        id: 'book1',
+                        title: 'Test Book',
+                        author: 'Test Author',
+                        cover: '',
+                        format: 'epub',
+                        progress: 0,
+                        total_pages: 100
+                    }
+                ],
+                total: 1
+            }
+        }).as('getBooks')
+
         cy.login()
         cy.visit('/', {
             onBeforeLoad(win) {

@@ -1,7 +1,19 @@
 // custom commands
 Cypress.Commands.add('login', () => {
-  cy.intercept('POST', /\/api\/v1\/auth\/email\/send[-_]code(?:\?.*)?$/).as('sendCode')
-  cy.intercept('POST', /\/api\/v1\/auth\/email\/verify[-_]code(?:\?.*)?$/).as('verifyCode')
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/send[-_]code(?:\?.*)?$/, {
+    statusCode: 200,
+    body: { status: 'success', message: 'Code sent', data: { dev_code: '123456' } }
+  }).as('sendCode')
+  cy.intercept('POST', /\/api\/v1\/auth\/email\/verify[-_]code(?:\?.*)?$/, {
+    statusCode: 200,
+    body: {
+      status: 'success',
+      data: {
+        tokens: { access_token: 'fake-jwt-token', refresh_token: 'fake-refresh', expires_in: 3600 },
+        user: { id: 'u1', email: 'e2e@example.com', nickname: 'E2E User' }
+      }
+    }
+  }).as('verifyCode')
 
   // optional: profile fetch not required in current app flow
 
