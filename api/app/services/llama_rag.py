@@ -10,24 +10,20 @@ LlamaIndex RAG 服务
 - llama-index>=0.10.0
 - llama-index-vector-stores-opensearch
 - llama-index-embeddings-huggingface
+
+注意：所有 LlamaIndex 导入使用延迟加载，避免模块导入时初始化 PyTorch CUDA。
 """
 import os
 import logging
-from typing import Optional, List
-from functools import lru_cache
+from typing import Optional, List, TYPE_CHECKING
 
-from llama_index.core import (
-    VectorStoreIndex,
-    Settings,
-    Document,
-    StorageContext,
-)
-from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core.schema import TextNode
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.vector_stores.opensearch import OpensearchVectorStore
+# 类型检查时导入（不会执行）
+if TYPE_CHECKING:
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    from llama_index.vector_stores.opensearch import OpensearchVectorStore
 
 logger = logging.getLogger(__name__)
+
 
 # ============================================================================
 # 配置常量
@@ -45,7 +41,7 @@ EMBEDDING_DIM = 1024
 _embed_model = None
 
 
-def get_embed_model() -> HuggingFaceEmbedding:
+def get_embed_model():
     """
     获取 Embedding 模型实例（单例模式）
     
@@ -80,6 +76,9 @@ def get_embed_model() -> HuggingFaceEmbedding:
     
     logger.info(f"[LlamaRAG] Loading embedding model {EMBEDDING_MODEL} on {device}")
     
+    # 延迟导入
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    
     _embed_model = HuggingFaceEmbedding(
         model_name=EMBEDDING_MODEL,
         device=device,
@@ -96,7 +95,7 @@ def get_embed_model() -> HuggingFaceEmbedding:
 # OpenSearch Vector Store
 # ============================================================================
 
-def get_vector_store() -> OpensearchVectorStore:
+def get_vector_store():
     """
     获取 OpenSearch Vector Store 实例
     
@@ -105,6 +104,9 @@ def get_vector_store() -> OpensearchVectorStore:
     - 向量维度: 1024 (BGE-M3)
     - 使用 IK Analyzer 中文分词
     """
+    # 延迟导入
+    from llama_index.vector_stores.opensearch import OpensearchVectorStore
+    
     return OpensearchVectorStore(
         opensearch_url=OPENSEARCH_URL,
         index=BOOK_CHUNKS_INDEX,
@@ -134,6 +136,10 @@ def chunk_text(
     Returns:
         分块文本列表
     """
+    # 延迟导入
+    from llama_index.core import Document
+    from llama_index.core.node_parser import SentenceSplitter
+    
     splitter = SentenceSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -171,6 +177,10 @@ async def index_book_chunks(
         索引的块数量
     """
     logger.info(f"[LlamaRAG] Starting to index book {book_id}")
+    
+    # 延迟导入
+    from llama_index.core import VectorStoreIndex, Settings, StorageContext
+    from llama_index.core.schema import TextNode
     
     # 获取 embedding 模型
     embed_model = get_embed_model()
@@ -247,6 +257,9 @@ async def search_book_chunks(
         return []
     
     logger.info(f"[LlamaRAG] Searching for: '{query[:50]}...' in {len(book_ids)} books")
+    
+    # 延迟导入
+    from llama_index.core import VectorStoreIndex, Settings
     
     # 配置 embedding 模型
     embed_model = get_embed_model()

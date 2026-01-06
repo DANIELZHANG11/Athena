@@ -27,11 +27,13 @@ opensearch-py[async]
 beautifulsoup4
 # ============================================
 # LlamaIndex RAG 框架 (02号文档 2.5节 技术栈)
+# 版本来源: https://github.com/run-llama/llama_index
+# 所有包兼容 llama-index-core 0.14.x
 # ============================================
-llama-index>=0.10.0
-llama-index-vector-stores-opensearch
-llama-index-embeddings-huggingface
-llama-index-llms-openai
+llama-index-core==0.14.12
+llama-index-vector-stores-opensearch==0.6.2
+llama-index-embeddings-huggingface==0.6.1
+llama-index-llms-openai==0.6.12
 # ============================================
 # IBM Docling - PDF 结构化解析 (02号文档 2.5节)
 # 用于提取章节结构、表格、图表

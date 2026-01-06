@@ -47,8 +47,20 @@
 
 #### 状态
 
-- ✅ 代码已提交到 GitHub (commit: e1ab49e)
-- ⏳ CI 验证中
+- ✅ Docker 构建成功 (4039秒)
+- ✅ Worker 启动成功，Celery 任务已注册
+- ✅ LlamaIndex 导入验证通过
+- ✅ 修复 `services/__init__.py` 的 embedder 导入
+- ✅ 修复 `llama_rag.py` 延迟加载避免 PyTorch CUDA 初始化错误
+
+#### LlamaIndex 版本
+
+```
+llama-index-core==0.14.12
+llama-index-vector-stores-opensearch==0.6.2
+llama-index-embeddings-huggingface==0.6.1
+llama-index-llms-openai==0.6.12
+```
 
 ---
 
