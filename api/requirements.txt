@@ -23,3 +23,17 @@ pymupdf
 Pillow>=10.0.0
 psutil>=5.9.0
 ocrmypdf>=16.0.0
+opensearch-py[async]
+beautifulsoup4
+# ============================================
+# LlamaIndex RAG 框架 (02号文档 2.5节 技术栈)
+# ============================================
+llama-index>=0.10.0
+llama-index-vector-stores-opensearch
+llama-index-embeddings-huggingface
+llama-index-llms-openai
+# ============================================
+# IBM Docling - PDF 结构化解析 (02号文档 2.5节)
+# 用于提取章节结构、表格、图表
+# ============================================
+docling

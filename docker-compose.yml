@@ -53,6 +53,14 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
       SMTP_USE_SSL: ${SMTP_USE_SSL}
       PAY_FAKE_WEBHOOK_SECRET: devsecret
+      # AI 服务配置
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      DEFAULT_AI_MODEL: ${DEFAULT_AI_MODEL:-Pro/deepseek-ai/DeepSeek-V3.2}
+      AI_API_KEY_ENCRYPTION_KEY: ${AI_API_KEY_ENCRYPTION_KEY:-dev_ai_encryption_key_32bytes!}
+      # HuggingFace Cache (共享 worker 下载的模型)
+      HF_HOME: /app/.hf_cache
+      # 开发模式：跳过 Credits 等校验
+      DEV_MODE: "true"
     labels:
       - traefik.enable=true
       - traefik.http.routers.api.rule=Host(`api.youdomin.com`)
@@ -371,6 +379,10 @@ services:
       - HF_HOME=/app/.hf_cache
       # GPU 内存控制 (RTX 3060 12GB: PaddleOCR ~3GB + BGE-M3 ~3GB)
       - FLAGS_fraction_of_gpu_memory_to_use=0.5
+      # 禁用 NCCL (解决 ncclGroupSimulateEnd symbol 问题，单 GPU 不需要分布式训练)
+      - NCCL_P2P_DISABLE=1
+      - NCCL_IB_DISABLE=1
+      - TORCH_NCCL_ASYNC_ERROR_HANDLING=0
     # 3 Workers (RTX 3060 12GB GPU，最佳并发)
     # PaddleOCR + BGE-M3 约占用 6-7GB，剩余约 5GB 用于推理缓冲
     command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=3", "--pool=prefork", "--max-tasks-per-child=100" ]
