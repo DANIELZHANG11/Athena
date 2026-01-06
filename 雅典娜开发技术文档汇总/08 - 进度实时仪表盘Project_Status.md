@@ -2,7 +2,293 @@
 
 ## 最新更新
 
+### 2026-01-06 - LlamaIndex RAG 架构重构 ⚠️ 重要
+
+#### 问题根源分析
+
+之前的 RAG 系统使用自定义 `embedder.py`，存在以下问题：
+1. `MockEmbedder` 在加载失败时返回**零向量 `[0.0, 0.0, ...]`**
+2. Worker 容器中 PyTorch/CUDA 兼容性问题导致 `LocalEmbedder` 初始化失败
+3. 零向量被索引到 OpenSearch，导致 RAG 搜索永远无法匹配
+
+#### 重构方案
+
+按照 02 号技术文档 2.5 节规范，使用 **LlamaIndex** 重构 RAG 系统：
+
+| 组件 | 变更前 | 变更后 |
+|:-----|:-------|:-------|
+| Embedding | 自定义 `embedder.py` + `sentence-transformers` | `llama-index-embeddings-huggingface` |
+| 向量存储 | 直接 `opensearch-py` | `llama-index-vector-stores-opensearch` |
+| PDF 解析 | 无 | `docling` (IBM) |
+| 错误处理 | 静默回退到 MockEmbedder | 直接抛出异常，不生成假数据 |
+
+#### 文件变更
+
+| 文件 | 操作 | 说明 |
+|:-----|:-----|:-----|
+| `api/app/services/embedder.py` | ❌ 删除 | 废弃的自定义 Embedder |
+| `api/app/services/llama_rag.py` | ✅ 新建 | LlamaIndex RAG Pipeline |
+| `api/app/ai.py` | 修改 | 导入 `llama_rag` |
+| `api/app/tasks/index_tasks.py` | 修改 | 导入 `llama_rag` |
+| `api/requirements.txt` | 修改 | 添加 LlamaIndex + Docling |
+
+#### 依赖变更
+
+```diff
+- aiohttp
+- sentence-transformers
+- FlagEmbedding
++ llama-index>=0.10.0
++ llama-index-vector-stores-opensearch
++ llama-index-embeddings-huggingface
++ llama-index-llms-openai
++ docling
+```
+
+#### 状态
+
+- ✅ 代码已提交到 GitHub (commit: e1ab49e)
+- ⏳ CI 验证中
+
+---
+
+### 2026-01-05 - 向量索引触发机制修复 + Embedder 性能优化
+
+#### 问题诊断
+
+1. 用户上传《八〇年夏》后，AI 对话 QA 模式无法检索到书籍内容
+2. AI 响应时间过长
+
+| 检查项 | 诊断结果 |
+|:-------|:---------|
+| OpenSearch | ✅ 正常，3312 chunks |
+| 《八〇年夏》索引 | ❌ `vector_indexed_at = NULL` |
+| Worker Event Loop | ❌ asyncio 连接复用错误 |
+| **Embedder 加载** | ❌ **BGE-M3 失败，回退到 MockEmbedder** |
+
+#### 根本原因
+
+1. `upload_complete` 路径缺少向量索引触发代码
+2. Celery Worker 中 `asyncio.run()` 导致连接复用问题
+3. **`requirements.txt` 缺少 `FlagEmbedding` 依赖**，导致 BGE-M3 模型加载失败
+
+#### 已完成修复
+
+| 文件 | 修改内容 |
+|:-----|:---------|
+| `api/app/books.py` | `upload_complete` 添加 EPUB 格式向量索引触发 |
+| `api/app/tasks/index_tasks.py` | 修复 Event Loop 问题，删除临时任务 |
+| **`api/requirements.txt`** | **添加 `FlagEmbedding` 依赖** |
+| **`api/app/services/embedder.py`** | **实现单例缓存，避免重复加载模型** |
+
+#### 验证结果
+
+| 指标 | 修复前 | 修复后 |
+|:-----|:-------|:-------|
+| 用户书籍索引数 | 0/12 | **8/12** ✅ |
+| 《八〇年夏》 | NULL | 69 chunks ✅ |
+| 《印度·中国佛学》 | 已索引 | 1045 chunks ✅ |
+| FlagEmbedding | ❌ 未安装 | ✅ v1.3.5 |
+| Event Loop 问题 | ❌ attached to different loop | ✅ task-local engine |
+
+已索引书籍（8本）：
+1. 八〇年夏
+2. 美国
+3. 印度·中国佛学源流略讲
+4. 投资第一课
+5. 圣殿骑士团：崛起与陨落
+6. 雨崩的一个雨天
+7. 慈禧太后
+8. 你的女友被煮死在二楼
+
+#### 状态
+✅ 修复完成并验证通过
+
+---
+
+
+### 2026-01-04 - AI 对话 API 修复 + UI 全面重构 (按 06号设计规范)
+
+#### 功能概述
+
+修复 AI 对话 402 错误、全面重构 UI 组件以符合 06号设计规范、实现向量索引自动触发机制。
+
+#### 已完成工作
+
+##### 1. HTTP 402 Credits 错误修复
+
+**文件**：`api/app/ai.py`, `docker-compose.yml`
+
+| 修改 | 描述 |
+|:-----|:-----|
+| DEV_MODE bypass | `check_credits` 函数添加开发模式跳过逻辑 |
+| docker-compose | 添加 `DEV_MODE: "true"` 环境变量 |
+
+##### 2. MessageBubble 组件重写 (按 06号设计规范)
+
+**文件**：`web/src/pages/AIConversationsPage.tsx`
+
+| 功能 | 实现方式 |
+|:-----|:---------|
+| AI 头像 | 使用雅典娜 Logo (`/logosvg.png`) + 回退到 `Sparkles` 图标 |
+| 加载动画 | `animate-pulse` + `ring-2 ring-system-purple ring-offset-2` |
+| 思考状态 | `Loader2 animate-spin` + "正在思考..." 文案 |
+| 用户消息 | `bg-system-blue shadow-md` + 显式 `text-white` |
+| AI 消息 | `bg-secondary-background` + `text-label` |
+
+##### 3. 按钮颜色与对齐修复 (按 06号设计规范)
+
+| 组件 | 修复前 | 修复后 |
+|:-----|:-------|:-------|
+| 发送按钮 | `p-3` (不定尺寸) | `w-12 h-12` (固定) + `text-white` |
+| 停止按钮 | 同上 | 同上 + `bg-system-red` |
+| 新建对话 | 隐式文字颜色 | `<span className="text-white">` 显式 |
+| 输入框对齐 | `items-end` | `items-center` |
+
+##### 4. Tailwind 工具类补充
+
+**文件**：`web/src/styles/figma.css`
+
+新增工具类:
+- `bg-system-purple` / `text-system-purple` / `ring-system-purple`
+- `bg-system-green` / `text-system-green`
+- `bg-system-red` / `text-system-red`
+- `text-system-blue`
+
+##### 5. 消息状态修复 (解决关键 Bug)
+
+| 问题 | 根本原因 | 解决方案 |
+|:-----|:---------|:---------|
+| 用户消息消失 | `useEffect` 在 `selectedId` 变化时立即调用 `fetchMessages()` 覆盖本地状态 | 新增 `isNewConversationRef` 标记新对话，跳过首次 fetch |
+| 对话跳转 | `await fetchConversations()` 阻塞消息发送 | 移除 `await`，后台刷新 |
+
+##### 6. 下拉菜单点击修复
+
+| 问题 | 解决方案 |
+|:-----|:---------|
+| 书籍/书架无法勾选 | 使用 `onMouseDown` + `e.stopPropagation()` 防止外部点击处理器拦截 |
+
+##### 7. 向量索引自动触发
+
+**文件**：`api/app/books.py`, `api/app/tasks/convert_tasks.py`
+
+| 触发点 | 描述 |
+|:-----|:-----|
+| EPUB 上传 | `register_book` 完成后触发 `tasks.index_book_vectors` |
+| 格式转换 | `convert_to_epub` 完成后触发 `tasks.index_book_vectors` |
+
+#### 修改文件清单
+
+| 文件 | 类型 |
+|:-----|:-----|
+| `api/app/ai.py` | 修改 |
+| `api/app/books.py` | 修改 |
+| `api/app/tasks/convert_tasks.py` | 修改 |
+| `docker-compose.yml` | 修改 |
+| `web/src/pages/AIConversationsPage.tsx` | **全面重构** |
+| `web/src/styles/figma.css` | 修改 (新增工具类) |
+
+#### 状态
+✅ 代码完成 - 刷新页面验证
+
+---
+
+### 2026-01-03 - AI 对话界面全面重写 + 向量索引服务
+
+#### 功能概述
+
+##### 1. AI 对话页面重写 (Gemini 风格)
+
+**文件**：`web/src/pages/AIConversationsPage.tsx`
+
+| 功能 | 描述 |
+|:-----|:-----|
+| 全屏模式 | 隐藏底部导航栏，展现完整对话窗口 |
+| 汉堡菜单 (左上) | 侧边抽屉：新建对话、历史搜索 |
+| 主页按钮 (右上) | 返回主页 |
+| 对话标题 | 新对话显示"雅典娜"，首次对话后自动生成标题 |
+| 底部工具栏 | 输入框在上，四个图标在下 |
+| 书架选择器 | 多选 + 搜索过滤 |
+| 书籍选择器 | 多选 + 搜索过滤 |
+| 模型选择器 | DeepSeek V3.2 / Hunyuan MT 7B |
+| 模式切换 | 普通聊天 / 书籍对话 |
+| 动效 | 所有交互带动画 (`animate-in`, `fade-in`, `slide-in`) |
+
+##### 2. 向量索引服务
+
+**文件**：`api/app/services/vector_index.py`
+
+| 功能 | 描述 |
+|:-----|:-----|
+| OpenSearch 集成 | 使用 IK Analyzer 中文分词 |
+| 语义分块 | 按句子边界分割，512 字符 + 64 字符重叠 |
+| BGE-M3 嵌入 | 1024 维向量 |
+| 向量检索 | k-NN HNSW 算法 |
+| 多书籍搜索 | 支持 `book_ids` 过滤 |
+
+**索引映射**：
+- `content` 字段使用 `ik_max_analyzer` 分词
+- `embedding` 字段使用 `knn_vector` (1024 维, cosine)
+
+##### 3. 书籍索引 Celery 任务
+
+**文件**：`api/app/tasks/index_tasks.py`
+
+| 任务 | 描述 |
+|:-----|:-----|
+| `index_book_vectors` | 单本书籍索引 |
+| `index_all_books` | 批量索引所有未索引书籍 |
+
+**触发时机**：
+1. 文字型书籍上传完成
+2. OCR 任务完成
+3. 手动触发批量索引
+
+##### 4. OpenSearch 中文分词插件确认
+
+**文件**：`docker/opensearch/Dockerfile`
+
+已安装的插件：
+- ✅ IK Analysis (中文分词)
+- ✅ Pinyin Analysis (拼音搜索)
+- ✅ STConvert (简繁转换)
+
+##### 5. 国际化文本更新
+
+**文件**：`web/src/locales/zh-CN/common.json`
+
+新增 AI 相关翻译键：`conversations`, `today`, `yesterday`, `this_week`, `earlier`, `untitled`, `menu`, `chat_mode`, `qa_mode`, `shelf`, `book`, `search_shelf`, `search_book`, `search_model`, `input_placeholder`, `send`, `stop`, `offline_notice`, `welcome_message`
+
+##### 6. Vite 开发配置修复
+
+**文件**：`web/vite.config.ts`
+
+切换回 Chrome 开发者模式 (`localhost`)，注释掉 Android 模拟器配置。
+
+#### 修改文件清单
+
+| 文件 | 类型 |
+|:-----|:-----|
+| `web/src/pages/AIConversationsPage.tsx` | **重写** |
+| `api/app/services/vector_index.py` | **新增** |
+| `api/app/tasks/index_tasks.py` | **新增** |
+| `web/src/locales/zh-CN/common.json` | 修改 |
+| `web/vite.config.ts` | 修改 |
+
+#### 待验证
+
+1. 运行 `tasks.index_all_books` Celery 任务索引现有书籍
+2. 测试 AI 对话界面 UI 交互
+3. 测试书籍选择和模式切换
+4. 测试 RAG 问答（需要先完成向量索引）
+
+#### 状态
+🔄 代码完成 - 需要启动 OpenSearch 和运行向量索引任务
+
+---
+
 ### 2026-01-01 - Notes & Highlights 笔记和高亮功能 ✅
+
 
 #### 功能概述
 
@@ -474,6 +760,19 @@
 
 ##### 1. 完善会话生命周期管理
 
+#### 2026-01-04 AI Chat UI & RAG Fixes (Current)
+- [x] **UI Overhaul**:
+    - [x] MessageBubble redesign (User/AI colors, Avatar, Loading)
+    - [x] Send Button visibility and alignment fixed
+    - [x] Checkbox visibility fixed (Tailwind colors)
+    - [x] Sidebar and Dropdown click handling fixed
+- [x] **RAG & Indexing Fixes**:
+    - [x] **Celery Async Fix**: Replaced `asyncio.new_event_loop` with `asyncio.run` to fix `RuntimeError` in worker.
+    - [x] **OpenSearch Indexing**: Fixed missing `athena_book_chunks` index.
+    - [x] **Zero-Vector Fix**: Replaced `FlagEmbedding` (missing dep) with `sentence-transformers` in `embedder.py`. Verified valid non-zero vectors.
+    - [x] **Model Caching**: Added `HF_HOME` to API service to share model cache with worker.
+    - [x] **Verification**: Confirmed book `123918a4...` has 1045 chunks indexed.
+- [ ] **Next**: Verify RAG retrieval quality after full re-index.
 **文件**：`web/src/pages/ReaderPage.tsx`
 
 ```typescript
