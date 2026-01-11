@@ -35,6 +35,7 @@
 - **前端流水线 (Web)**: 🟢 通过 (Lint, Typecheck, Test, Build)。
 - **后端流水线 (API)**: 🟢 通过 (Flake8, Syntax Check)。
   - *注*: Mypy 发现 80+ 类型提示警告，但根据 `ci.yml` 配置 (`|| true`) 不阻断流水线。已修复核心 Syntax Error。
+- **CI修复**: 补充提交 `aiChatStorage.ts` 以解决 GitHub Actions 中的 `ConversationRecord` 类型缺失 (`TS2339`) 问题。
 - **结论**: 当前代码库满足 CI/CD 准入标准，可随时部署。
 
 #### 概述
