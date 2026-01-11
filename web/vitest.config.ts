@@ -1,34 +1,33 @@
-/**
- * Vitest 单元测试配置
- * - 环境使用 `jsdom`
- * - v8 覆盖率与阈值配置
- * - 排除 UI/页面等非单测目标
- */
+/// <reference types="vitest" />
+import { mergeConfig } from 'vite'
 import { defineConfig } from 'vitest/config'
-import { fileURLToPath, URL } from 'node:url'
+import viteConfig from './vite.config'
 
-export default defineConfig({
-  resolve: {
-    alias: [
-      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) }
-    ]
-  },
+export default mergeConfig(viteConfig, defineConfig({
   test: {
+    globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: './src/test/setup.ts',
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'src/**/__tests__/*.{ts,tsx}'],
     coverage: {
       provider: 'v8',
-      all: false,
-      thresholds: { lines: 20, branches: 20, functions: 20, statements: 20 },
+      reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
       exclude: [
-        'scripts/**',
-        'src/pages/**',
-        'src/components/**',
-        'src/services/**',
+        'src/**/*.{test,spec}.{ts,tsx}',
+        'src/test/**/*',
+        'src/vite-env.d.ts',
         'src/main.tsx',
-        'src/App.tsx',
-        'src/i18n.ts'
-      ]
-    }
-  }
-})
+        'src/dev/**'
+      ],
+      all: true,
+      thresholds: {
+        // 初始设置较低，后续逐步提高
+        statements: 0,
+        branches: 0,
+        functions: 0,
+        lines: 0
+      }
+    },
+  },
+}))

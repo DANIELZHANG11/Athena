@@ -16,6 +16,18 @@
 
 **修复**: 提交并推送遗漏文件 (Commit: `1268f3f`)。
 
+### 2026-01-11 - 100% 测试验证体系建设 (Phase 1) 🚧
+
+#### 进展
+- **战略制定**: 完成 `10 - 测试策略与质量保证Test_Strategy_and_QA.md`，定义L1-L4测试分层。
+- **前端基建**:
+  - 配置 `vitest.config.ts` 支持全量代码覆盖率统计。
+  - 安装 `@testing-library/react` 等测试依赖。
+- **首批测试**:
+  - `web/src/lib/utils.test.ts` (100% Utils覆盖)
+  - `web/src/hooks/useNotesData.test.ts` (核心笔记Hooks覆盖)
+- **现状**: 前端测试覆盖率从 0% 破冰，建立起基础测试框架。
+
 #### 概述
 
 根据 `CICD错误日志.md` 文档，实现了完整的 CI/CD 验证系统，包含8条宪章检查规则。所有检查脚本已通过本地测试，并集成到 GitHub Actions 工作流中。
