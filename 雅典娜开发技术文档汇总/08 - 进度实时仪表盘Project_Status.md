@@ -4,6 +4,18 @@
 
 ### 2026-01-11 - CICD 8大宪章验证系统实现 ✅
 
+#### Hotfix: 修复 CI Import Error
+
+**问题**: CI 运行时报 `ModuleNotFoundError: No module named 'api.app.services.llm_provider'`。
+
+**原因**: 最近重构新增的服务文件未添加到 git 仓库（Untracked files）。
+- `api/app/services/llm_provider.py`
+- `api/app/services/gpu_lock.py`
+- `api/app/services/ocrmypdf_paddleocr.py`
+- `api/app/services/ocrmypdf_paddleocr_local.py`
+
+**修复**: 提交并推送遗漏文件 (Commit: `1268f3f`)。
+
 #### 概述
 
 根据 `CICD错误日志.md` 文档，实现了完整的 CI/CD 验证系统，包含8条宪章检查规则。所有检查脚本已通过本地测试，并集成到 GitHub Actions 工作流中。
