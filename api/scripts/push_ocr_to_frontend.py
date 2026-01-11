@@ -20,7 +20,7 @@ OCR_RESULT_PATH = "/tmp/ocr_test_result.pdf"
 BUCKET = os.getenv("MINIO_BUCKET", "athena")
 
 async def main():
-    print(f"📚 准备推送OCR结果到前端...")
+    print("📚 准备推送OCR结果到前端...")
     print(f"   书籍ID: {BOOK_ID}")
     print(f"   用户: {USER_EMAIL}")
     
@@ -55,7 +55,7 @@ async def main():
             # 更新书籍的OCR状态
             result = await db.execute(
                 text("""
-                    UPDATE books 
+                    UPDATE books
                     SET ocr_status = 'completed',
                         minio_key = :layered_key,
                         updated_at = :now,

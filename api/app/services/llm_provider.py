@@ -35,7 +35,7 @@ LLM_REQUEST_TOTAL = Counter(
 LLM_TOKENS_TOTAL = Counter(
     "llm_tokens_total",
     "Total tokens consumed",
-    ["provider", "model", "type"],  # type: prompt/completion
+    ["provider", "model", "type"],  # metric_type: prompt/completion
 )
 
 

@@ -208,7 +208,7 @@ def task_index_book_content(self, book_id: str, user_id: str, ocr_pages: list[di
         pass  # 索引可能已存在
     
     # 按页分组内容
-    page_docs = {}
+    page_docs: dict[int, list[str]] = {}
     for item in ocr_pages:
         page_num = item.get("page", 1)
         text = item.get("text", "")
