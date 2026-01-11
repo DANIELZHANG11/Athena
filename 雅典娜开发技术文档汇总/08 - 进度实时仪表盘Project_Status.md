@@ -2,7 +2,330 @@
 
 ## 最新更新
 
+### 2026-01-11 - CICD 8大宪章验证系统实现 ✅
+
+#### 概述
+
+根据 `CICD错误日志.md` 文档，实现了完整的 CI/CD 验证系统，包含8条宪章检查规则。所有检查脚本已通过本地测试，并集成到 GitHub Actions 工作流中。
+
+#### 已完成工作
+
+##### 1. 新增检查脚本 (6个)
+
+| 脚本 | 宪章 | 功能 |
+|:-----|:-----|:-----|
+| `check_no_arch_regression.py` | 宪章1 | 检查FOR UPDATE锁、原子更新、sync_rules无SELECT* |
+| `check_mock_boundaries.py` | 宪章3 | 检查生产环境使用真实服务、CI环境允许Mock |
+| `check_dependency_lock.py` | 宪章4 | 检查Python/Node.js核心库版本锁定 |
+| `check_infra_alignment.py` | 宪章5 | 检查代码与docker-compose基础设施一致 |
+| `check_device_identity.py` | 宪章6 | 检查sync写入操作包含deviceId |
+| `check_type_contracts.py` | 宪章8 | 检查TypeScript类型与Schema对齐 |
+
+##### 2. 增强现有脚本 (2个)
+
+| 脚本 | 宪章 | 增强内容 |
+|:-----|:-----|:---------|
+| `check_schema.py` | 宪章2 | 添加IF NOT EXISTS反模式检测、Schema版本检查 |
+| `check_architecture.py` | 宪章7 | 添加禁止API路径检测、技术债务白名单管理 |
+
+##### 3. 统一运行器
+
+**文件**: `scripts/ci/run_all_checks.py`
+
+- 动态加载8个检查脚本
+- 生成仪表盘式汇总报告
+- 返回0（全通过）或1（有失败）
+
+##### 4. CI工作流更新
+
+**文件**: `.github/workflows/ci.yml`
+
+- 新增 `constitution-checks` job
+- 设置为 `api`、`web`、`e2e` job 的前置依赖
+- 任何宪章检查失败将阻止后续job执行
+
+#### 检查结果
+
+```
+======================================================================
+                    汇总报告
+======================================================================
+  [OK] 宪章1: 架构降级零容忍: PASS
+  [OK] 宪章2: DDL迁移圣洁性: PASS
+  [OK] 宪章3: 真实服务与Mock边界: PASS
+  [OK] 宪章4: 依赖锁定原则: PASS
+  [OK] 宪章5: 基础设施对齐: PASS
+  [OK] 宪章6: 设备指纹强制: PASS
+  [OK] 宪章7: 架构隔离探针: PASS
+  [OK] 宪章8: 类型契约强校验: PASS
+
+通过: 8/8
+----------------------------------------------------------------------
+[OK] CICD检查全部通过！
+```
+
+#### 技术债务记录
+
+宪章7发现20个遗留网络请求文件，已加入白名单暂时允许。后续需逐步迁移到 PowerSync 数据访问模式。
+
+| 类别 | 文件数 |
+|:-----|:-------|
+| 组件层直接fetch | 6 |
+| Hooks层网络调用 | 6 |
+| 页面层混合模式 | 8 |
+
+#### 备注
+
+- `noImplicitAny: true` 暂不启用，宪章8仅作警告
+- Windows控制台兼容：emoji替换为ASCII标记
+
+#### 修改文件清单
+
+| 文件 | 类型 |
+|:-----|:-----|
+| `scripts/ci/check_no_arch_regression.py` | 新增 |
+| `scripts/ci/check_mock_boundaries.py` | 新增 |
+| `scripts/ci/check_dependency_lock.py` | 新增 |
+| `scripts/ci/check_infra_alignment.py` | 新增 |
+| `scripts/ci/check_device_identity.py` | 新增 |
+| `scripts/ci/check_type_contracts.py` | 新增 |
+| `scripts/ci/run_all_checks.py` | 新增 |
+| `scripts/ci/check_schema.py` | 增强 |
+| `scripts/ci/check_architecture.py` | 增强 |
+| `.github/workflows/ci.yml` | 修改 |
+
+#### 状态
+✅ 完成 - 8/8宪章检查本地通过
+
+---
+
+### 2026-01-09 - Celery Worker OCR/向量索引任务修复 ✅
+
+#### 问题诊断
+
+Worker 日志显示两个严重问题：
+
+1. **Event Loop Closed 错误**
+   - 症状: `RuntimeError: Event loop is closed`
+   - 根因: `ocr_tasks.py` 使用 `asyncio.get_event_loop()` 在 Celery prefork worker 中导致 event loop 冲突
+
+2. **Worker OOM 死循环**
+   - 症状: Worker 进程不断被 `SIGKILL (signal 9)` 杀死，重启后继续被杀
+   - 根因: `celery_app.py` 中的 `preload_models()` 函数在 Worker 启动时预加载 BGE-M3 模型（~2GB），导致内存不足
+
+#### 已修复内容
+
+##### 1. Event Loop 问题修复
+
+**文件**: `api/app/tasks/ocr_tasks.py`
+
+| 修复前 | 修复后 |
+|:-------|:-------|
+| `asyncio.get_event_loop()` | `asyncio.new_event_loop()` |
+
+修复两处位置：`analyze_book_type` 和 `process_book_ocr` 函数
+
+##### 2. 禁用模型预加载
+
+**文件**: `api/app/celery_app.py`
+
+- 禁用 `@worker_process_init.connect` 装饰器
+- 改为懒加载策略：模型在第一次任务执行时加载
+- 加载后常驻内存，后续任务直接使用
+
+#### 已排队任务
+
+| 类型 | 数量 | 书籍 |
+|:-----|:-----|:-----|
+| 向量索引 (EPUB) | 4 | 战争和人、提高创伤免疫力、广岛之恋、美国历史的周期 |
+| OCR (图片型PDF) | 2 | 仪式政治与权力、海 |
+
+##### 3. PaddlePaddle GPU 版本修复
+
+**问题**: Dockerfile 中 `paddlepaddle-gpu==3.0.0` 安装失败，自动回退到 CPU 版本
+
+**警告日志**: `The specified device (GPU) is not available! Switching to CPU instead.`
+
+**修复**: 手动安装 GPU 版本
+```bash
+docker exec athena-worker-gpu-1 pip uninstall -y paddlepaddle
+docker exec athena-worker-gpu-1 pip install paddlepaddle-gpu==2.6.2
+```
+
+**验证结果**:
+- `CUDA compiled: True`
+- `Device: gpu:0`
+
+#### 状态
+✅ 修复完成 - Worker 正常启动，任务已排队执行
+
+
+---
+
+### 2026-01-08 - 向量索引架构修复（公共数据模式） ✅
+
+
+#### 问题背景
+
+向量索引被错误地设计为私有数据（按 `user_id` 过滤），导致：
+- 秒传用户无法使用原书的向量索引
+- 向量数据无法共享，造成存储浪费
+- PDF 文字型和 OCR 完成后缺少向量索引触发
+
+#### 架构理解
+
+| 数据类型 | 归属 | 说明 |
+|:---------|:-----|:-----|
+| 书籍文件（S3） | 公共 | 只保存 EPUB 和 PDF |
+| 向量索引 | **公共** | 按 `content_sha256` 匹配，所有用户共享 |
+| OCR 结果 | 公共 | 假 OCR 复用，扣费后开放使用权限 |
+| 笔记/阅读进度 | 私有 | 每用户独立 |
+
+#### 已修复内容
+
+##### 1. 向量索引改为公共数据
+
+**文件**: `api/app/services/llama_rag.py`
+
+- 索引时存储 `content_sha256`，移除 `user_id`
+- 搜索时按 `content_sha256` 过滤，移除 `user_id` 过滤
+- 秒传书籍通过相同 SHA256 共享向量数据
+
+##### 2. AI 对话模块适配
+
+**文件**: `api/app/ai.py`
+
+- `get_book_info()` 返回 `content_sha256`
+- 搜索前收集书籍的 SHA256 列表
+- 用 SHA256 列表调用向量搜索
+
+##### 3. 索引任务适配
+
+**文件**: `api/app/tasks/index_tasks.py`
+
+- 查询书籍时获取 `content_sha256`
+- 传递给 `index_book_chunks()` 函数
+
+##### 4. 统一向量索引触发点
+
+**文件**: `api/app/tasks/metadata_tasks.py`
+
+- EPUB：元数据提取后触发
+- PDF 文字型（confidence >= 0.8）：元数据提取后触发
+- PDF 图片型：等待 OCR 完成
+
+**文件**: `api/app/tasks/ocr_tasks.py`
+
+- 真实 OCR 完成后触发向量索引
+
+**文件**: `api/app/books.py`
+
+- 移除 EPUB 上传时的重复触发，统一由 metadata_tasks.py 处理
+
+#### 验证结果
+
+| 测试项 | 结果 |
+|:-------|:-----|
+| Docker 重建 | ✅ api、worker-cpu、worker-gpu 正常启动 |
+| 旧向量索引清空 | ✅ `athena_book_chunks` 已删除 |
+| API 健康检查 | ✅ 正常响应 |
+| EPUB 后台任务触发 | ✅ `metadata_tasks.py` 成功触发 `index_book_vectors` |
+
+#### 关键改动
+
+原问题：EPUB 在 API 层面（`books.py`）触发失败
+
+解决方案：统一由后台任务触发（与 AZW3/MOBI 转换后触发逻辑一致）
+
+| 格式 | 触发任务 | 触发时机 |
+|:-----|:---------|:---------|
+| EPUB | `metadata_tasks.py` | 元数据提取后 |
+| PDF 文字型 | `metadata_tasks.py` | 元数据提取后 |
+| PDF 图片型 | `ocr_tasks.py` | OCR 完成后 |
+| AZW3/MOBI | `convert_tasks.py` | 转换完成后 |
+
+#### 状态
+✅ 完成 - 向量索引触发已验证正常工作
+
+---
+
+### 2026-01-07 - LlamaIndex 内存优化 & Celery 多队列系统 ✅
+
+#### 问题背景
+
+向量索引时内存和显存被撑爆，需要优化 LlamaIndex 参数和实现任务队列优先级。
+
+#### 已完成工作
+
+##### 1. LlamaIndex 参数优化
+
+**文件**：`api/app/services/llama_rag.py`
+
+| 参数 | 修改前 | 修改后 | 说明 |
+|:-----|:-------|:-------|:-----|
+| `embed_batch_size` | 32 | **16** | 环境变量可配置 |
+| 节点批处理 | 500 | **450** | 20万字/本 ≈ 450节点 |
+| GPU 阈值 | 无 | **2GB** | 显存不足自动回退 CPU |
+
+新增功能：
+- `check_gpu_memory_available()` - 显存检查函数
+- `get_gpu_memory_info()` - 获取显存使用信息
+- 批处理前自动检查显存并清理缓存
+
+##### 2. GPU 分布式锁服务
+
+**文件**：`api/app/services/gpu_lock.py` (新建)
+
+| 功能 | 说明 |
+|:-----|:-----|
+| `GPULock` 类 | Redis 分布式锁 |
+| `gpu_lock()` | 上下文管理器 |
+| `@acquire_gpu_lock` | 装饰器 |
+| 锁状态查询 | `get_gpu_lock_status()` |
+
+##### 3. Celery 三级队列系统
+
+**文件**：`api/app/celery_app.py`
+
+| 队列 | 优先级 | 任务 |
+|:-----|:-------|:-----|
+| `gpu_high` | P0 | OCR（付费服务） |
+| `gpu_low` | P1 | 向量索引（免费） |
+| `cpu_default` | P2 | 元数据/封面等 |
+
+##### 4. Docker Worker 拆分
+
+**文件**：`docker-compose.yml`
+
+| Worker | 队列 | 并发 | 说明 |
+|:-------|:-----|:-----|:-----|
+| `worker-gpu` | gpu_high,gpu_low | 1 | GPU 串行，避免显存竞争 |
+| `worker-cpu` | cpu_default | 4 | CPU 并行 |
+
+新增环境变量：
+- `EMBEDDING_BATCH_SIZE=16`
+- `INDEX_NODE_BATCH_SIZE=450`
+- `GPU_MIN_FREE_GB=2.0`
+
+#### 验证结果
+
+| 测试项 | 结果 |
+|:-------|:-----|
+| `llama_rag.py` 导入 | ✅ 通过 |
+| `gpu_lock.py` 导入 | ✅ 通过 |
+| `celery_app.py` 队列配置 | ✅ 三个队列正确加载 |
+| GPU Worker 配置 | ✅ EMBEDDING_BATCH_SIZE=16, INDEX_NODE_BATCH_SIZE=450 |
+| GPU 可用性检查 | ✅ RTX 3070 8GB 可用，free_gb=8.0 |
+| OpenSearch 索引 | ✅ `athena_book_chunks` 索引正常 |
+| 容器健康状态 | ✅ 15个容器全部运行 |
+
+#### 状态
+✅ 完成 - 已验证通过
+
+---
+
 ### 2026-01-06 - LlamaIndex RAG 架构重构 ⚠️ 重要
+
 
 #### 问题根源分析
 

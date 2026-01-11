@@ -11,9 +11,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 8大宪章检查 - 必须首先通过
+  constitution-checks:
+    name: 8大宪章检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install PyYAML
+        run: pip install pyyaml
+      
+      - name: 宪章1 - 架构降级零容忍
+        run: python scripts/ci/check_no_arch_regression.py
+      
+      - name: 宪章2 - DDL迁移圣洁性
+        run: python scripts/ci/check_schema.py
+      
+      - name: 宪章3 - 真实服务与Mock边界
+        run: python scripts/ci/check_mock_boundaries.py
+      
+      - name: 宪章4 - 依赖锁定原则
+        run: python scripts/ci/check_dependency_lock.py
+      
+      - name: 宪章5 - 基础设施对齐
+        run: python scripts/ci/check_infra_alignment.py
+      
+      - name: 宪章6 - 设备指纹强制
+        run: python scripts/ci/check_device_identity.py
+      
+      - name: 宪章7 - 架构隔离探针
+        run: python scripts/ci/check_architecture.py
+      
+      - name: 宪章8 - 类型契约强校验
+        run: python scripts/ci/check_type_contracts.py
+
   api:
     name: API Tests
     runs-on: ubuntu-latest
+    needs: constitution-checks
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -84,6 +125,7 @@ jobs:
   web:
     name: Web Unit Tests
     runs-on: ubuntu-latest
+    needs: constitution-checks
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,6 +163,7 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    needs: [api, web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
