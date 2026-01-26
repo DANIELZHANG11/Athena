@@ -1,6 +1,19 @@
 """
 OCRmyPDF PaddleOCR 插件（本地实现）
 
+【已废弃 - 2025-01-26】
+此模块已被 ocrmypdf_paddleocr_service.py 取代。
+
+新方案直接使用克隆的官方社区插件：
+- external/ocrmypdf-paddleocr (from https://github.com/clefru/ocrmypdf-paddleocr)
+
+优势：
+- 官方插件实现，维护更好
+- 支持 return_word_box=True 获取单词级边界框
+- 使用标准 hOCR 格式
+
+---------- 以下为旧代码，保留供参考 ----------
+
 【2026-01-09】参照官方 ocrmypdf-paddleocr 实现
 由于中国网络限制无法从 GitHub 安装，直接将代码嵌入项目中。
 

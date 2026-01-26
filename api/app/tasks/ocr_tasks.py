@@ -11,6 +11,7 @@ import time
 
 from celery import shared_task
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from ..db import engine
 from ..storage import (
@@ -21,6 +22,11 @@ from ..storage import (
 )
 from ..realtime import ws_broadcast
 from .common import _quick_confidence
+
+# 【修复 Event Loop 冲突】为 Celery 任务创建独立的数据库引擎
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://athena:athena_dev@postgres:5432/athena")
+def _create_task_engine():
+    return create_async_engine(DATABASE_URL, pool_pre_ping=True)
 
 
 def _get_optimal_workers(reserved_cores: int = 2, max_workers: int = 8) -> int:
@@ -327,6 +333,7 @@ def analyze_book_type(book_id: str, user_id: str):
     保留此函数仅为向后兼容，实际 PDF 类型检测已整合到元数据提取流程中。
     """
     async def _run():
+        engine = _create_task_engine()  # 覆盖全局 engine，避免 Event Loop 冲突
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
@@ -378,77 +385,39 @@ def analyze_book_type(book_id: str, user_id: str):
         except Exception:
             pass
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_run())
+    finally:
+        loop.close()
 
 
 @shared_task(name="tasks.process_book_ocr")
 def process_book_ocr(book_id: str, user_id: str):
     """
-    处理书籍 OCR 任务（双层 PDF 生成模式）
+    处理书籍 OCR 任务（OCRmyPDF + PaddleOCR 插件模式）
     
     **架构重构说明**：
-    - 旧方案：生成 JSON，前端渲染透明 DOM（存在文字对齐问题）
-    - 新方案：后端生成双层 PDF (Invisible Text Layer)，前端直接使用 react-pdf 渲染
+    - 旧方案：手动 PaddleOCR 识别 + 自定义 PDF 文字层生成（存在对齐问题）
+    - 新方案：使用 OCRmyPDF + PaddleOCR 官方插件一步到位生成双层 PDF
     
-    优化策略：
-    1. 使用生产者-消费者模式：CPU 图片转换和 OCR 识别并行执行
-    2. 动态计算工作线程数，预留核心给其他任务
-    3. 借助 OCRmyPDF-PaddleOCR 插件生成透明文字层
-    4. 生成的双层 PDF 替换原文件，前端无需额外处理
+    核心优势：
+    1. 使用 OCRmyPDF 的 hocrtransform 生成精确对齐的透明文字层
+    2. 支持 return_word_box=True 获取单词级边界框
+    3. 自动处理页面旋转、DPI 转换等复杂问题
+    4. 代码简洁，维护成本低
+    
+    参考：
+    - https://github.com/ocrmypdf/OCRmyPDF (GitHub 30k+ stars)
+    - https://github.com/clefru/ocrmypdf-paddleocr
     """
-    from ..ocr import get_ocr
+    from ..services.ocrmypdf_paddleocr_service import ocr_pdf_bytes
     
-    print(f"[OCR] Starting OCR task for book {book_id} (Layered PDF Mode)")
-
-    def _embed_ocr_text_to_pdf_with_paddle_plugin(pdf_data: bytes, ocr_pages: list) -> bytes:
-        """
-        使用 OCRmyPDF-PaddleOCR 插件将 PaddleOCR 识别的文字嵌入 PDF 作为透明文字层
-        """
-        from pathlib import Path
-        from app.services.ocrmypdf_paddle import create_layered_pdf_with_paddle
-        
-        start_time = time.time()
-        print(f"[PaddleOCR Plugin] Starting to embed text layer using OCRmyPDF-PaddleOCR plugin...")
-        
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_in:
-                temp_in.write(pdf_data)
-                temp_in_path = temp_in.name
-            
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_out:
-                temp_out_path = temp_out.name
-            
-            success = create_layered_pdf_with_paddle(
-                pdf_path=temp_in_path,
-                output_path=temp_out_path,
-                ocr_pages=ocr_pages
-            )
-            
-            if not success:
-                raise Exception("Failed to create layered PDF with PaddleOCR plugin")
-            
-            with open(temp_out_path, 'rb') as f:
-                result_data = f.read()
-            
-            try:
-                os.remove(temp_in_path)
-                os.remove(temp_out_path)
-            except Exception:
-                pass
-            
-            elapsed = time.time() - start_time
-            total_regions = sum(len(p.get('regions', [])) for p in ocr_pages)
-            print(f"[PaddleOCR Plugin] Successfully embedded {total_regions} text regions in {elapsed:.1f}s")
-            
-            return result_data
-            
-        except Exception as e:
-            import traceback
-            print(f"[PaddleOCR Plugin] Failed to embed text layer: {e}")
-            traceback.print_exc()
-            raise Exception(f"PaddleOCR Plugin text embedding failed: {e}")
+    print(f"[OCR] Starting OCR task for book {book_id} (OCRmyPDF + PaddleOCR Plugin Mode)")
 
     async def _run():
+        engine = _create_task_engine()  # 覆盖全局 engine，避免 Event Loop 冲突
         # 获取书籍信息并更新状态
         async with engine.begin() as conn:
             await conn.execute(
@@ -494,49 +463,24 @@ def process_book_ocr(book_id: str, user_id: str):
         
         print(f"[OCR] Downloaded PDF: {len(pdf_data)} bytes")
         
-        # 流水线 OCR 处理
-        ocr = get_ocr()
+        # 【新方案】使用 OCRmyPDF + PaddleOCR 插件一步到位生成双层 PDF
+        print(f"[OCR] Generating layered PDF with OCRmyPDF + PaddleOCR Plugin...")
+        start_time = time.time()
         
         try:
-            ocr_pages, full_text, total_pages, processed_pages = _pipeline_ocr_process(
+            layered_pdf_data = ocr_pdf_bytes(
                 pdf_data=pdf_data,
-                ocr_instance=ocr,
-                max_pages=0,
-                dpi=150,
-                batch_size=20,
-                progress_callback=None,
+                language="chi_sim",  # 默认简体中文，可根据书籍语言调整
+                use_gpu=False,  # Docker 环境暂不使用 GPU
+                force_ocr=True,  # 强制 OCR 所有页面
             )
-        except Exception as e:
-            print(f"[OCR] Pipeline processing failed: {e}")
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-                )
-                await conn.execute(
-                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"id": book_id}
-                )
-            return
-        
-        if not ocr_pages:
-            print(f"[OCR] No pages processed")
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
-                )
-                await conn.execute(
-                    text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
-                    {"id": book_id}
-                )
-            return
-        
-        print(f"[OCR] Pipeline completed: {processed_pages}/{total_pages} pages")
-        
-        # 生成双层 PDF
-        print(f"[OCR] Generating layered PDF with PaddleOCR Plugin...")
-        try:
-            layered_pdf_data = _embed_ocr_text_to_pdf_with_paddle_plugin(pdf_data, ocr_pages)
-            print(f"[OCR] Layered PDF generated: {len(layered_pdf_data)} bytes")
+            
+            if not layered_pdf_data:
+                raise Exception("OCR returned empty result")
+                
+            elapsed = time.time() - start_time
+            print(f"[OCR] Layered PDF generated in {elapsed:.1f}s: {len(layered_pdf_data)} bytes")
+            
         except Exception as e:
             print(f"[OCR] Failed to generate layered PDF: {e}")
             import traceback
@@ -586,20 +530,19 @@ def process_book_ocr(book_id: str, user_id: str):
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             
+            # 注意：全文搜索通过 OpenSearch 实现，不需要在数据库中存储 ocr_text
             await conn.execute(
                 text("""
                     UPDATE books 
                     SET 
                         minio_key = :layered_key,
                         ocr_status = 'completed',
-                        ocr_text = :ocr_text,
                         updated_at = now()
                     WHERE id = cast(:id as uuid)
                 """),
                 {
                     "id": book_id,
                     "layered_key": layered_pdf_key,
-                    "ocr_text": full_text[:50000] if full_text else "",
                 }
             )
             
@@ -608,19 +551,32 @@ def process_book_ocr(book_id: str, user_id: str):
             print(f"[OCR]   Backup: {backup_key}")
             print(f"[OCR]   Layered PDF: {layered_pdf_key}")
         
-        # 触发搜索索引
+        # 触发搜索索引 - 从生成的双层 PDF 中提取文字
         try:
             from ..search_sync import index_book_content
+            import fitz  # PyMuPDF
+            
+            # 从双层 PDF 中提取文字用于搜索索引
             search_regions = []
-            for page_info in ocr_pages:
-                page_num = page_info.get("page_num", 1)
-                for region in page_info.get("regions", []):
-                    search_regions.append({
-                        "text": region.get("text", ""),
-                        "page": page_num
-                    })
-            index_book_content(book_id, user_id, search_regions)
-            print(f"[OCR] Triggered search indexing for book {book_id} with {len(search_regions)} regions")
+            try:
+                doc = fitz.open(stream=layered_pdf_data, filetype="pdf")
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    text = page.get_text()
+                    if text.strip():
+                        search_regions.append({
+                            "text": text.strip(),
+                            "page": page_num + 1
+                        })
+                doc.close()
+            except Exception as extract_err:
+                print(f"[OCR] Warning: Failed to extract text from PDF for indexing: {extract_err}")
+            
+            if search_regions:
+                index_book_content(book_id, user_id, search_regions)
+                print(f"[OCR] Triggered search indexing for book {book_id} with {len(search_regions)} pages")
+            else:
+                print(f"[OCR] Warning: No text extracted for search indexing")
         except Exception as e:
             print(f"[OCR] Warning: Failed to index book content for search: {e}")
         
@@ -639,8 +595,10 @@ def process_book_ocr(book_id: str, user_id: str):
         except Exception as e:
             print(f"[OCR] Warning: Failed to broadcast WebSocket message: {e}")
     
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        asyncio.get_event_loop().run_until_complete(_run())
+        loop.run_until_complete(_run())
     except Exception as e:
         print(f"[OCR] Task failed with error: {e}")
         import traceback
@@ -655,4 +613,9 @@ def process_book_ocr(book_id: str, user_id: str):
                     text("UPDATE books SET ocr_status = 'failed', updated_at = now() WHERE id = cast(:id as uuid)"),
                     {"id": book_id}
                 )
-        asyncio.get_event_loop().run_until_complete(_mark_failed())
+        loop_fallback = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop_fallback)
+        try:
+            loop_fallback.run_until_complete(_mark_failed())
+        finally:
+            loop_fallback.close()

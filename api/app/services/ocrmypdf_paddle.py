@@ -1,6 +1,21 @@
 """
 OCRmyPDF PaddleOCR Plugin
 
+【已废弃 - 2025-01-26】
+此模块已被 ocrmypdf_paddleocr_service.py 取代。
+
+新方案使用官方 OCRmyPDF + 社区 PaddleOCR 插件：
+- https://github.com/ocrmypdf/OCRmyPDF
+- https://github.com/clefru/ocrmypdf-paddleocr
+
+优势：
+- 使用标准 hOCR 格式，文字对齐精确
+- 支持 return_word_box=True 获取单词级边界框
+- 使用 OCRmyPDF 的 hocrtransform 生成透明文字层
+- 代码简洁，维护成本低
+
+---------- 以下为旧代码，保留供参考 ----------
+
 参照 OCRmyPDF-EasyOCR 的实现模式，创建 PaddleOCR 插件。
 使用 PaddleOCR 的精确多边形坐标生成双层 PDF。
 
@@ -9,6 +24,13 @@ OCRmyPDF PaddleOCR Plugin
 - PaddleOCR 的多边形坐标 (polygon) 提供精确的文字位置
 - 透明文字层（Rendering Mode 3）完美覆盖原图
 - 支持旋转文本（使用文字矩阵 Tm）
+
+【2025-01-XX 精确对齐优化】
+核心改进：使用逐字符定位替代整行均匀拉伸
+- 原问题：整行使用 Tz 均匀拉伸，但中文字符间距不均匀
+- 解决方案：为每个字符单独设置 Tm 定位矩阵
+- 字符宽度计算：行框宽度 / 字符数 = 每个字符的槽位宽度
+- 每个字符在其槽位中心定位，并使用 Tz 拉伸到槽位宽度
 """
 
 import logging
@@ -30,7 +52,10 @@ from PIL import Image
 log = logging.getLogger(__name__)
 
 # 字符宽高比（用于水平拉伸计算）
-CHAR_ASPECT = 2
+# 中文字符近似方形，aspect ≈ 1.0
+# 但 GlyphlessFont 的字形宽度不是 1em，需要调整因子
+# 【优化 2025-01-XX】根据实际测试调整为 1.0（方形字符）
+CHAR_ASPECT = 1.0
 
 
 class PaddleOCRResult(NamedTuple):
@@ -175,15 +200,22 @@ def generate_text_content_stream(
     height: int,
 ):
     """
-    生成 PDF 文本内容流
+    生成 PDF 文本内容流（精确逐字符定位版本）
     
-    核心算法（与 OCRmyPDF-EasyOCR 相同）：
-    1. 将 OCR 坐标转换为 PDF 坐标（Y轴翻转）
-    2. 计算文字角度（使用 atan2）
-    3. 根据 bbox 高度计算字体大小
-    4. 使用 Tm 矩阵精确定位文字（包含旋转）
-    5. 使用 Tz 水平拉伸以匹配实际宽度
-    6. 使用 Tr(3) 设置为不可见（透明）
+    【2025-01-XX 重大优化】
+    原算法问题：
+    - 对整行使用均匀 Tz 拉伸，假设每个字符占用相同宽度
+    - 但实际上 OCR 返回的是整行边界框，不知道每个字符的实际位置
+    - 结果：文本层字符间距均匀，但图片层字符间距不均匀，导致不对齐
+    
+    新算法原理：
+    - 每个字符单独定位，使用 Tm 矩阵设置其起始位置
+    - 字符位置 = 行起点 + (字符索引 * 字符槽位宽度)
+    - 字符槽位宽度 = 行宽 / 字符数
+    - 每个字符独立使用 Tz 拉伸以填满其槽位
+    
+    这样即使 OCR 没有提供逐字符坐标，也能通过均匀分配空间来改善对齐。
+    虽然不是100%完美（因为实际字符宽度可能不均匀），但比原方案好很多。
     
     Args:
         results: PaddleOCR 识别结果列表
@@ -200,46 +232,82 @@ def generate_text_content_stream(
         if not result.text:
             continue
         
-        log.debug(f"Textline '{result.text}' in-image bbox: {bbox_string(result.polygon)}")
+        text = result.text
+        char_count = len(text)
+        
+        if char_count == 0:
+            continue
+        
+        log.debug(f"Textline '{text}' in-image bbox: {bbox_string(result.polygon)}")
         
         # 转换为 PDF 坐标（Y轴翻转）
         bbox = pt_from_pixel(result.polygon, scale, height)
         
         # 计算文字角度（基于底边）
+        # bbox 格式: [x1, y1, x2, y2, x3, y3, x4, y4] = [左上, 右上, 右下, 左下]
+        # 底边: 点3(右下) 到 点4(左下)
         angle = -atan2(bbox[5] - bbox[7], bbox[4] - bbox[6])
         if abs(angle) < 0.01:  # 小于 0.57 度，视为水平
             angle = 0.0
         cos_a, sin_a = cos(angle), sin(angle)
         
         # 计算字体大小（基于左边的高度）
+        # 左边: 点1(左上) 到 点4(左下)
         font_size = hypot(bbox[0] - bbox[6], bbox[1] - bbox[7])
         
-        log.debug(f"Textline '{result.text}' PDF bbox: {bbox_string(bbox)}")
+        if font_size == 0:
+            continue
+        
+        log.debug(f"Textline '{text}' PDF bbox: {bbox_string(bbox)}")
         
         # 计算文字框宽度（底边长度）
         box_width = hypot(bbox[4] - bbox[6], bbox[5] - bbox[7])
         
-        if len(result.text) == 0 or box_width == 0 or font_size == 0:
+        if box_width == 0:
             continue
         
-        # 计算水平拉伸比例
-        # 100% = 正常宽度
-        # CHAR_ASPECT 是字符宽高比调整因子
-        h_stretch = 100.0 * box_width / len(result.text) / font_size * CHAR_ASPECT
+        # 计算每个字符的槽位宽度
+        char_slot_width = box_width / char_count
         
-        # 构建文本对象
-        cs = cs.add(
-            ContentStreamBuilder()
-            .BT()
-            .BDC(Name.Span, n)
-            .Tr(3)  # 透明模式（不可见）
-            .Tm(cos_a, -sin_a, sin_a, cos_a, bbox[6], bbox[7])  # 文本矩阵（旋转+定位）
-            .Tf(Name("/f-0-0"), font_size)
-            .Tz(h_stretch)  # 水平拉伸
-            .TJ(result.text)
-            .EMC()
-            .ET()
-        )
+        # 起始位置（左下角）
+        start_x, start_y = bbox[6], bbox[7]
+        
+        # 【核心改进】逐字符定位
+        # 每个字符使用独立的 BT...ET 块，精确设置其位置
+        for char_idx, char in enumerate(text):
+            # 计算当前字符的 X 偏移（沿旋转后的方向）
+            char_offset = char_idx * char_slot_width
+            
+            # 应用旋转计算实际位置
+            char_x = start_x + char_offset * cos_a
+            char_y = start_y + char_offset * (-sin_a)  # 注意负号，因为 PDF Y 轴向上
+            
+            # 计算水平拉伸比例
+            # GlyphlessFont 的字形宽度约为字体大小的一半
+            # 我们需要将其拉伸到 char_slot_width
+            # h_stretch = (目标宽度 / 实际宽度) * 100
+            # 实际宽度 ≈ font_size / 2（GlyphlessFont 特性）
+            # 所以: h_stretch = char_slot_width / (font_size / 2) * 100
+            #                 = 200 * char_slot_width / font_size
+            # 但这个公式不准确，需要考虑 CHAR_ASPECT
+            h_stretch = 100.0 * char_slot_width / font_size * CHAR_ASPECT * 2
+            
+            # 限制拉伸比例在合理范围内
+            h_stretch = max(10.0, min(500.0, h_stretch))
+            
+            # 构建单字符文本对象
+            cs = cs.add(
+                ContentStreamBuilder()
+                .BT()
+                .BDC(Name.Span, n * 1000 + char_idx)  # 唯一标记 ID
+                .Tr(3)  # 透明模式
+                .Tm(cos_a, -sin_a, sin_a, cos_a, char_x, char_y)  # 字符位置和旋转
+                .Tf(Name("/f-0-0"), font_size)
+                .Tz(h_stretch)  # 水平拉伸
+                .TJ(char)  # 单个字符
+                .EMC()
+                .ET()
+            )
     
     cs = cs.Q()
     return cs.build()

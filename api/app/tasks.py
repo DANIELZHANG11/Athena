@@ -1622,9 +1622,19 @@ def _pdf_to_images(pdf_data: bytes, max_pages: int = 0, dpi: int = 150) -> tuple
     return images, pages[0]["width"], pages[0]["height"]
 
 
-@shared_task(name="tasks.process_book_ocr")
-def process_book_ocr(book_id: str, user_id: str):
+@shared_task(name="tasks.process_book_ocr_deprecated")
+def process_book_ocr_deprecated(book_id: str, user_id: str):
     """
+    【已废弃 - 2025-01-26】
+    此任务已被 app/tasks/ocr_tasks.py 中的 process_book_ocr 取代。
+    
+    新任务使用 OCRmyPDF + PaddleOCR 官方插件生成双层 PDF：
+    - 使用标准 hOCR 格式，文字对齐精确
+    - 代码简洁，维护成本低
+    
+    保留此函数仅为向后兼容（但任务名已修改，不会被调用）。
+    
+    ---原注释---
     处理书籍 OCR 任务（双层 PDF 生成模式）
     
     **架构重构说明**：
@@ -1875,20 +1885,19 @@ def process_book_ocr(book_id: str, user_id: str):
             )
             
             # 更新书籍记录：指向双层PDF，并标记OCR完成
+            # 注意：全文搜索通过 OpenSearch 实现，不需要在数据库中存储 ocr_text
             await conn.execute(
                 text("""
                     UPDATE books 
                     SET 
                         minio_key = :layered_key,
                         ocr_status = 'completed',
-                        ocr_text = :ocr_text,
                         updated_at = now()
                     WHERE id = cast(:id as uuid)
                 """),
                 {
                     "id": book_id,
                     "layered_key": layered_pdf_key,
-                    "ocr_text": full_text[:50000] if full_text else "",  # 限制大小
                 }
             )
             
