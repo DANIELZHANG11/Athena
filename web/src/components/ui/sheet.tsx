@@ -21,7 +21,7 @@ const SheetOverlay = React.forwardRef<
   <DialogPrimitive.Overlay 
     ref={ref}
     data-slot="sheet-overlay" 
-    className={cn('fixed inset-0 z-50 bg-black/50', className)} 
+    className={cn('fixed inset-0 z-[199] bg-black/50', className)} 
     {...props} 
   />
 ))
@@ -35,6 +35,15 @@ function SheetContent({ className, side = 'right', ...props }: React.ComponentPr
     top: 'inset-x-0 top-0 h-1/2',
     bottom: 'inset-x-0 bottom-0'
   }
+  
+  // 根据方向设置圆角样式
+  const radiusStyles = {
+    right: 'rounded-l-2xl',
+    left: 'rounded-r-2xl',
+    top: 'rounded-b-2xl',
+    bottom: 'rounded-t-2xl'
+  }
+  
   // 根据方向设置动画样式 - 使用 Motion Token duration-slow (500ms)
   const animationStyles = {
     right: 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right duration-slow ease-apple',
@@ -48,8 +57,9 @@ function SheetContent({ className, side = 'right', ...props }: React.ComponentPr
       <DialogPrimitive.Content 
         data-slot="sheet-content" 
         className={cn(
-          'bg-popover text-popover-foreground fixed z-50 border shadow-lg transition-transform duration-medium ease-apple',
+          'bg-popover text-popover-foreground fixed z-[200] border shadow-lg transition-transform duration-medium ease-apple',
           positionStyles[side],
+          radiusStyles[side],
           animationStyles[side],
           className
         )} 

@@ -16,6 +16,7 @@ import { createRoot } from 'react-dom/client'
 import './i18n'
 import './index.css'
 import './styles/figma.css'
+import 'highlight.js/styles/github-dark.min.css'
 import App from './App'
 import { registerSW } from 'virtual:pwa-register'
 

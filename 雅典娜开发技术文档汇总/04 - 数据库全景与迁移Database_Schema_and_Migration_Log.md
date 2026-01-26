@@ -60,11 +60,14 @@
 | `local_book_files` | 书籍文件缓存元数据（OPFS/Filesystem 路径） |
 | `local_ocr_data` | OCR 结果本地缓存 |
 | `local_cover_cache` | 封面图片本地缓存 |
+| `local_tts_settings` | **[2026-01-20 新增]** TTS 听书设置（语速、音量、音色、睡眠定时器默认值） |
+| `local_tts_models` | **[2026-01-20 新增]** TTS 模型缓存元数据（已下载模型列表） |
+| `local_tts_audio_cache` | **[2026-01-20 新增]** TTS 音频缓存（LRU 清理策略，500MB 上限） |
 
 ### 3.2 reading_progress 表字段映射对照表 🔑
 
 > **权威来源**：`docker/powersync/sync_rules.yaml` + `web/src/lib/powersync/schema.ts`
-> **最后更新**：2025-12-17
+> **最后更新**：2026-01-20
 
 | SQLite (前端) | PostgreSQL (后端) | 类型 | 前端使用说明 |
 |:-------------|:-----------------|:-----|:------------|
@@ -77,9 +80,15 @@
 | `last_location` | `last_location` | TEXT (JSON) | `{ currentPage, totalPages }` |
 | `finished_at` | `finished_at` | TEXT (ISO8601) | 读完时间 |
 | `updated_at` | `updated_at` | TEXT (ISO8601) | 最后更新时间，前端代码中映射为 `lastReadAt` |
+| `tts_chapter_index` | `tts_chapter_index` | INTEGER | **[2026-01-20 新增]** TTS 听书章节索引 (0-based) |
+| `tts_position_ms` | `tts_position_ms` | INTEGER | **[2026-01-20 新增]** TTS 章节内音频位置 (毫秒) |
+| `tts_last_played_at` | `tts_last_played_at` | TEXT (ISO8601) | **[2026-01-20 新增]** TTS 最后播放时间 |
 
 > ⚠️ **重要**：前端代码（如 `useProgressData.ts`）在业务层使用语义化字段名（如 `percentage`, `currentCfi`），
 > 但在 SQL 查询中必须使用 PowerSync Schema 定义的字段名（如 `progress`, `last_position`）。
+
+> 📡 **TTS 进度同步说明**：TTS 听书进度采用 2 分钟间隔节流同步，避免频繁写入数据库。
+> 相关迁移：`0134_add_tts_progress_fields.py`
 
 ### 3.3 reading_sessions 表字段映射对照表
 

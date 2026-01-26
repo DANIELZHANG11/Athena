@@ -41,15 +41,17 @@ from .search import router as search_router
 from .srs import router as srs_router
 from .tracing import init_tracer, tracer_middleware
 from .translate import router as translate_router
-from .tts import router as tts_router
+# TTS 路由 - 已禁用（改用客户端 Web Speech API）
+# from .tts import router as tts_router
 from .home import router as home_router
 from .powersync import router as powersync_router
+from .admin_ai import router as admin_ai_router
 
 sentry_dsn = os.getenv("SENTRY_DSN", "")
 if sentry_dsn:
     sentry_sdk.init(dsn=sentry_dsn)
 
-app = FastAPI()
+app = FastAPI(redirect_slashes=False)  # 禁用尾部斜杠重定向，避免代理问题
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,7 +73,8 @@ app.include_router(tags_router)
 app.include_router(highlights_router)
 app.include_router(search_router)
 app.include_router(billing_router)
-app.include_router(tts_router)
+# TTS 路由 - 已禁用（改用客户端 Web Speech API）
+# app.include_router(tts_router)
 app.include_router(dict_packages_router)
 app.include_router(dict_router)
 app.include_router(translate_router)
@@ -84,6 +87,7 @@ app.include_router(export_router)
 app.include_router(admin_panel_router)
 app.include_router(home_router)
 app.include_router(powersync_router)
+app.include_router(admin_ai_router)
 
 
 @app.websocket("/ws/docs/{doc_id}")

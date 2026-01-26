@@ -25,12 +25,10 @@ export default function Login() {
   const [codeSent, setCodeSent] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [error, setError] = useState('')
-  const [debugInfo, setDebugInfo] = useState('') // 调试信息
 
   const sendCode = async () => {
     setLoading(true)
     setError('')
-    setDebugInfo('Sending request...')
 
     try {
       // 显示将要请求的 URL
@@ -44,12 +42,10 @@ export default function Login() {
       })
 
       console.log('[Login] Response status:', res.status)
-      setDebugInfo(`Response: ${res.status} ${res.statusText}`)
 
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
         console.log('[Login] Response data:', data)
-        setDebugInfo(`Success! dev_code: ${data.data?.dev_code || 'N/A'}`)
         setCodeSent(true)
         setCountdown(60)
         const timer = setInterval(() => {
@@ -65,12 +61,10 @@ export default function Login() {
         const errorData = await res.json().catch(() => ({ message: res.statusText }))
         console.error('[Login] Error response:', errorData)
         setError(t('send_failed') as string)
-        setDebugInfo(`Error: ${res.status} - ${errorData.message || res.statusText}`)
       }
     } catch (err: any) {
       console.error('[Login] Fetch error:', err)
       setError(t('tip_check_backend') as string)
-      setDebugInfo(`Network Error: ${err?.message || 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
@@ -158,12 +152,7 @@ export default function Login() {
         </div>
       )}
 
-      {/* 调试信息 */}
-      {debugInfo && (
-        <div className="p-2 bg-gray-100 border border-gray-300 rounded text-xs font-mono text-gray-700">
-          {debugInfo}
-        </div>
-      )}
+
 
       {/* 验证码输入 */}
       <div className="space-y-2">

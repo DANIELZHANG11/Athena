@@ -76,22 +76,27 @@ export function ReaderSettingsSheet({
 
     return (
         <>
-            {/* 遮罩层 - 点击关闭 */}
+            {/* 遮罩层 - 点击关闭，Liquid Glass 遮罩，与章节目录一致 */}
             <div
-                className="fixed inset-0 z-50 bg-black/30"
+                className="fixed inset-0 z-[199] bg-black/20 backdrop-blur-[4px] animate-in fade-in duration-200"
                 onClick={handleClose}
             />
 
-            {/* 设置面板 - 底部弹出 */}
-            <div className="fixed bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom duration-300">
-                <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-t-2xl shadow-2xl border-t border-gray-200/50 dark:border-white/10">
+            {/* 设置面板 - 底部弹出，Liquid Glass 效果，与章节目录视图一致 */}
+            <div 
+                className="fixed bottom-0 left-0 right-0 z-[200] animate-in slide-in-from-bottom duration-300 ease-apple"
+            >
+                <div 
+                    className="backdrop-blur-xl saturate-[180%] rounded-t-2xl border-t border-separator shadow-[0_-4px_16px_rgba(0,0,0,0.15)]"
+                    style={{ backgroundColor: 'var(--overlay)' }}
+                >
                     {/* 头部 - 标题 + 关闭按钮 */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200/50 dark:border-white/10">
-                        <span className="text-base font-semibold">{t('settings.title')}</span>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-separator">
+                        <span className="text-base font-semibold text-label">{t('settings.title')}</span>
                         <button
                             onClick={handleClose}
-                            className="w-8 h-8 flex items-center justify-center rounded-full bg-system-blue/10 hover:bg-system-blue/20 transition-colors"
-                            aria-label="完成"
+                            className="w-8 h-8 flex items-center justify-center rounded-full bg-system-blue/10 hover:bg-system-blue/20 active:scale-95 active:bg-system-blue/30 transition-all duration-150"
+                            aria-label={t('common.close')}
                         >
                             <Check size={18} className="text-system-blue" />
                         </button>

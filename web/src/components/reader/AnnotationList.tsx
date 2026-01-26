@@ -112,22 +112,27 @@ function ColorBar({ color }: { color: HighlightColor }) {
 }
 
 /**
- * 时间格式化
+ * 时间格式化（支持国际化）
+ * @param isoString ISO 时间字符串
+ * @param locale 语言区域（从 i18next 获取）
  */
-function formatTime(isoString: string): string {
+function formatTime(isoString: string, locale: string): string {
   const date = new Date(isoString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
+  // 使用 Intl.RelativeTimeFormat 进行国际化的相对时间格式化
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+
   if (diffDays === 0) {
-    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
   } else if (diffDays === 1) {
-    return '昨天'
+    return rtf.format(-1, 'day')
   } else if (diffDays < 7) {
-    return `${diffDays} 天前`
+    return rtf.format(-diffDays, 'day')
   } else {
-    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+    return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' })
   }
 }
 
@@ -145,6 +150,7 @@ function NoteCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t, i18n } = useTranslation('reader')
   const colorConfig = getHighlightColorConfig(note.color)
 
   return (
@@ -179,8 +185,8 @@ function NoteCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-secondary-label">
             <FileText size={12} />
-            <span>{formatTime(note.updatedAt)}</span>
-            {note.pageNumber && <span>· 第 {note.pageNumber} 页</span>}
+            <span>{formatTime(note.updatedAt, i18n.language)}</span>
+            {note.pageNumber && <span>· {t('common.page', { page: note.pageNumber })}</span>}
           </div>
 
           <ChevronRight
@@ -193,14 +199,14 @@ function NoteCard({
       {/* 更多操作 */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-          <button className="p-1.5 rounded-lg hover:bg-hover-background opacity-0 group-hover:opacity-100 transition-opacity" aria-label="更多操作">
+          <button className="p-1.5 rounded-lg hover:bg-hover-background opacity-0 group-hover:opacity-100 transition-opacity" aria-label={t('common.moreActions')}>
             <MoreHorizontal size={16} className="text-secondary-label" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit() }}>
             <FileText size={14} className="mr-2" />
-            编辑笔记
+            {t('notes.editNote')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -208,7 +214,7 @@ function NoteCard({
             className="text-system-red focus:text-system-red"
           >
             <Trash2 size={14} className="mr-2" />
-            删除
+            {t('common.delete')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -230,6 +236,7 @@ function HighlightCard({
   onEdit: () => void
   onDelete: () => void
 }) {
+  const { t, i18n } = useTranslation('reader')
   const colorConfig = getHighlightColorConfig(highlight.color)
 
   return (
@@ -266,8 +273,8 @@ function HighlightCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-secondary-label">
             <Highlighter size={12} />
-            <span>{formatTime(highlight.updatedAt)}</span>
-            {highlight.pageNumber && <span>· 第 {highlight.pageNumber} 页</span>}
+            <span>{formatTime(highlight.updatedAt, i18n.language)}</span>
+            {highlight.pageNumber && <span>· {t('common.page', { page: highlight.pageNumber })}</span>}
           </div>
 
           <ChevronRight
@@ -287,7 +294,7 @@ function HighlightCard({
         <DropdownMenuContent align="end" className="w-40">
           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit() }}>
             <FileText size={14} className="mr-2" />
-            添加笔记
+            {t('highlights.addNote')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -295,7 +302,7 @@ function HighlightCard({
             className="text-system-red focus:text-system-red"
           >
             <Trash2 size={14} className="mr-2" />
-            删除高亮
+            {t('highlights.deleteHighlight')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -405,10 +412,19 @@ export function AnnotationList({
         className={cn(
           'w-full sm:w-[400px] sm:max-w-[400px]',
           'p-0',
-          // 完全不透明的背景 - 根据 06 号文档设计规范
-          // 不使用透明或半透明，确保内容清晰可读
+          // 圆角样式 - 左侧圆角 (右侧侧边栏)，与章节目录一致
+          'rounded-l-2xl',
+          // 最高层级 - 在顶部/底部导航栏之上
+          'z-[200]',
+          // Liquid Glass 效果 - 与章节目录视图一致
+          'backdrop-blur-xl saturate-[180%]',
+          // 边框和阴影
+          'border-l border-separator',
+          'shadow-[-4px_0_16px_rgba(0,0,0,0.15)]',
         )}
-        style={{ backgroundColor: 'var(--system-background)', opacity: 1 }}
+        style={{ 
+          backgroundColor: 'var(--overlay)',
+        }}
         aria-describedby="annotation-list-description"
       >
         <SheetHeader className="px-4 py-3 border-b border-separator">

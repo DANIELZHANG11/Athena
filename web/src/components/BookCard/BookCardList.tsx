@@ -72,12 +72,12 @@ export default function BookCardList(props: BookCardListProps) {
   // 处理卡片点击
   const handleCardClick = () => {
     if (isProcessing || status === 'downloading') return
-    
+
     if (isOcrProcessing) {
       toast.info(t('book_status.ocr_in_progress', '正在进行文字识别，请稍候...'))
       return
     }
-    
+
     if (status === 'cloud' && onSyncClick) {
       onSyncClick()
     } else {
@@ -109,7 +109,7 @@ export default function BookCardList(props: BookCardListProps) {
       </div>
     )
   }
-    
+
   const luminance = getLuminance(dominantColor)
   const isLight = luminance > 0.5
   const textClass = isLight ? 'text-gray-900' : 'text-white'
@@ -126,7 +126,7 @@ export default function BookCardList(props: BookCardListProps) {
     >
       {/* Ambient Blur 背景 */}
       {coverUrl && (
-        <div 
+        <div
           className="absolute inset-0 blur-2xl scale-150 opacity-60"
           style={{
             backgroundImage: `url(${coverUrl})`,
@@ -135,20 +135,20 @@ export default function BookCardList(props: BookCardListProps) {
           }}
         />
       )}
-      
+
       {/* 渐变遮罩层 */}
-      <div 
+      <div
         className="absolute inset-0"
         style={{
-          background: isLight 
+          background: isLight
             ? 'linear-gradient(to right, rgba(255,255,255,0.1), rgba(255,255,255,0.4))'
             : 'linear-gradient(to right, rgba(0,0,0,0.1), rgba(0,0,0,0.3))'
         }}
       />
-      
-      {/* 封面区域 - 占 1/4 宽度 */}
-      <div className="relative w-1/4 shrink-0 flex items-center justify-center p-2">
-        <div className="relative w-full max-w-[60px] overflow-hidden rounded-lg shadow-xl" style={{ aspectRatio: '2/3' }}>
+
+      {/* 封面区域 - 使用固定宽度匹配封面比例 */}
+      <div className="relative shrink-0 flex items-center justify-start p-2 pl-3">
+        <div className="relative h-[84px] w-[56px] overflow-hidden rounded-lg shadow-xl">
           <BookCover coverUrl={coverUrl} title={title} className="absolute inset-0 h-full w-full">
             {showCloudIcon && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -158,22 +158,22 @@ export default function BookCardList(props: BookCardListProps) {
           </BookCover>
         </div>
       </div>
-      
+
       {/* 内容区域 - 占 3/4 宽度 */}
       <div className="relative flex-1 flex flex-col justify-center px-4 py-3 pr-12 overflow-hidden">
-        <ScrollText 
-          text={title} 
+        <ScrollText
+          text={title}
           className={cn("font-semibold text-base", textClass)}
         />
         {author && (
-          <div 
+          <div
             className={cn("text-sm truncate mt-1", subTextClass)}
             title={author}
           >
             {author}
           </div>
         )}
-        
+
         {/* 进度显示 */}
         {isCompleted ? (
           <div className={cn("flex items-center gap-1.5 mt-1", textClass)}>
@@ -188,16 +188,6 @@ export default function BookCardList(props: BookCardListProps) {
           </p>
         )}
       </div>
-      
-      {/* 底部进度条 */}
-      {!isCompleted && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/10">
-          <div 
-            className="h-full bg-white/80 transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
 
       {/* OCR 处理中图标 */}
       {isOcrProcessing && (

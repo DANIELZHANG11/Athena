@@ -43,6 +43,7 @@
     transform: translateY(0);
 }
 
+/* 按钮通用样式 - 圆形点击反馈 */
 .epub-reader__back-btn,
 .epub-reader__menu-btn,
 .epub-reader__settings-btn {
@@ -54,15 +55,22 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    border-radius: 8px;
+    border-radius: 50%;
     color: var(--label);
-    transition: background var(--duration-fast);
+    transition: all var(--duration-fast) var(--easing-apple);
 }
 
 .epub-reader__back-btn:hover,
 .epub-reader__menu-btn:hover,
 .epub-reader__settings-btn:hover {
     background: var(--hover-background);
+}
+
+.epub-reader__back-btn:active,
+.epub-reader__menu-btn:active,
+.epub-reader__settings-btn:active {
+    transform: scale(0.95);
+    background: var(--tertiary-background);
 }
 
 /* 右侧操作按钮组 */
@@ -207,7 +215,7 @@
     }
 }
 
-/* 目录侧边栏 - Liquid Glass 效果 */
+/* 目录侧边栏 - Liquid Glass 效果，左侧圆角 */
 .epub-reader__toc {
     position: absolute;
     top: 0;
@@ -219,6 +227,7 @@
     -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(180%);
     backdrop-filter: blur(var(--liquid-glass-blur)) saturate(180%);
     border-left: 1px solid var(--separator);
+    border-radius: 16px 0 0 16px;
     box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
     z-index: 200;
     display: flex;
@@ -254,7 +263,7 @@
     font-weight: 600;
 }
 
-/* 目录关闭按钮 */
+/* 目录关闭按钮 - 圆形点击反馈 */
 .epub-reader__toc-close-btn {
     display: flex;
     align-items: center;
@@ -264,14 +273,19 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 50%;
     color: var(--secondary-label);
-    transition: all var(--duration-fast);
+    transition: all var(--duration-fast) var(--easing-apple);
 }
 
 .epub-reader__toc-close-btn:hover {
     background: var(--hover-background);
     color: var(--label);
+}
+
+.epub-reader__toc-close-btn:active {
+    transform: scale(0.95);
+    background: var(--tertiary-background);
 }
 
 .epub-reader__toc-list {

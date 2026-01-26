@@ -228,6 +228,7 @@ services:
       - "47017:27017"
     volumes:
       - mongo_data:/data/db
+      - mongo_configdb:/data/configdb
     healthcheck:
       test: [ "CMD", "mongosh", "--eval", "rs.status().ok || rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok" ]
       interval: 10s
@@ -316,6 +317,7 @@ services:
       - PGID=1000
       - TZ=Asia/Shanghai
     volumes:
+      - calibre_config:/config
       - calibre_books:/books
       - ./scripts/calibre-convert-watcher.sh:/scripts/convert-watcher.sh:ro
     # 启动时运行 watcher 脚本
@@ -340,6 +342,7 @@ services:
       - PGID=1000
       - TZ=Asia/Shanghai
     volumes:
+      - calibre_config:/config
       - calibre_books:/books
       - ./scripts/calibre-metadata-watcher.sh:/scripts/metadata-watcher.sh:ro
     entrypoint: [ "/bin/bash", "/scripts/metadata-watcher.sh" ]
@@ -355,7 +358,17 @@ services:
         max-size: "10m"
         max-file: "2"
 
-  worker:
+  # =========================================================================
+  # Worker 配置 - GPU/CPU 分离策略
+  # =========================================================================
+  # 队列优先级:
+  # - gpu_high: OCR（付费服务）
+  # - gpu_low: 向量索引（免费服务）
+  # - cpu_default: 元数据提取、封面提取等
+  # =========================================================================
+
+  # GPU Worker - 专用处理 OCR 和向量索引（串行避免显存竞争）
+  worker-gpu:
     build:
       context: ./api
       args:
@@ -363,29 +376,42 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://valkey:6379/0
       - CELERY_BACKEND_URL=redis://valkey:6379/1
+      - REDIS_URL=redis://valkey:6379
       - DATABASE_URL=postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
       - MINIO_ENDPOINT=seaweed:8333
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET=athena
+      - ES_URL=http://opensearch:9200
       - CALIBRE_CONVERT_DIR=/calibre_books
       # OCR 配置 (PP-OCRv5 mobile)
       - OCR_USE_GPU=true
       - OCR_GPU_MEM=4000
       - OCR_CPU_THREADS=8
       - OCR_LANG=ch
-      # Embedding 配置 (BGE-M3)
+      # Embedding 配置 (BGE-M3) - 内存优化
       - EMBEDDING_MODEL_NAME=BAAI/bge-m3
+      - EMBEDDING_USE_GPU=true
+      - EMBEDDING_BATCH_SIZE=16 # 从 32 降低到 16
+      - INDEX_NODE_BATCH_SIZE=450 # 450 节点 ≈ 20万字/本
+      - GPU_MIN_FREE_GB=2.0 # 显存阈值，可调整
       - HF_HOME=/app/.hf_cache
-      # GPU 内存控制 (RTX 3060 12GB: PaddleOCR ~3GB + BGE-M3 ~3GB)
+      # GPU 内存控制 (RTX 3060 12GB / RTX 3070 8GB)
       - FLAGS_fraction_of_gpu_memory_to_use=0.5
-      # 禁用 NCCL (解决 ncclGroupSimulateEnd symbol 问题，单 GPU 不需要分布式训练)
+      # 禁用 NCCL (解决 ncclGroupSimulateEnd symbol 问题)
       - NCCL_P2P_DISABLE=1
       - NCCL_IB_DISABLE=1
       - TORCH_NCCL_ASYNC_ERROR_HANDLING=0
-    # 3 Workers (RTX 3060 12GB GPU，最佳并发)
-    # PaddleOCR + BGE-M3 约占用 6-7GB，剩余约 5GB 用于推理缓冲
-    command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-l", "INFO", "--concurrency=3", "--pool=prefork", "--max-tasks-per-child=100" ]
+      # 【2026-01-09】模型预加载所需
+      - CELERY_QUEUES=gpu_high,gpu_low
+      # 【2026-01-09】离线模式 - 暂时禁用，因为模型尚未预下载到 Docker 镜像
+      # 模型首次下载后可以启用这些环境变量：
+      # - HF_HUB_OFFLINE=1
+      # - TRANSFORMERS_OFFLINE=1
+      # - HF_DATASETS_OFFLINE=1
+      # 并发=1：GPU 任务串行执行，避免显存竞争
+      # 监听 gpu_high (OCR) 和 gpu_low (向量索引) 队列
+    command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-Q", "gpu_high,gpu_low", "-l", "INFO", "--concurrency=1", "--pool=prefork", "--max-tasks-per-child=50" ]
     depends_on:
       - valkey
       - pgbouncer
@@ -410,6 +436,42 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+
+  # CPU Worker - 处理非 GPU 任务（元数据、封面、转换等）
+  worker-cpu:
+    build:
+      context: ./api
+      args:
+        SKIP_HEAVY: "true" # 不需要 PaddleOCR/BGE-M3
+    environment:
+      - CELERY_BROKER_URL=redis://valkey:6379/0
+      - CELERY_BACKEND_URL=redis://valkey:6379/1
+      - REDIS_URL=redis://valkey:6379
+      - DATABASE_URL=postgresql+asyncpg://athena:${POSTGRES_PASSWORD}@pgbouncer:6432/athena
+      - MINIO_ENDPOINT=seaweed:8333
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=athena
+      - ES_URL=http://opensearch:9200
+      - CALIBRE_CONVERT_DIR=/calibre_books
+    # 并发=4：CPU 任务可并行
+    # 监听 cpu_default 队列
+    command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-Q", "cpu_default", "-l", "INFO", "--concurrency=4", "--pool=prefork", "--max-tasks-per-child=200" ]
+    depends_on:
+      - valkey
+      - pgbouncer
+      - seaweed
+    volumes:
+      - ./api:/app
+      - calibre_books:/calibre_books
+    networks:
+      - athena-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
 # =========================================================================
 # 数据卷配置 - SSD + HDD 混合存储方案
 # =========================================================================
@@ -441,6 +503,7 @@ volumes:
   calibre_books:
   calibre_config:
   mongo_data:
+  mongo_configdb:
 
 
 networks:

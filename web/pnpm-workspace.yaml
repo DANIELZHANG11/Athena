@@ -1,0 +1,2 @@
+patchedDependencies:
+  kokoro-js: patches/kokoro-js.patch

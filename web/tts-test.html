@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kokoro-JS TTS 测试</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #444;
+    }
+    select, textarea, button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    button {
+      background: #4A90D9;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #3A7BC8;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .progress-bar {
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #4A90D9;
+      transition: width 0.3s ease;
+    }
+    .status {
+      color: #666;
+      font-size: 14px;
+    }
+    .audio-player {
+      width: 100%;
+      margin-top: 16px;
+    }
+    .log {
+      background: #1a1a2e;
+      color: #00ff41;
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 16px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      margin-bottom: 4px;
+    }
+    .log-time {
+      color: #888;
+    }
+    .log-error {
+      color: #ff6b6b;
+    }
+    .log-success {
+      color: #4ecdc4;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .info-item {
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .info-label {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .info-value {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎤 Kokoro-JS TTS 测试</h1>
+  
+  <div class="card">
+    <h3>模型状态</h3>
+    <div class="progress-bar">
+      <div class="progress-bar-fill" id="progressBar" style="width: 0%"></div>
+    </div>
+    <p class="status" id="statusText">点击 "初始化模型" 开始</p>
+    <div class="info-grid" id="infoGrid" style="display: none;">
+      <div class="info-item">
+        <div class="info-label">后端</div>
+        <div class="info-value" id="deviceInfo">-</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">语音数量</div>
+        <div class="info-value" id="voiceCount">-</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">采样率</div>
+        <div class="info-value" id="sampleRate">-</div>
+      </div>
+    </div>
+    <button id="initBtn" onclick="initTts()">初始化模型</button>
+  </div>
+
+  <div class="card">
+    <h3>语音合成</h3>
+    <label for="voiceSelect">选择语音</label>
+    <select id="voiceSelect" disabled>
+      <option value="">-- 请先初始化模型 --</option>
+    </select>
+    
+    <label for="textInput">输入文本</label>
+    <textarea id="textInput" placeholder="请输入要合成的文本...">你好，欢迎使用雅典娜阅读器！这是一个基于 Kokoro TTS 的语音合成测试。</textarea>
+    
+    <label for="speedInput">语速: <span id="speedValue">1.0</span></label>
+    <input type="range" id="speedInput" min="0.5" max="2" step="0.1" value="1" oninput="updateSpeedLabel()">
+    
+    <button id="speakBtn" onclick="speak()" disabled>🔊 合成语音</button>
+    
+    <audio id="audioPlayer" class="audio-player" controls style="display: none;"></audio>
+  </div>
+
+  <div class="card">
+    <h3>日志</h3>
+    <div class="log" id="logArea">
+      <div class="log-entry"><span class="log-time">[准备就绪]</span> 等待初始化...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // 导入 TTS 服务
+    import { kokoroJsTts, KOKORO_JS_VOICES } from './src/services/tts/kokoroJsTtsService.ts';
+    
+    // 暴露给全局
+    window.kokoroJsTts = kokoroJsTts;
+    window.VOICES = KOKORO_JS_VOICES;
+    
+    function log(message, type = 'info') {
+      const logArea = document.getElementById('logArea');
+      const time = new Date().toLocaleTimeString();
+      const className = type === 'error' ? 'log-error' : type === 'success' ? 'log-success' : '';
+      logArea.innerHTML += `<div class="log-entry ${className}"><span class="log-time">[${time}]</span> ${message}</div>`;
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+    window.log = log;
+    
+    function updateProgress(progress, message) {
+      document.getElementById('progressBar').style.width = progress + '%';
+      document.getElementById('statusText').textContent = message;
+      log(`${progress}% - ${message}`);
+    }
+    window.updateProgress = updateProgress;
+    
+    function updateSpeedLabel() {
+      document.getElementById('speedValue').textContent = document.getElementById('speedInput').value;
+    }
+    window.updateSpeedLabel = updateSpeedLabel;
+    
+    async function initTts() {
+      const btn = document.getElementById('initBtn');
+      btn.disabled = true;
+      btn.textContent = '正在初始化...';
+      
+      try {
+        log('开始初始化 Kokoro-JS TTS...');
+        
+        await kokoroJsTts.init({
+          onProgress: (progress, message) => {
+            updateProgress(progress, message);
+          }
+        });
+        
+        log('初始化成功！', 'success');
+        
+        // 更新 UI
+        document.getElementById('infoGrid').style.display = 'grid';
+        document.getElementById('deviceInfo').textContent = kokoroJsTts.device.toUpperCase();
+        document.getElementById('voiceCount').textContent = kokoroJsTts.availableVoices.length || VOICES.length;
+        document.getElementById('sampleRate').textContent = kokoroJsTts.sampleRate + ' Hz';
+        
+        // 填充语音选择
+        const voiceSelect = document.getElementById('voiceSelect');
+        voiceSelect.innerHTML = '';
+        
+        // 按语言分组
+        const zhVoices = VOICES.filter(v => v.language === 'zh');
+        const enVoices = VOICES.filter(v => v.language === 'en');
+        
+        if (zhVoices.length > 0) {
+          const zhGroup = document.createElement('optgroup');
+          zhGroup.label = '🇨🇳 中文语音';
+          zhVoices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = `${v.name} (${v.gender === 'female' ? '女' : '男'})${v.recommended ? ' ⭐' : ''}`;
+            zhGroup.appendChild(opt);
+          });
+          voiceSelect.appendChild(zhGroup);
+        }
+        
+        if (enVoices.length > 0) {
+          const enGroup = document.createElement('optgroup');
+          enGroup.label = '🇺🇸 英文语音';
+          enVoices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            opt.textContent = `${v.name} (${v.gender === 'female' ? 'F' : 'M'})${v.recommended ? ' ⭐' : ''}`;
+            enGroup.appendChild(opt);
+          });
+          voiceSelect.appendChild(enGroup);
+        }
+        
+        voiceSelect.disabled = false;
+        document.getElementById('speakBtn').disabled = false;
+        btn.textContent = '✅ 初始化完成';
+        
+      } catch (error) {
+        log('初始化失败: ' + error.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '重新初始化';
+      }
+    }
+    window.initTts = initTts;
+    
+    async function speak() {
+      const btn = document.getElementById('speakBtn');
+      const text = document.getElementById('textInput').value.trim();
+      const voice = document.getElementById('voiceSelect').value;
+      const speed = parseFloat(document.getElementById('speedInput').value);
+      
+      if (!text) {
+        alert('请输入要合成的文本');
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = '🔄 合成中...';
+      
+      try {
+        log(`开始合成: "${text.substring(0, 30)}${text.length > 30 ? '...' : ''}" (语音: ${voice}, 语速: ${speed})`);
+        
+        const startTime = performance.now();
+        const result = await kokoroJsTts.speak(text, { voice, speed });
+        const endTime = performance.now();
+        
+        log(`合成完成! 时长: ${result.duration.toFixed(2)}s, 耗时: ${((endTime - startTime) / 1000).toFixed(2)}s`, 'success');
+        
+        // 播放音频
+        const audioPlayer = document.getElementById('audioPlayer');
+        audioPlayer.src = result.url;
+        audioPlayer.style.display = 'block';
+        audioPlayer.play();
+        
+      } catch (error) {
+        log('合成失败: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔊 合成语音';
+      }
+    }
+    window.speak = speak;
+    
+    log('页面加载完成，等待初始化...');
+  </script>
+</body>
+</html>

@@ -9,6 +9,8 @@ import { toast } from '@/components/ui/sonner'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
+import { TTSMiniPlayer, TTSPlayerOverlay, TTSSettingsSheet } from '@/components/tts'
+import { useTTSPlayState } from '@/stores/tts'
 
 /**
  * 应用区布局（登录后）
@@ -27,6 +29,12 @@ export default function AppLayout() {
 
   // 待同步项数量
   const [pendingCount, setPendingCount] = useState(0)
+
+  // TTS 全局状态
+  const ttsPlayState = useTTSPlayState()
+  const isTTSActive = ttsPlayState !== 'idle'
+  const [showTTSOverlay, setShowTTSOverlay] = useState(false)
+  const [showTTSSettings, setShowTTSSettings] = useState(false)
 
   // 网络状态监听，在线/离线切换时显示 toast
   const { isOnline } = useOnlineStatus({
@@ -99,13 +107,36 @@ export default function AppLayout() {
       <UpdatePrompt />
 
       {/* 阅读页面不需要 pb-24，因为导航栏是沉浸式隐藏的 */}
+      {/* TTS 激活时非阅读页需要额外 pb-14 给 MiniPlayer 留空间 */}
       <main className={cn(
         'bg-system-background w-full max-w-full overflow-x-hidden',
         !isOnline && 'pt-10',
-        !isReaderPage && 'pb-24'
+        !isReaderPage && 'pb-24',
+        !isReaderPage && isTTSActive && 'pb-38'
       )}>
         <Outlet />
       </main>
+
+      {/* TTS Mini Player - 全局显示（阅读页除外，阅读页有自己的播放器） */}
+      {isTTSActive && !isReaderPage && (
+        <TTSMiniPlayer 
+          onExpand={() => setShowTTSOverlay(true)}
+          className="bottom-24"
+        />
+      )}
+
+      {/* TTS 全屏播放器覆盖层 */}
+      {showTTSOverlay && (
+        <TTSPlayerOverlay
+          onClose={() => setShowTTSOverlay(false)}
+          onOpenSettings={() => setShowTTSSettings(true)}
+        />
+      )}
+
+      {/* TTS 设置面板 */}
+      {showTTSSettings && (
+        <TTSSettingsSheet onClose={() => setShowTTSSettings(false)} />
+      )}
 
       <motion.nav
         initial={false}

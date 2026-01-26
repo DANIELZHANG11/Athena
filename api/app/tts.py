@@ -133,3 +133,58 @@ async def tts_heartbeat(body: dict = Body(...), auth=Depends(require_user)):
             except Exception:
                 raise HTTPException(status_code=404, detail="request_not_found")
         return {"status": "success", "data": {"duration_ms": int(row[0])}}
+
+
+@router.post("/edge")
+async def tts_edge_proxy(body: dict = Body(...)):
+    """
+    Edge TTS 代理端点
+    
+    接收 @lobehub/tts 前端请求，转发到微软 Edge TTS 服务
+    
+    请求体格式:
+    {
+        "input": "要合成的文本",
+        "options": {
+            "voice": "zh-CN-XiaoxiaoNeural"
+        }
+    }
+    
+    返回: audio/mpeg 音频流
+    """
+    input_text = body.get("input") or ""
+    options = body.get("options") or {}
+    voice = options.get("voice", "zh-CN-XiaoxiaoNeural")
+    
+    if not input_text:
+        raise HTTPException(status_code=400, detail="invalid_text")
+    
+    try:
+        import edge_tts
+        
+        # 使用 edge-tts 库合成语音
+        communicate = edge_tts.Communicate(text=input_text, voice=voice)
+        
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+        
+        if not audio_data:
+            raise HTTPException(status_code=500, detail="synthesis_failed")
+        
+        # 返回音频流
+        from fastapi.responses import Response
+        return Response(
+            content=audio_data,
+            media_type="audio/mpeg",
+            headers={
+                "Content-Length": str(len(audio_data)),
+                "Cache-Control": "no-cache"
+            }
+        )
+    except ImportError:
+        raise HTTPException(status_code=500, detail="edge_tts_not_installed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"synthesis_error: {str(e)}")
+

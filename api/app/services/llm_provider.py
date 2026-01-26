@@ -575,3 +575,132 @@ def set_default_provider(provider: LLMProvider) -> None:
     """设置默认 LLM Provider"""
     global _default_provider
     _default_provider = provider
+
+
+# ============================================================================
+# Reranker 重排序服务
+# ============================================================================
+
+@dataclass
+class RerankResult:
+    """重排序结果"""
+    index: int  # 原始文档索引
+    relevance_score: float  # 相关性得分 (0-1)
+    text: Optional[str] = None  # 文档文本（可选返回）
+
+
+class SiliconFlowReranker:
+    """
+    硅基流动 Reranker 服务
+    
+    API 文档: https://docs.siliconflow.cn/cn/api-reference/rerank/create-rerank
+    
+    支持的模型:
+    - BAAI/bge-reranker-v2-m3 (推荐)
+    - Pro/BAAI/bge-reranker-v2-m3
+    - netease-youdao/bce-reranker-base_v1
+    - Qwen/Qwen3-Reranker-8B/4B/0.6B
+    """
+    
+    base_url = "https://api.siliconflow.cn/v1"
+    default_model = "BAAI/bge-reranker-v2-m3"
+    
+    def __init__(self, api_key: str, base_url: Optional[str] = None):
+        self.api_key = api_key
+        if base_url:
+            self.base_url = base_url.rstrip("/")
+    
+    def _make_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+    
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        *,
+        model: str | None = None,
+        top_n: int | None = None,
+        return_documents: bool = False,
+        max_chunks_per_doc: int | None = None,
+    ) -> list[RerankResult]:
+        """
+        对文档进行重排序
+        
+        Args:
+            query: 查询文本
+            documents: 待排序的文档列表
+            model: 使用的模型（默认 BAAI/bge-reranker-v2-m3）
+            top_n: 返回前 N 个结果（默认全部返回）
+            return_documents: 是否返回文档文本
+            max_chunks_per_doc: 每个文档的最大块数（用于长文档）
+        
+        Returns:
+            按相关性降序排列的 RerankResult 列表
+        """
+        if not documents:
+            return []
+        
+        url = f"{self.base_url}/rerank"
+        payload: dict[str, Any] = {
+            "model": model or self.default_model,
+            "query": query,
+            "documents": documents,
+            "return_documents": return_documents,
+        }
+        
+        if top_n is not None:
+            payload["top_n"] = top_n
+        if max_chunks_per_doc is not None:
+            payload["max_chunks_per_doc"] = max_chunks_per_doc
+        
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    url,
+                    headers=self._make_headers(),
+                    json=payload,
+                )
+                
+                if response.status_code != 200:
+                    raise Exception(f"Rerank API error: HTTP {response.status_code}: {response.text}")
+                
+                data = response.json()
+                results = []
+                
+                for item in data.get("results", []):
+                    text = None
+                    if return_documents and "document" in item:
+                        text = item["document"].get("text")
+                    
+                    results.append(RerankResult(
+                        index=item["index"],
+                        relevance_score=item["relevance_score"],
+                        text=text,
+                    ))
+                
+                # API 已按 relevance_score 降序排列，直接返回
+                return results
+                
+        except httpx.TimeoutException:
+            raise Exception("Rerank API timeout")
+        except Exception as e:
+            raise Exception(f"Rerank API error: {e}")
+
+
+# 全局 Reranker 实例
+_reranker: Optional[SiliconFlowReranker] = None
+
+
+def get_reranker() -> Optional[SiliconFlowReranker]:
+    """获取 Reranker 实例"""
+    global _reranker
+    
+    if _reranker is None:
+        api_key = os.getenv("SILICONFLOW_API_KEY", "")
+        if api_key:
+            _reranker = SiliconFlowReranker(api_key=api_key)
+    
+    return _reranker

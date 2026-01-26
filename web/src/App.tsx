@@ -9,7 +9,6 @@ import SearchPage from './pages/SearchPage'
 import NotesPage from './pages/NotesPage'
 import ProfilePage from './pages/ProfilePage'
 import DocEditor from './pages/DocEditor'
-import TTSPage from './pages/TTSPage'
 import BillingPage from './pages/BillingPage'
 import RecentlyDeletedPage from './pages/RecentlyDeletedPage'
 import Login from './pages/auth/Login'
@@ -62,7 +61,6 @@ export default function App() {
               <Route path="profile" element={<AuthGuard><ProfilePage /></AuthGuard>} />
               <Route path="docs/:docId" element={<AuthGuard><DocEditor /></AuthGuard>} />
               <Route path="read/:bookId" element={<AuthGuard><ReaderPage /></AuthGuard>} />
-              <Route path="tts" element={<AuthGuard><TTSPage /></AuthGuard>} />
               <Route path="billing" element={<AuthGuard><BillingPage /></AuthGuard>} />
               <Route path="recently-deleted" element={<AuthGuard><RecentlyDeletedPage /></AuthGuard>} />
                           {/* 开发调试路由（仅开发环境） */}

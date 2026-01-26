@@ -28,7 +28,7 @@ declare const self: ServiceWorkerGlobalScope
 
 // 版本号（用于缓存命名空间）
 // 每次重大更改时递增版本号以强制缓存刷新
-const SW_VERSION = '1.1.0'
+const SW_VERSION = '1.2.0'
 
 // 缓存名称
 const CACHE_NAMES = {

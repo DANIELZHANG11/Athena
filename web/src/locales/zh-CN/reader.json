@@ -44,7 +44,9 @@
             "title": "暂无高亮",
             "description": "选中文字后可以添加高亮"
         },
-        "count": "处高亮"
+        "count": "处高亮",
+        "addNote": "添加笔记",
+        "deleteHighlight": "删除高亮"
     },
     "annotations": {
         "title": "笔记与高亮",
@@ -68,6 +70,16 @@
     "common": {
         "close": "关闭",
         "save": "保存",
-        "cancel": "取消"
+        "cancel": "取消",
+        "delete": "删除",
+        "moreActions": "更多操作",
+        "page": "第 {{page}} 页"
+    },
+    "toolbar": {
+        "annotations": "笔记",
+        "settings": "外观",
+        "toc": "目录",
+        "listen": "听书",
+        "aiChat": "AI 对话"
     }
 }

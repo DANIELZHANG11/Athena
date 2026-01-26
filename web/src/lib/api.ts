@@ -16,34 +16,49 @@ import { useAuthStore } from '@/stores/auth'
 
 // 检测是否在 Capacitor 原生环境中运行
 const isCapacitorNative = (): boolean => {
-    return !!(window as any).Capacitor?.isNativePlatform?.()
+    // 必须调用方法检测，不能仅检查对象存在
+    try {
+        const cap = (window as any).Capacitor
+        if (cap && typeof cap.isNativePlatform === 'function') {
+            return cap.isNativePlatform()
+        }
+    } catch {
+        // 忽略错误
+    }
+    return false
 }
 
 // 获取 API 基础 URL
 const getApiBaseUrl = (): string => {
-    // 如果有环境变量配置，优先使用
-    const envApiUrl = import.meta.env.VITE_API_BASE_URL
-    if (envApiUrl) {
-        return envApiUrl + '/api/v1'
-    }
+    const isNative = isCapacitorNative()
+    console.log('[API] Environment check:', {
+        isNative,
+        hasCapacitor: !!(window as any).Capacitor,
+        platform: (window as any).Capacitor?.getPlatform?.() || 'web'
+    })
 
     // Capacitor 原生环境：需要完整的后端地址
-    if (isCapacitorNative()) {
+    if (isNative) {
         const platform = (window as any).Capacitor?.getPlatform?.()
         // Android 模拟器使用 10.0.2.2 访问宿主机，真机使用实际IP
         if (platform === 'android') {
+            console.log('[API] Using Android native URL')
             return 'http://10.0.2.2:48000/api/v1'
         }
         // iOS 模拟器可以使用 localhost
+        console.log('[API] Using iOS native URL')
         return 'http://localhost:48000/api/v1'
     }
 
-    // Web 环境：使用相对路径，依赖 Vite 代理
+    // Web 环境（包括 Chrome 浏览器）：使用相对路径，依赖 Vite 代理
+    // 注意：不使用 VITE_API_BASE_URL 环境变量，避免配置错误导致双重前缀
+    console.log('[API] Using Web relative path: /api/v1')
     return '/api/v1'
 }
 
 const apiBaseUrl = getApiBaseUrl()
-console.log('[API] Base URL:', apiBaseUrl)
+console.log('[API] Final Base URL:', apiBaseUrl)
+
 
 const api = axios.create({
     baseURL: apiBaseUrl,
@@ -152,6 +167,8 @@ api.interceptors.response.use(
                 if (newToken) {
                     console.log('[API] Retrying request with new token')
                     originalRequest.headers.Authorization = `Bearer ${newToken}`
+                    // 确保使用正确的 baseURL（修复重定向问题）
+                    originalRequest.baseURL = apiBaseUrl
                     return api.request(originalRequest)
                 }
             }

@@ -244,6 +244,32 @@ def extract_ebook_metadata_calibre(book_id: str, user_id: str):
                     await conn.execute(text(update_sql), params)
                     print(f"[CalibreMeta] Updated book: {book_id}")
             
+            # 【向量索引触发】EPUB 和 PDF 文字型在后台任务完成后触发
+            # - 图片型 PDF：等待 OCR 完成后触发（在 ocr_tasks.py）
+            # - AZW3/MOBI 等：转换完成后触发（在 convert_tasks.py）
+            print(f"[CalibreMeta] Checking vector index trigger: format={fmt_lower}, confidence={digitalization_confidence}")
+            should_index_vectors = False
+            if fmt_lower == 'epub':
+                # EPUB 始终可以索引
+                should_index_vectors = True
+                print(f"[CalibreMeta] EPUB format, will trigger vector indexing")
+            elif fmt_lower == 'pdf' and digitalization_confidence >= 0.8:
+                # PDF 文字型可以索引
+                should_index_vectors = True
+                print(f"[CalibreMeta] PDF is text-based (confidence={digitalization_confidence:.2f}), will trigger vector indexing")
+            elif fmt_lower == 'pdf':
+                # PDF 图片型需要等 OCR
+                print(f"[CalibreMeta] PDF is image-based (confidence={digitalization_confidence:.2f}), waiting for OCR")
+            # AZW3/MOBI 等格式：由 convert_tasks.py 处理
+            
+            if should_index_vectors:
+                try:
+                    from ..celery_app import celery_app
+                    celery_app.send_task("tasks.index_book_vectors", args=[book_id])
+                    print(f"[CalibreMeta] ✓ Triggered vector indexing for book: {book_id}")
+                except Exception as e:
+                    print(f"[CalibreMeta] ✗ Failed to trigger vector indexing: {e}")
+            
             # 广播更新事件
             try:
                 event_data = {

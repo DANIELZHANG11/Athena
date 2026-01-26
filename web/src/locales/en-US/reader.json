@@ -44,7 +44,9 @@
             "title": "No Highlights",
             "description": "Select text to add highlights"
         },
-        "count": "highlights"
+        "count": "highlights",
+        "addNote": "Add Note",
+        "deleteHighlight": "Delete Highlight"
     },
     "annotations": {
         "title": "Notes & Highlights",
@@ -68,6 +70,16 @@
     "common": {
         "close": "Close",
         "save": "Save",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "moreActions": "More Actions",
+        "page": "Page {{page}}"
+    },
+    "toolbar": {
+        "annotations": "Notes",
+        "settings": "Appearance",
+        "toc": "Contents",
+        "listen": "Listen",
+        "aiChat": "AI Chat"
     }
 }

@@ -52,6 +52,11 @@ class PaddleOCREngine:
             use_doc_orientation_classify=False,  # 关闭文档方向分类（加速）
             use_doc_unwarping=False,             # 关闭文档矫正（加速）
             use_textline_orientation=False,      # 关闭文本行方向分类（加速）
+            # 性能优化参数（用户确认 2026-01-09）
+            use_fp16=True,                       # FP16半精度，显存减半
+            det_limit_side_len=960,              # 检测时图片最大边长
+            rec_batch_num=30,                    # 识别批量大小，提升吞吐
+            show_log=False,                      # 关闭日志输出减少IO
         )
         
         import logging

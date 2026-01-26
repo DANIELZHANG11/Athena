@@ -76,7 +76,9 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) }
-    ]
+    ],
+    // 确保只有一个 React 实例（避免 HMR 导致的 "Invalid hook call" 错误）
+    dedupe: ['react', 'react-dom'],
   },
   worker: {
     format: 'es',

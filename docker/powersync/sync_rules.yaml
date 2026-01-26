@@ -37,9 +37,11 @@ bucket_definitions:
         WHERE user_id = bucket.user_id
       
       # 阅读进度
+      # 2026-01-20: 添加 TTS 听书进度字段
       - SELECT 
           id, user_id, book_id, device_id, 
-          progress, last_position, last_location, finished_at, updated_at
+          progress, last_position, last_location, finished_at, updated_at,
+          tts_chapter_index, tts_position_ms, tts_last_played_at
         FROM reading_progress
         WHERE user_id = bucket.user_id
       

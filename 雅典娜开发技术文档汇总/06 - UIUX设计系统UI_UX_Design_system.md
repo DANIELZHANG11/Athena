@@ -107,6 +107,10 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
     *   **参数**: `backdrop-filter: blur(24px) saturate(180%)`
     *   **应用场景**: 顶部导航栏 (Sticky Header)、侧边栏 (Sidebar)、浮动工具栏 (Toolbar)、Modal、Dropdown。
     *   **降级策略**: 在不支持 backdrop-filter 的设备上，回退到 `opacity: 0.95` 的纯色背景。
+    *   **[重要] 透明度规范**: 
+        *   **弹出层/下拉菜单**: 使用 **80% 不透明背景** (`bg-tertiary-background/80`)，配合毛玻璃效果
+        *   **侧边栏/抽屉**: 使用 **80% 不透明背景** (`bg-tertiary-background/80`)
+        *   **遮罩层**: 可使用半透明 (`bg-black/20`)
 
 **代码实现映射** (参见 `figma.css`):
 
@@ -115,11 +119,22 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
 | 标准玻璃 | `backdrop-liquid-glass` | `blur(24px)` + overlay | 侧边栏、Sheet |
 | 重度玻璃 | `backdrop-glass-heavy` | `blur(40px) saturate(180%)` | Modal、Dialog |
 | 遮罩层 | `bg-black/20 backdrop-blur-sm` | `blur(4px)` | 弹窗背景遮罩 |
-| 内容容器 | `bg-white/95 backdrop-blur-xl` | `blur(24px)` | 弹窗内容区 |
+| **弹出层容器** | `bg-tertiary-background/80 backdrop-blur-xl` | 80%不透明 + `blur(24px)` | **Dropdown、Popover、选择器** |
 
-*   **圆角 (Radius)**:
-    *   `--radius`: `10px` (标准容器)
-    *   `full`: (按钮、胶囊标签)
+*   **圆角 (Radius)** - 遵循 Apple Human Interface Guidelines:
+
+| 组件类型 | Tailwind Class | 尺寸 | 说明 |
+|----------|----------------|------|------|
+| 按钮、胶囊 | `rounded-full` | 完全圆角 | 主按钮、标签 |
+| 大型容器 | `rounded-2xl` | 16px | Modal、Sheet、Dropdown、侧边栏 |
+| 中型容器 | `rounded-xl` | 12px | 卡片、输入框容器 |
+| 标准容器 | `rounded-lg` | 8px | 列表项、小卡片 |
+| 小型元素 | `rounded-md` | 6px | 复选框、小图标容器 |
+
+**[重要] 侧边栏圆角规范**:
+*   左侧侧边栏 (Drawer): `rounded-r-2xl` (右侧圆角)
+*   右侧侧边栏 (Panel): `rounded-l-2xl` (左侧圆角)
+*   底部抽屉 (Bottom Sheet): `rounded-t-2xl` (顶部圆角)
 
 ### 2.4 动效 (Motion)
 *   **Easing**: `cubic-bezier(0.22, 1, 0.36, 1)` (Apple 风格的自然回弹)。
@@ -171,18 +186,39 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
     *   图标按钮必须有 `hover` 状态反馈。
     *   所有按钮点击热区 ≥ 44x44px (移动端)。
 
+    **[强制] 点击反馈规范 (Press Effect)**:
+    所有可点击按钮必须有明确的点击反馈效果，遵循以下规范：
+    
+    | 按钮类型 | 样式规范 | 说明 |
+    | :--- | :--- | :--- |
+    | 图标按钮 (圆形) | `rounded-full active:scale-95 active:bg-white/20 transition-all duration-150` | **必须使用圆形 (rounded-full)**，点击时缩放 + 背景变化 |
+    | 图标按钮 (浅色背景) | `rounded-full active:scale-95 active:bg-tertiary-background transition-all duration-150` | 浅色模式下的按钮 |
+    | 主要按钮 | `active:scale-95 active:opacity-80 transition-all duration-150` | 缩放 + 透明度变化 |
+    | 危险按钮 | `active:scale-95 active:bg-system-red/80 transition-all duration-150` | 缩放 + 颜色加深 |
+    
+    **[重要] 按钮形状规范**:
+    *   **图标按钮必须使用 `rounded-full` (圆形)**，严禁使用椭圆形或矩形。
+    *   按钮的 `width` 和 `height` 必须相等，确保完美圆形。
+    *   常用尺寸：`w-8 h-8` (32px)、`w-10 h-10` (40px)、`w-11 h-11` (44px)。
+    
+    **动效参数**:
+    *   时长：`150ms` (快速响应)
+    *   缓动函数：`ease-apple` 或 `cubic-bezier(0.22, 1, 0.36, 1)`
+    *   缩放比例：`scale-95` (0.95)
+
 *   **Input**:
     *   `bg-tertiary-background focus:ring-2 ring-system-blue border-none`
     *   **Error State**: `ring-2 ring-system-red bg-system-red/5` (错误时边框变红，背景微红)
 
 *   **Modal / Dialog (弹出对话框)**:
-    **[重要] 毛玻璃效果规范** - 所有弹出层必须使用白色毛玻璃效果，禁止黑色透明背景。
+    **[重要] 背景透明度规范** - 弹出层内容区必须使用**不透明或高不透明度背景**，避免下层内容穿透干扰阅读。
 
     | 属性 | 值 | 说明 |
     | :--- | :--- | :--- |
     | 遮罩层 | `bg-black/20 backdrop-blur-sm` | 轻微半透明 + 模糊 |
-    | 内容容器 (Light) | `bg-white/95 backdrop-blur-xl shadow-2xl border border-gray-200/50` | 白色毛玻璃 + 强阴影 |
-    | 内容容器 (Dark) | `bg-gray-900/95 backdrop-blur-xl shadow-2xl border border-white/10` | 深色毛玻璃 |
+    | 内容容器 (推荐) | `bg-tertiary-background backdrop-blur-xl shadow-2xl border border-separator` | **不透明背景 + 毛玻璃** |
+    | 内容容器 (备选-Light) | `bg-white backdrop-blur-xl shadow-2xl border border-gray-200/50` | 纯白不透明 |
+    | 内容容器 (备选-Dark) | `bg-gray-900 backdrop-blur-xl shadow-2xl border border-white/10` | 深色不透明 |
     | 圆角 | `rounded-2xl` | 16px 圆角 |
     | 动效 | `animate-in fade-in-0 zoom-in-95 duration-200` | **从中心由小变大 + 淡入** |
 
@@ -198,9 +234,95 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
     | 动效 | `animate-menu-expand` | **从触发点位置由小变大展开** |
     | 方向 | `transform-origin: top right` | 从右上角展开 |
 
+*   **Sheet / Drawer (侧边抽屉)**:
+    **[强制] 侧边栏动效与圆角规范**:
+    
+    | 方向 | 圆角 | 动效 | 层级 |
+    | :--- | :--- | :--- | :--- |
+    | 右侧 (right) | `rounded-l-2xl` | `slide-in-from-right` | `z-[200]` |
+    | 左侧 (left) | `rounded-r-2xl` | `slide-in-from-left` | `z-[200]` |
+    | 底部 (bottom) | `rounded-t-2xl` | `slide-in-from-bottom` | `z-[200]` |
+    | 顶部 (top) | `rounded-b-2xl` | `slide-in-from-top` | `z-[200]` |
+    
+    *   **遮罩层**: `z-[199] bg-black/30 animate-in fade-in`
+    *   **时长**: `300ms`，缓动函数：`ease-apple`
+    *   **必须覆盖顶部/底部导航栏**：使用 `z-[200]` 确保在最顶层
+
+*   **Bottom Sheet (底部弹出面板)**:
+    | 属性 | 值 | 说明 |
+    | :--- | :--- | :--- |
+    | 容器 | `bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-t-2xl shadow-2xl` | Liquid Glass 效果 |
+    | 动效 | `animate-in slide-in-from-bottom duration-300 ease-apple` | **从下往上滑动** |
+    | 层级 | `z-[200]` | 覆盖所有其他内容 |
+    | 遮罩 | `z-[199] bg-black/30 animate-in fade-in duration-200` | 半透明遮罩 |
+
     **视觉效果**: 所有弹出层应有明显的悬浮感，使用统一的白色毛玻璃风格。
 
-### 3.2 业务核心组件 (Business Components)
+### 3.2 阅读器浮动按钮规范 (Reader FAB System)
+*EPUB 阅读器右下角的浮动操作按钮组*
+
+**按钮列表** (从上到下):
+| 按钮 | 图标 | 功能 |
+|-----|------|------|
+| AI 对话 | `Sparkles` | 跳转到 AI 对话页面，预设书籍 QA 模式 |
+| 笔记 | `BookMarked` | 打开笔记与高亮侧边栏 |
+| 外观 | `Settings` | 打开阅读设置底部面板 |
+| 目录 | `Menu` | 打开章节目录侧边栏 |
+| 听书 | `Headphones` | 触发 TTS 朗读功能 |
+
+**[重要] 主题自适应规范**:
+阅读器浮动按钮必须根据当前阅读主题的明暗程度自动调整颜色：
+
+| 主题类型 | 按钮背景 | 图标颜色 |
+|---------|---------|---------|
+| 浅色主题 (white, sepia, toffee, gray) | `bg-black/60` + `backdrop-blur-sm` | `text-white` |
+| 深色主题 (dark, black) | `bg-white/80` + `backdrop-blur-sm` | `text-gray-800` |
+
+**判断逻辑**:
+```tsx
+const isDarkTheme = localSettings.themeId === 'dark' || localSettings.themeId === 'black'
+const fabBtnClass = isDarkTheme 
+  ? 'bg-white/80 hover:bg-white/90 active:bg-white/70' 
+  : 'bg-black/60 hover:bg-black/80 active:bg-black/40'
+const fabIconClass = isDarkTheme ? 'text-gray-800' : 'text-white'
+```
+
+**尺寸与动效**:
+*   尺寸：`w-11 h-11` (44px，符合移动端触达区域标准)
+*   圆角：`rounded-full` (完美圆形)
+*   阴影：`shadow-lg`
+*   点击反馈：`active:scale-95 transition-all duration-150`
+
+### 3.3 阅读器侧边栏统一规范 (Reader Sidebar System)
+*章节目录、笔记高亮、外观设置等侧边栏必须使用统一的 Liquid Glass 效果*
+
+**[强制] 统一视觉效果**:
+| 属性 | 值 | 说明 |
+|------|-----|------|
+| 背景 | `var(--overlay)` | 使用系统 overlay 变量 |
+| 模糊 | `backdrop-blur-xl saturate-[180%]` | Liquid Glass 效果 |
+| 圆角 | 参见下表 | 根据方向设置 |
+| 阴影 | `shadow-[-4px_0_16px_rgba(0,0,0,0.15)]` 或 `shadow-[0_-4px_16px_rgba(0,0,0,0.15)]` | 柔和投影 |
+| 边框 | `border-separator` | 使用系统分隔线颜色 |
+
+**各方向侧边栏规范**:
+| 侧边栏类型 | 方向 | 圆角 | 阴影方向 |
+|-----------|-----|------|---------|
+| 章节目录 | 右侧 | `rounded-l-2xl` | 左侧阴影 |
+| 笔记高亮 | 右侧 | `rounded-l-2xl` | 左侧阴影 |
+| 外观设置 | 底部 | `rounded-t-2xl` | 上方阴影 |
+
+**遮罩层规范**:
+*   背景：`bg-black/20`
+*   模糊：`backdrop-blur-[4px]`
+*   动效：`animate-in fade-in duration-200`
+*   层级：`z-[199]` (侧边栏使用 `z-[200]`)
+
+**动效规范**:
+*   右侧侧边栏：`slide-in-from-right duration-300 ease-apple`
+*   底部面板：`slide-in-from-bottom duration-300 ease-apple`
+
+### 3.4 业务核心组件 (Business Components)
 *需按此规范开发*
 
 *   **Contextual AI Toolbar (上下文工具栏)**
@@ -211,7 +333,7 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
     *   **流式效果**: 必须实现打字机效果 (Typewriter Effect)。
     *   **光标**: 尾部跟随闪烁的 `system-purple` 光标。
     *   **引用**: `[1]` 角标需可点击，跳转至正文高亮处。
-*   **书籍卡片体系 (Book Card System)**
+### 3.5 书籍卡片体系 (Book Card System)
     基于 Apple Books 风格的响应式卡片组，支持多种状态与自适应配色。
 
     **1. Horizontal Card (横向阅读卡片) [重要更新 - Apple Books 风格]**
@@ -299,7 +421,7 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
         *   **动效**: 淡入后 1.5s 自动过渡到正常卡片状态。
     *   **用途**: 给用户视觉反馈，告知文件无需重新上传。
 
-### 3.3 书籍卡片菜单 (Book Card Menu)
+### 3.6 书籍卡片菜单 (Book Card Menu)
 
 **⋮ 下拉菜单规范** - 书籍卡片右下角的更多操作菜单。
 
@@ -332,7 +454,7 @@ python .shared/ui-ux-pro-max/scripts/search.py "<keyword>" --stack <stack>
 
 **删除按钮样式**: `destructive` 变体 (`bg-system-red text-white`)
 
-### 3.4 上传状态指示器 (Upload Status Indicator)
+### 3.7 上传状态指示器 (Upload Status Indicator)
 
 **上传流程状态机**:
 ```

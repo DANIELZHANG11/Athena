@@ -240,13 +240,85 @@ def task_index_book_content(self, book_id: str, user_id: str, ocr_pages: list[di
     print(f"[Search] Indexed {len(docs)} pages for book {book_id}")
 
 
-def index_note(
-    id: str, user_id: str, book_id: str, content: str, tags: list[str] | None
+# ============================================================================
+# 向量索引任务（用于 AI 问答 RAG）
+# ============================================================================
+
+@shared_task(
+    bind=True,
+    name="search.index_note_vector",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 5},
+)
+def task_index_note_vector(
+    self,
+    note_id: str,
+    user_id: str,
+    book_id: str,
+    content: str,
+    book_title: str | None,
+    chapter: str | None,
+    page: int | None,
+    note_type: str,
 ):
+    """
+    为用户笔记创建向量索引（异步任务）
+    
+    ⚠️ 安全说明：此任务索引私人数据，包含 user_id 用于隔离
+    """
+    import asyncio
+    from .services.llama_rag import index_user_note
+    
+    try:
+        asyncio.run(index_user_note(
+            note_id=note_id,
+            user_id=user_id,
+            book_id=book_id,
+            content=content,
+            book_title=book_title,
+            chapter=chapter,
+            page=page,
+            note_type=note_type,
+        ))
+        print(f"[Search] Vector indexed note {note_id[:8]}... for user {user_id[:8]}...")
+    except Exception as e:
+        print(f"[Search] Vector index note failed: {e}")
+        raise
+
+
+@shared_task(
+    bind=True,
+    name="search.delete_note_vector",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+)
+def task_delete_note_vector(self, note_id: str):
+    """删除笔记的向量索引"""
+    import asyncio
+    from .services.llama_rag import delete_user_note_index
+    
+    try:
+        asyncio.run(delete_user_note_index(note_id))
+    except Exception as e:
+        print(f"[Search] Delete note vector failed: {e}")
+
+
+def index_note(
+    id: str, user_id: str, book_id: str, content: str, tags: list[str] | None,
+    book_title: str | None = None, chapter: str | None = None, page: int | None = None
+):
+    """
+    索引笔记（全文索引 + 向量索引）
+    """
     if not ES_URL:
         return
     try:
+        # 全文索引（原有功能）
         task_index_note.delay(id, user_id, book_id, content, tags)
+        # 向量索引（新增：用于 AI RAG）
+        task_index_note_vector.delay(id, user_id, book_id, content, book_title, chapter, page, "note")
     except Exception:
         pass
 
@@ -256,6 +328,7 @@ def delete_note(id: str):
         return
     try:
         task_delete_note.delay(id)
+        task_delete_note_vector.delay(id)  # 同时删除向量索引
     except Exception:
         pass
 
@@ -267,11 +340,30 @@ def index_highlight(
     comment: str,
     color: str,
     tags: list[str] | None,
+    book_title: str | None = None,
+    chapter: str | None = None,
+    page: int | None = None,
+    highlighted_text: str | None = None,
 ):
+    """
+    索引高亮（全文索引 + 向量索引）
+    
+    向量索引使用 highlighted_text（被高亮的文字）+ comment（用户批注）
+    """
     if not ES_URL:
         return
     try:
+        # 全文索引（原有功能）
         task_index_highlight.delay(id, user_id, book_id, comment, color, tags)
+        # 向量索引（新增：用于 AI RAG）
+        # 合并高亮文字和用户批注作为索引内容
+        vector_content = ""
+        if highlighted_text:
+            vector_content = highlighted_text
+        if comment:
+            vector_content = f"{vector_content}\n用户批注: {comment}" if vector_content else comment
+        if vector_content:
+            task_index_note_vector.delay(id, user_id, book_id, vector_content, book_title, chapter, page, "highlight")
     except Exception:
         pass
 

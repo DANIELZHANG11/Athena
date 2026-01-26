@@ -53,6 +53,7 @@ const books = new Table({
 })
 
 // ============ 阅读进度表 ============
+// 2026-01-20: 添加 TTS 听书进度字段
 const reading_progress = new Table({
   user_id: column.text,
   book_id: column.text,
@@ -62,6 +63,10 @@ const reading_progress = new Table({
   last_location: column.text, // JSON: 位置对象
   finished_at: column.text, // ISO 8601: 完成阅读时间
   updated_at: column.text,
+  // TTS 听书进度字段
+  tts_chapter_index: column.integer, // 当前播放章节索引 (0-based)
+  tts_position_ms: column.integer,   // 章节内音频位置 (毫秒)
+  tts_last_played_at: column.text,   // 最后 TTS 播放时间 (ISO 8601)
 }, {
   indexes: {
     by_book: ['book_id'],
@@ -278,6 +283,59 @@ const local_cover_cache = new Table({
   localOnly: true,
 })
 
+// ============ TTS 本地专用表 (不同步) ============
+// 2026-01-20: 新增 TTS 听书功能本地存储
+
+// TTS 设置 (本地单例)
+const local_tts_settings = new Table({
+  voice_id: column.text,       // 当前音色ID, 默认 'vits-zh-ll-0'
+  speed: column.real,          // 播放速度 0.5-2.0, 默认 1.0
+  volume: column.real,         // 音量 0-1, 默认 1.0
+  auto_scroll: column.integer, // 自动滚动 boolean 0/1
+  sleep_timer_default: column.text, // 默认睡眠定时: 'off'|'15min'|'30min'|'1hour'|'end_of_chapter'
+  updated_at: column.text,
+}, {
+  localOnly: true,
+})
+
+// TTS 模型缓存元数据
+const local_tts_models = new Table({
+  model_id: column.text,       // 模型ID, 如 'vits-zh-ll'
+  language: column.text,       // 语言代码 'zh'|'en'|'ja'
+  display_name: column.text,   // 显示名称
+  file_path: column.text,      // OPFS 存储路径
+  file_size: column.integer,   // 文件大小 (bytes)
+  is_bundled: column.integer,  // 是否内置 boolean 0/1
+  version: column.text,        // 模型版本
+  downloaded_at: column.text,  // 下载时间 ISO8601
+}, {
+  indexes: {
+    by_language: ['language'],
+  },
+  localOnly: true,
+})
+
+// TTS 音频缓存元数据 (LRU 清理)
+const local_tts_audio_cache = new Table({
+  book_id: column.text,        // 书籍ID
+  chapter_index: column.integer, // 章节索引
+  paragraph_index: column.integer, // 段落索引
+  file_path: column.text,      // OPFS 音频文件路径
+  file_size: column.integer,   // 文件大小 (bytes)
+  duration_ms: column.integer, // 音频时长 (毫秒)
+  voice_id: column.text,       // 使用的音色
+  speed: column.real,          // 使用的语速
+  created_at: column.text,     // 创建时间
+  last_accessed_at: column.text, // 最后访问时间 (用于LRU)
+}, {
+  indexes: {
+    by_book: ['book_id'],
+    by_book_chapter: ['book_id', 'chapter_index'],
+    by_last_accessed: ['last_accessed_at'],
+  },
+  localOnly: true,
+})
+
 // ============ 导出 Schema ============
 
 export const AppSchema = new Schema({
@@ -297,6 +355,10 @@ export const AppSchema = new Schema({
   local_book_files,
   local_ocr_data,
   local_cover_cache,
+  // 2026-01-20: TTS 听书功能本地表
+  local_tts_settings,
+  local_tts_models,
+  local_tts_audio_cache,
 })
 
 // 导出表类型供其他模块使用
@@ -314,4 +376,8 @@ export type ReadingSettingsRecord = Database['reading_settings']  // 2025-12-30:
 export type LocalBookFilesRecord = Database['local_book_files']
 export type LocalOcrDataRecord = Database['local_ocr_data']
 export type LocalCoverCacheRecord = Database['local_cover_cache']
+// 2026-01-20: TTS 听书功能类型
+export type LocalTTSSettingsRecord = Database['local_tts_settings']
+export type LocalTTSModelsRecord = Database['local_tts_models']
+export type LocalTTSAudioCacheRecord = Database['local_tts_audio_cache']
 

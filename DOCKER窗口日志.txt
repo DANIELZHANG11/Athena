@@ -1,0 +1,77 @@
+          ^^^^^^^^^^^^^^^^^^^^^^
+
+[2026-01-26 12:26:41,253: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+
+    return self._exec_single_context(
+
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+
+    self._handle_dbapi_exception(
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+
+    self.dialect.do_execute(
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
+
+    cursor.execute(statement, parameters)
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in execute
+
+    self._adapt_connection.await_(
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 132, in await_only
+
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/util/_concurrency_py3k.py", line 196, in greenlet_spawn
+
+    value = await result
+
+            ^^^^^^^^^^^^
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 546, in _prepare_and_execute
+
+    self._handle_exception(error)
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 497, in _handle_exception
+
+    self._adapt_connection._handle_exception(error)
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1]   File "/usr/local/lib/python3.11/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 780, in _handle_exception
+
+    raise translated_error from error
+
+[2026-01-26 12:26:41,254: WARNING/ForkPoolWorker-1] sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column "ocr_text" of relation "books" does not exist
+
+[SQL: 
+
+                    UPDATE books 
+
+                    SET 
+
+                        minio_key = $1,
+
+                        ocr_status = 'completed',
+
+                        ocr_text = $2,
+
+                        updated_at = now()
+
+                    WHERE id = cast($3 as uuid)
+
+                ]
+
+[parameters: ('users/4504335b-c5d4-4b89-90ce-104e996cf2d9/layered/6ec621b8-f08c-41b4-a748-a1328c9c27b7.pdf', '', '6ec621b8-f08c-41b4-a748-a1328c9c27b7')]
+
+(Background on this error at: https://sqlalche.me/e/20/f405)⁠
+
+[2026-01-26 12:26:41,269: INFO/ForkPoolWorker-1] Task tasks.process_book_ocr[2b769204-e753-4d5a-a202-c237ad2ac727] succeeded in 60.22460357499949s: None

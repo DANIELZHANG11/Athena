@@ -8,8 +8,9 @@
  * 4. 高亮和笔记功能（Apple Books 风格）
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronLeft, Menu, X, Settings, BookMarked } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ChevronLeft, Menu, X, Settings, BookMarked, Headphones, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { DEFAULT_SETTINGS, type ReadingSettings, useReadingSettings, type FontFamily } from '@/hooks/useReadingSettings'
@@ -91,9 +92,11 @@ export interface EpubReaderProps {
     data: ArrayBuffer
     bookId?: string  // 用于保存每本书的阅读设置
     bookTitle: string
-    initialLocation?: string | number | null
+    initialLocation?: string | number | { type: 'section', index: number } | null
     onLocationChanged?: (cfi: string, percentage: number) => void
     onBack?: () => void
+    /** foliate-view 元素准备就绪回调（用于 TTS 初始化） */
+    onViewReady?: (view: FoliateViewElement) => void
 }
 
 interface TocItem {
@@ -102,21 +105,41 @@ interface TocItem {
     subitems?: TocItem[]
 }
 
-// 声明 foliate-view 元素类型
-interface FoliateViewElement extends HTMLElement {
+// 声明 foliate-view 元素类型（导出供 TTS 使用）
+export interface FoliateViewElement extends HTMLElement {
     open: (file: File | Blob | string) => Promise<void>
     init: (options: { lastLocation?: string; showTextStart?: boolean }) => Promise<void>
     goTo: (target: string | number) => Promise<void>
     goLeft: () => Promise<void>
     goRight: () => Promise<void>
+    /** 初始化 TTS (foliate-js 内置) */
+    initTTS?: (granularity?: 'word' | 'sentence', highlight?: (range: Range) => void) => Promise<void>
+    /** TTS 实例 (foliate-js 内置) */
+    tts?: {
+        doc: Document
+        highlight: (range: Range) => void
+        start: () => string | undefined
+        resume: () => string | undefined
+        prev: (paused?: boolean) => string | undefined
+        next: (paused?: boolean) => string | undefined
+        from: (range: Range) => string | undefined
+        setMark: (mark: string) => void
+    }
     book?: {
-        metadata?: { title?: string }
+        metadata?: { title?: string; language?: string }
         toc?: TocItem[]
         dir?: string
+        sections?: Array<{
+            id: string
+            linear: string
+            createDocument: () => Promise<Document>
+        }>
     }
     renderer?: {
         setStyles?: (css: string) => void
         next: () => void
+        getContents?: () => Array<{ doc: Document; index: number }>
+        scrollToAnchor?: (range: Range, smooth?: boolean) => void
     }
 }
 
@@ -173,8 +196,10 @@ export default function EpubReader({
     initialLocation,
     onLocationChanged,
     onBack,
+    onViewReady,
 }: EpubReaderProps) {
     const { t } = useTranslation('reader')
+    const navigate = useNavigate()
     const containerRef = useRef<HTMLDivElement>(null)
     const viewRef = useRef<FoliateViewElement | null>(null)
     const hideTimeoutRef = useRef<number | null>(null)
@@ -230,6 +255,28 @@ export default function EpubReader({
     const settingsInitializedRef = useRef(false)
     // 跟踪保存后不再响应 savedSettings 变化
     const hasSavedRef = useRef(false)
+
+    // 判断当前主题是否为深色（dark 或 black 主题）
+    // 深色模式下浮动按钮使用浅色背景+深色图标，与浅色模式相反
+    const isDarkTheme = useMemo(() => {
+        return localSettings.themeId === 'dark' || localSettings.themeId === 'black'
+    }, [localSettings.themeId])
+
+    // 浮动按钮样式：深色主题使用浅色按钮，浅色主题使用深色按钮
+    const fabBtnClass = useMemo(() => {
+        if (isDarkTheme) {
+            // 深色主题：浅色按钮 + 深色图标
+            return 'epub-reader__fab-btn w-11 h-11 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-white/90 active:scale-95 active:bg-white/70 transition-all duration-150'
+        } else {
+            // 浅色主题：深色按钮 + 浅色图标
+            return 'epub-reader__fab-btn w-11 h-11 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center shadow-lg hover:bg-black/80 active:scale-95 active:bg-black/40 transition-all duration-150'
+        }
+    }, [isDarkTheme])
+
+    // 浮动按钮图标颜色
+    const fabIconClass = useMemo(() => {
+        return isDarkTheme ? 'text-gray-800' : 'text-white'
+    }, [isDarkTheme])
 
     // 显示字体下载进度（当选择新字体且需要下载时）
     useEffect(() => {
@@ -692,7 +739,15 @@ export default function EpubReader({
                 console.log('[EpubReader] Applied initial styles')
 
                 console.log('[EpubReader] 5. Initializing position...')
-                if (initialLocation && typeof initialLocation === 'string') {
+
+                // 处理不同类型的 initialLocation
+                if (initialLocation && typeof initialLocation === 'object' && 'type' in initialLocation && initialLocation.type === 'section') {
+                    // 来自AI引用的章节索引跳转
+                    console.log('[EpubReader] Jumping to section index:', initialLocation.index)
+                    await view.init({ showTextStart: true })
+                    // 使用 foliate-js 的 goTo(index) 跳转到指定章节
+                    await view.goTo(initialLocation.index)
+                } else if (initialLocation && typeof initialLocation === 'string') {
                     await view.init({ lastLocation: initialLocation })
                 } else {
                     await view.init({ showTextStart: true })
@@ -701,6 +756,11 @@ export default function EpubReader({
                 if (!mounted) return
                 setIsLoading(false)
                 console.log('[EpubReader] 6. Initialization complete!')
+
+                // 通知父组件 view 已准备就绪（用于 TTS）
+                if (onViewReady && viewRef.current) {
+                    onViewReady(viewRef.current)
+                }
 
                 // 开始自动隐藏计时
                 startAutoHideTimer()
@@ -825,21 +885,7 @@ export default function EpubReader({
                     <span className="epub-reader__book-title">{bookTitle}</span>
                     {currentChapter && <span className="epub-reader__chapter">{currentChapter}</span>}
                 </div>
-                <div className="epub-reader__header-actions">
-                    <button
-                        className="epub-reader__settings-btn"
-                        onClick={() => setShowAnnotations(!showAnnotations)}
-                        aria-label={t('annotations.title', '标注')}
-                    >
-                        <BookMarked size={22} />
-                    </button>
-                    <button className="epub-reader__settings-btn" onClick={() => setShowSettings(true)} aria-label="阅读设置">
-                        <Settings size={22} />
-                    </button>
-                    <button className="epub-reader__menu-btn" onClick={() => setShowToc(!showToc)} aria-label="目录">
-                        {showToc ? <X size={24} /> : <Menu size={24} />}
-                    </button>
-                </div>
+                <div className="w-10" />
             </header>
 
             {/* 阅读区域 - 全屏 */}
@@ -893,6 +939,70 @@ export default function EpubReader({
                     {currentSection}/{totalSections} · {(currentPercentage * 100).toFixed(1)}%
                 </span>
             </footer>
+
+            {/* 右下角悬浮工具栏 - 与顶部/底部栏同步显示/隐藏 */}
+            <div
+                className={`fixed right-4 bottom-20 z-30 flex flex-col gap-2 transition-all duration-300 ${showBars ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+                    }`}
+            >
+                {/* AI 对话按钮 - 跳转到 AI 对话页面，预设书籍 QA 模式 */}
+                <button
+                    className={fabBtnClass}
+                    onClick={() => {
+                        // 跳转到 AI 对话页面，带上当前书籍 ID 和 QA 模式参数
+                        const params = new URLSearchParams()
+                        params.set('mode', 'qa')
+                        if (bookId) {
+                            params.set('bookId', bookId)
+                        }
+                        navigate(`/app/ai-conversations?${params.toString()}`)
+                    }}
+                    aria-label={t('toolbar.aiChat')}
+                >
+                    <Sparkles size={20} className={fabIconClass} />
+                </button>
+
+                {/* 笔记按钮 */}
+                <button
+                    className={fabBtnClass}
+                    onClick={() => setShowAnnotations(!showAnnotations)}
+                    aria-label={t('toolbar.annotations')}
+                >
+                    <BookMarked size={20} className={fabIconClass} />
+                </button>
+
+                {/* 外观设置按钮 */}
+                <button
+                    className={fabBtnClass}
+                    onClick={() => setShowSettings(true)}
+                    aria-label={t('toolbar.settings')}
+                >
+                    <Settings size={20} className={fabIconClass} />
+                </button>
+
+                {/* 目录按钮 */}
+                <button
+                    className={fabBtnClass}
+                    onClick={() => setShowToc(!showToc)}
+                    aria-label={t('toolbar.toc')}
+                >
+                    <Menu size={20} className={fabIconClass} />
+                </button>
+
+                {/* 听书按钮 - 触发 TTS */}
+                <button
+                    className={fabBtnClass}
+                    onClick={() => {
+                        // 通知父组件触发 TTS（通过 onViewReady 传递的 view）
+                        console.log('[EpubReader] TTS button clicked')
+                        // TTS 由 ReaderPage 控制，这里使用自定义事件通知
+                        window.dispatchEvent(new CustomEvent('epub-reader-tts-request'))
+                    }}
+                    aria-label={t('toolbar.listen')}
+                >
+                    <Headphones size={20} className={fabIconClass} />
+                </button>
+            </div>
 
             {/* 阅读设置面板 */}
             <ReaderSettingsSheet

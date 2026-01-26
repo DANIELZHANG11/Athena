@@ -52,6 +52,7 @@ def issue_tokens(user_id: str, session_id: str):
     access = jwt.encode(
         {
             "sub": user_id,
+            "user_id": user_id,  # PowerSync 需要此字段用于 token_parameters.user_id
             "sid": session_id,
             "iat": now,
             "exp": now + ACCESS_EXPIRE,

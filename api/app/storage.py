@@ -17,6 +17,7 @@ import boto3
 BUCKET = os.getenv("MINIO_BUCKET", "athena")
 
 
+
 def get_s3():
     endpoint = os.getenv("MINIO_ENDPOINT", "seaweed:8333")
     access = os.getenv("MINIO_ACCESS_KEY")
@@ -30,6 +31,9 @@ def get_s3():
         aws_access_key_id=access,
         aws_secret_access_key=secret,
     )
+
+get_storage_client = get_s3
+
 
 
 def ensure_bucket(client, bucket: str):

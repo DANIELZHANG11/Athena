@@ -124,6 +124,11 @@ export const FONT_CONFIGS: Record<FontFamily, FontConfig> = {
 }
 
 // ============================================================================
+// 本地存储键名 - 用于持久化已下载字体的状态
+// ============================================================================
+const FONTS_STORAGE_KEY = 'athena_downloaded_fonts'
+
+// ============================================================================
 // 字体服务类
 // ============================================================================
 
@@ -147,6 +152,56 @@ class FontService {
                 progress: 100,
             })
         })
+        
+        // 从 localStorage 恢复已下载的字体状态（全局共享）
+        this.restoreDownloadedFonts()
+    }
+    
+    /**
+     * 从 localStorage 恢复已下载的字体状态
+     * 确保字体下载状态在所有书籍间共享
+     */
+    private restoreDownloadedFonts(): void {
+        try {
+            const stored = localStorage.getItem(FONTS_STORAGE_KEY)
+            if (stored) {
+                const downloadedFonts: FontFamily[] = JSON.parse(stored)
+                downloadedFonts.forEach(fontFamily => {
+                    // 验证字体配置存在
+                    if (FONT_CONFIGS[fontFamily]) {
+                        this.fontStatus.set(fontFamily, {
+                            fontFamily,
+                            status: 'loaded',
+                            progress: 100,
+                        })
+                        // 注入 CSS 以确保字体可用
+                        this.injectFontCSS(fontFamily)
+                        console.log(`[FontService] Restored font from storage: ${fontFamily}`)
+                    }
+                })
+            }
+        } catch (error) {
+            console.warn('[FontService] Failed to restore downloaded fonts:', error)
+        }
+    }
+    
+    /**
+     * 保存已下载的字体到 localStorage
+     */
+    private saveDownloadedFonts(): void {
+        try {
+            const downloadedFonts: FontFamily[] = []
+            this.fontStatus.forEach((progress, fontFamily) => {
+                // 只保存非系统字体且已加载的字体
+                const config = FONT_CONFIGS[fontFamily]
+                if (config && config.files.length > 0 && progress.status === 'loaded') {
+                    downloadedFonts.push(fontFamily)
+                }
+            })
+            localStorage.setItem(FONTS_STORAGE_KEY, JSON.stringify(downloadedFonts))
+        } catch (error) {
+            console.warn('[FontService] Failed to save downloaded fonts:', error)
+        }
     }
 
     /**
@@ -253,6 +308,9 @@ class FontService {
                 status: 'loaded',
                 progress: 100,
             })
+            
+            // 保存到 localStorage，确保所有书籍共享字体下载状态
+            this.saveDownloadedFonts()
 
             console.log(`[FontService] Font loaded: ${fontFamily}`)
         } catch (error) {

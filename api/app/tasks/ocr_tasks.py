@@ -562,10 +562,10 @@ def process_book_ocr(book_id: str, user_id: str):
                 doc = fitz.open(stream=layered_pdf_data, filetype="pdf")
                 for page_num in range(len(doc)):
                     page = doc[page_num]
-                    text = page.get_text()
-                    if text.strip():
+                    page_text = page.get_text()  # 不能用 text 作为变量名，会覆盖 SQLAlchemy 的 text 函数
+                    if page_text.strip():
                         search_regions.append({
-                            "text": text.strip(),
+                            "text": page_text.strip(),
                             "page": page_num + 1
                         })
                 doc.close()

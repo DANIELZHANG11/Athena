@@ -84,11 +84,16 @@
   --color-system-pink: #FF2D55;
 
   /* 高亮颜色 (Apple Books 风格) */
-  --highlight-yellow: #FFCC00;       /* 想法/灵感 */
-  --highlight-green: #34C759;        /* 事实/数据 */
-  --highlight-blue: #007AFF;         /* 引用/优美 */
-  --highlight-pink: #FF2D55;         /* 重要/关键 */
-  --highlight-purple: #AF52DE;       /* 问题/疑问 */
+  --highlight-yellow: #FFCC00;
+  /* 想法/灵感 */
+  --highlight-green: #34C759;
+  /* 事实/数据 */
+  --highlight-blue: #007AFF;
+  /* 引用/优美 */
+  --highlight-pink: #FF2D55;
+  /* 重要/关键 */
+  --highlight-purple: #AF52DE;
+  /* 问题/疑问 */
   /* 高亮背景色 (带透明度用于文本高亮) */
   --highlight-yellow-bg: rgba(255, 204, 0, 0.35);
   --highlight-green-bg: rgba(52, 199, 89, 0.35);
@@ -290,6 +295,50 @@
   background-color: var(--system-blue);
 }
 
+@utility bg-system-purple {
+  background-color: var(--color-system-purple);
+}
+
+@utility bg-system-green {
+  background-color: var(--color-system-green);
+}
+
+@utility bg-system-red {
+  background-color: var(--color-system-red);
+}
+
+@utility text-system-purple {
+  color: var(--color-system-purple);
+}
+
+@utility text-system-blue {
+  color: var(--color-system-blue);
+}
+
+@utility text-system-red {
+  color: var(--color-system-red);
+}
+
+@utility text-system-green {
+  color: var(--color-system-green);
+}
+
+@utility text-system-yellow {
+  color: var(--color-system-yellow);
+}
+
+@utility bg-system-yellow {
+  background-color: var(--color-system-yellow);
+}
+
+@utility ring-system-purple {
+  --tw-ring-color: var(--color-system-purple);
+}
+
+@utility border-system-purple {
+  border-color: var(--color-system-purple);
+}
+
 @utility border-separator {
   border-color: var(--separator);
 }
@@ -468,4 +517,28 @@ html {
 .marquee-mask {
   -webkit-mask-image: linear-gradient(to right, transparent 0, rgba(0, 0, 0, 0.25) 40px, rgba(0, 0, 0, 0.7) 100px, black 160px, black calc(100% - 160px), rgba(0, 0, 0, 0.7) calc(100% - 100px), rgba(0, 0, 0, 0.25) calc(100% - 40px), transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, rgba(0, 0, 0, 0.25) 40px, rgba(0, 0, 0, 0.7) 100px, black 160px, black calc(100% - 160px), rgba(0, 0, 0, 0.7) calc(100% - 100px), rgba(0, 0, 0, 0.25) calc(100% - 40px), transparent 100%);
+}
+
+/* AI 对话输入框 */
+.ai-input-textarea {
+  min-height: 48px;
+  max-height: 120px;
+}
+
+/* AI 闪烁光标 */
+@keyframes ai-cursor-blink {
+
+  0%,
+  50% {
+    opacity: 1;
+  }
+
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.ai-cursor {
+  animation: ai-cursor-blink 1s step-end infinite;
 }

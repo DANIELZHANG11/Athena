@@ -20,8 +20,11 @@ import { PdfPageWithOcr } from '@/components/reader/PdfPageWithOcr'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// 配置 PDF worker
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+// 配置 PDF worker - 使用本地导入方式（推荐，避免 CDN 网络问题）
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url,
+).toString()
 
 export interface PdfReaderProps {
     url: string
@@ -30,6 +33,15 @@ export interface PdfReaderProps {
     initialPage?: number
     onPageChanged?: (page: number, totalPages: number, percentage: number) => void
     onBack?: () => void
+}
+
+// PDF.js 配置选项 - 必须在组件外部定义以避免重复创建
+const pdfOptions = {
+    // 支持中文等非拉丁字符
+    cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
+    cMapPacked: true,
+    // 标准字体支持
+    standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
 }
 
 export default function PdfReader({
@@ -46,6 +58,12 @@ export default function PdfReader({
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
+    // 添加调试日志
+    useEffect(() => {
+        console.log('[PdfReader] Component mounted with URL:', url?.substring(0, 50))
+        console.log('[PdfReader] Worker URL:', pdfjs.GlobalWorkerOptions.workerSrc)
+    }, [url])
+
     // PDF 加载成功
     const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
         console.log('[PdfReader] Document loaded, pages:', numPages)
@@ -60,6 +78,7 @@ export default function PdfReader({
     // PDF 加载失败
     const onDocumentLoadError = useCallback((error: Error) => {
         console.error('[PdfReader] Document load error:', error)
+        console.error('[PdfReader] Error stack:', error.stack)
         setError(error.message || 'Failed to load PDF')
         setLoading(false)
     }, [])
@@ -108,17 +127,7 @@ export default function PdfReader({
     // 计算页面宽度（基于缩放比例）
     const pageWidth = Math.min(800, typeof window !== 'undefined' ? window.innerWidth - 32 : 768) * scale
 
-    // 加载中
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-2">加载 PDF 中...</span>
-            </div>
-        )
-    }
-
-    // 错误
+    // 错误 - 只有在出错时才显示错误界面
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-red-500">
@@ -157,11 +166,19 @@ export default function PdfReader({
                 <div className="min-h-full flex justify-center py-4">
                     <Document
                         file={url}
+                        options={pdfOptions}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
                         loading={
                             <div className="flex items-center justify-center p-8">
                                 <Loader2 className="h-8 w-8 animate-spin" />
+                                <span className="ml-2">正在解析 PDF...</span>
+                            </div>
+                        }
+                        error={
+                            <div className="flex flex-col items-center justify-center p-8 text-red-500">
+                                <AlertCircle className="h-8 w-8 mb-2" />
+                                <span>PDF 文件解析失败</span>
                             </div>
                         }
                     >
@@ -173,43 +190,49 @@ export default function PdfReader({
                     </Document>
                 </div>
 
-                {/* 左右翻页热区 */}
-                <button
-                    className="absolute left-0 top-0 w-1/4 h-full opacity-0 hover:opacity-10 bg-black transition-opacity cursor-pointer"
-                    onClick={goPrev}
-                    disabled={pageNumber <= 1}
-                    aria-label="上一页"
-                />
-                <button
-                    className="absolute right-0 top-0 w-1/4 h-full opacity-0 hover:opacity-10 bg-black transition-opacity cursor-pointer"
-                    onClick={goNext}
-                    disabled={pageNumber >= numPages}
-                    aria-label="下一页"
-                />
+                {/* 左右翻页热区 - 只在加载完成后显示 */}
+                {!loading && numPages > 0 && (
+                    <>
+                        <button
+                            className="absolute left-0 top-0 w-1/4 h-full opacity-0 hover:opacity-10 bg-black transition-opacity cursor-pointer"
+                            onClick={goPrev}
+                            disabled={pageNumber <= 1}
+                            aria-label="上一页"
+                        />
+                        <button
+                            className="absolute right-0 top-0 w-1/4 h-full opacity-0 hover:opacity-10 bg-black transition-opacity cursor-pointer"
+                            onClick={goNext}
+                            disabled={pageNumber >= numPages}
+                            aria-label="下一页"
+                        />
+                    </>
+                )}
             </div>
 
-            {/* 底部导航 */}
-            <footer className="flex items-center justify-center gap-4 px-4 py-3 border-t bg-background/95 backdrop-blur">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={pageNumber <= 1}
-                    onClick={goPrev}
-                >
-                    <ChevronLeft className="h-5 w-5" />
-                </Button>
-                <span className="text-sm font-medium min-w-[80px] text-center">
-                    {pageNumber} / {numPages}
-                </span>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={pageNumber >= numPages}
-                    onClick={goNext}
-                >
-                    <ChevronRight className="h-5 w-5" />
-                </Button>
-            </footer>
+            {/* 底部导航 - 只在加载完成后显示 */}
+            {!loading && numPages > 0 && (
+                <footer className="flex items-center justify-center gap-4 px-4 py-3 border-t bg-background/95 backdrop-blur">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={pageNumber <= 1}
+                        onClick={goPrev}
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                    </Button>
+                    <span className="text-sm font-medium min-w-[80px] text-center">
+                        {pageNumber} / {numPages}
+                    </span>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={pageNumber >= numPages}
+                        onClick={goNext}
+                    >
+                        <ChevronRight className="h-5 w-5" />
+                    </Button>
+                </footer>
+            )}
         </div>
     )
 }

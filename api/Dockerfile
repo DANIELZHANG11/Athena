@@ -13,10 +13,20 @@ ENV PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 ENV PIP_DEFAULT_TIMEOUT=300
 ENV PIP_RETRIES=5
 
-# OCR/Embedding GPU 配置
-ENV FLAGS_fraction_of_gpu_memory_to_use=0.4
-ENV OCR_GPU_MEM=3500
-ENV OCR_CPU_THREADS=6
+# ⚠️ GPU 优先策略环境变量
+# PyTorch GPU 配置
+ENV CUDA_VISIBLE_DEVICES=0
+ENV TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6;8.9;9.0"
+
+# PaddlePaddle GPU 配置 - 限制显存使用，避免 OOM
+ENV FLAGS_fraction_of_gpu_memory_to_use=0.3
+ENV FLAGS_gpu_memory_limit_mb=3500
+ENV FLAGS_initial_gpu_memory_in_mb=500
+ENV FLAGS_reallocate_gpu_memory_in_mb=500
+
+# HuggingFace Embedding GPU 配置
+ENV SENTENCE_TRANSFORMERS_HOME=/app/.hf_cache
+ENV HF_DATASETS_OFFLINE=0
 
 ARG SKIP_HEAVY=true
 
@@ -37,9 +47,10 @@ RUN apt-get update && \
     tesseract-ocr-eng \
     ghostscript \
     unpaper \
+    build-essential \
     && rm -rf /var/lib/apt/lists/* || \
     (apt-get update && apt-get install -y --fix-missing \
-    libgl1 libglib2.0-0 libgomp1 curl \
+    libgl1 libglib2.0-0 libgomp1 curl build-essential \
     tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-eng \
     ghostscript unpaper && rm -rf /var/lib/apt/lists/*)
 
@@ -50,16 +61,27 @@ RUN pip install --upgrade pip && \
 
 # 安装重型 AI 依赖（OCR + Embedding + TTS）
 # SKIP_HEAVY=false 时安装完整版本
+# ⚠️ GPU 优先策略：所有 AI 任务优先使用 GPU，只有 GPU 内存不足时才回退 CPU
 RUN if [ "$SKIP_HEAVY" != "true" ]; then \
-    # PaddlePaddle GPU 版本 (CUDA 11.8) - 支持 PP-OCRv5
-    pip install --no-cache-dir paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ --timeout 300 && \
-    # PaddleOCR 3.x (支持 PP-OCRv5 mobile) - 3.3.2 修复与 PaddleX 3.3.10 的兼容性
+    # ========================================
+    # 1. PaddlePaddle GPU 版本 - 支持 PP-OCRv5
+    # 官方安装文档: https://www.paddlepaddle.org.cn/install/quick
+    # 
+    # 注意：paddlepaddle-gpu 本身在 GPU 不可用时会自动回退到 CPU
+    # 无需单独安装 CPU 版本作为备用
+    # ========================================
+    pip install --no-cache-dir paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/stable/cu126/ --timeout 600 || \
+    pip install --no-cache-dir paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/stable/cu118/ --timeout 600 || \
+    pip install --no-cache-dir paddlepaddle-gpu --timeout 600 && \
+    # PaddleOCR 3.x (支持 PP-OCRv5 mobile)
     pip install --no-cache-dir paddleocr==3.3.2 --timeout 300 && \
-    # BGE-M3 Embedding 模型
-    pip install --no-cache-dir FlagEmbedding --timeout 300 && \
-    # Edge TTS
-    pip install --no-cache-dir edge-tts --timeout 300; \
+    # ========================================
+    # 2. BGE-M3 Embedding 模型
+    # ========================================
+    pip install --no-cache-dir FlagEmbedding --timeout 300; \
+    # 注意：edge-tts 已移除，TTS 功能已迁移到客户端 (Sherpa-ONNX WASM)
     fi
+
 
 COPY app /app/app
 COPY alembic.ini /app/alembic.ini

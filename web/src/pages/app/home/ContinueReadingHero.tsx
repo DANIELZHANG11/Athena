@@ -36,113 +36,113 @@ type Props = {
  * @see https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image
  */
 function extractDominantColor(imageUrl: string): Promise<string> {
-  const DEFAULT_COLOR = '#6B7280' // 灰色后备色
-  
-  return new Promise((resolve) => {
-    const img = new Image()
-    
-    // 判断是否为同源请求
-    const isLocalApi = imageUrl.startsWith('/api/') || imageUrl.startsWith(window.location.origin)
-    
-    // 外部 URL 需要设置 crossOrigin，但可能因 CORS 配置问题失败
-    if (!isLocalApi) {
-      img.crossOrigin = 'anonymous'
-    }
-    
-    // 超时保护：5秒内未完成则使用默认颜色
-    const timeoutId = setTimeout(() => {
-      console.log('[Hero ColorExtract] Timeout for:', imageUrl)
-      resolve(DEFAULT_COLOR)
-    }, 5000)
-    
-    img.onload = () => {
-      clearTimeout(timeoutId)
-      try {
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })
-        if (!ctx) {
-          resolve(DEFAULT_COLOR)
-          return
+    const DEFAULT_COLOR = '#6B7280' // 灰色后备色
+
+    return new Promise((resolve) => {
+        const img = new Image()
+
+        // 判断是否为同源请求
+        const isLocalApi = imageUrl.startsWith('/api/') || imageUrl.startsWith(window.location.origin)
+
+        // 外部 URL 需要设置 crossOrigin，但可能因 CORS 配置问题失败
+        if (!isLocalApi) {
+            img.crossOrigin = 'anonymous'
         }
-        
-        // 采样整个图片的中心区域
-        canvas.width = 50
-        canvas.height = 75
-        ctx.drawImage(img, 0, 0, 50, 75)
-        
-        // 尝试读取像素数据（可能因 CORS 失败抛出安全错误）
-        let imageData: ImageData
-        try {
-          imageData = ctx.getImageData(5, 10, 40, 55)
-        } catch {
-          // CORS 限制导致无法读取像素（不透明响应）
-          console.warn('[Hero ColorExtract] CORS blocked pixel read, using default color')
-          resolve(DEFAULT_COLOR)
-          return
+
+        // 超时保护：5秒内未完成则使用默认颜色
+        const timeoutId = setTimeout(() => {
+            console.log('[Hero ColorExtract] Timeout for:', imageUrl)
+            resolve(DEFAULT_COLOR)
+        }, 5000)
+
+        img.onload = () => {
+            clearTimeout(timeoutId)
+            try {
+                const canvas = document.createElement('canvas')
+                const ctx = canvas.getContext('2d', { willReadFrequently: true })
+                if (!ctx) {
+                    resolve(DEFAULT_COLOR)
+                    return
+                }
+
+                // 采样整个图片的中心区域
+                canvas.width = 50
+                canvas.height = 75
+                ctx.drawImage(img, 0, 0, 50, 75)
+
+                // 尝试读取像素数据（可能因 CORS 失败抛出安全错误）
+                let imageData: ImageData
+                try {
+                    imageData = ctx.getImageData(5, 10, 40, 55)
+                } catch {
+                    // CORS 限制导致无法读取像素（不透明响应）
+                    console.warn('[Hero ColorExtract] CORS blocked pixel read, using default color')
+                    resolve(DEFAULT_COLOR)
+                    return
+                }
+
+                const data = imageData.data
+                let r = 0, g = 0, b = 0, count = 0
+
+                // 跳过太暗或太亮的像素
+                for (let i = 0; i < data.length; i += 4) {
+                    const pr = data[i]
+                    const pg = data[i + 1]
+                    const pb = data[i + 2]
+                    const brightness = (pr + pg + pb) / 3
+                    if (brightness > 20 && brightness < 235) {
+                        r += pr
+                        g += pg
+                        b += pb
+                        count++
+                    }
+                }
+
+                if (count === 0) count = 1
+                r = Math.round(r / count)
+                g = Math.round(g / count)
+                b = Math.round(b / count)
+
+                resolve(`rgb(${r}, ${g}, ${b})`)
+            } catch (e) {
+                console.warn('[Hero ColorExtract] Canvas error:', e)
+                resolve(DEFAULT_COLOR)
+            }
         }
-        
-        const data = imageData.data
-        let r = 0, g = 0, b = 0, count = 0
-        
-        // 跳过太暗或太亮的像素
-        for (let i = 0; i < data.length; i += 4) {
-          const pr = data[i]
-          const pg = data[i + 1]
-          const pb = data[i + 2]
-          const brightness = (pr + pg + pb) / 3
-          if (brightness > 20 && brightness < 235) {
-            r += pr
-            g += pg
-            b += pb
-            count++
-          }
+
+        img.onerror = () => {
+            clearTimeout(timeoutId)
+            console.warn('[Hero ColorExtract] Image load error for:', imageUrl)
+            resolve(DEFAULT_COLOR)
         }
-        
-        if (count === 0) count = 1
-        r = Math.round(r / count)
-        g = Math.round(g / count)
-        b = Math.round(b / count)
-        
-        resolve(`rgb(${r}, ${g}, ${b})`)
-      } catch (e) {
-        console.warn('[Hero ColorExtract] Canvas error:', e)
-        resolve(DEFAULT_COLOR)
-      }
-    }
-    
-    img.onerror = () => {
-      clearTimeout(timeoutId)
-      console.warn('[Hero ColorExtract] Image load error for:', imageUrl)
-      resolve(DEFAULT_COLOR)
-    }
-    
-    img.src = imageUrl
-  })
+
+        img.src = imageUrl
+    })
 }
 
 /**
  * 计算颜色亮度 (0-1)
  */
 function getLuminance(color: string): number {
-  try {
-    const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-    if (match) {
-      const r = parseInt(match[1]) / 255
-      const g = parseInt(match[2]) / 255
-      const b = parseInt(match[3]) / 255
-      return 0.299 * r + 0.587 * g + 0.114 * b
+    try {
+        const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+        if (match) {
+            const r = parseInt(match[1]) / 255
+            const g = parseInt(match[2]) / 255
+            const b = parseInt(match[3]) / 255
+            return 0.299 * r + 0.587 * g + 0.114 * b
+        }
+        const hex = color.replace('#', '')
+        if (hex.length === 6) {
+            const r = parseInt(hex.slice(0, 2), 16) / 255
+            const g = parseInt(hex.slice(2, 4), 16) / 255
+            const b = parseInt(hex.slice(4, 6), 16) / 255
+            return 0.299 * r + 0.587 * g + 0.114 * b
+        }
+    } catch {
+        // Invalid hex color, return default luminance
     }
-    const hex = color.replace('#', '')
-    if (hex.length === 6) {
-      const r = parseInt(hex.slice(0, 2), 16) / 255
-      const g = parseInt(hex.slice(2, 4), 16) / 255
-      const b = parseInt(hex.slice(4, 6), 16) / 255
-      return 0.299 * r + 0.587 * g + 0.114 * b
-    }
-  } catch {
-    // Invalid hex color, return default luminance
-  }
-  return 0.5
+    return 0.5
 }
 
 export default function ContinueReadingHero({ bookId, title, author, coverUrl, progress, isFinished = false, onDeleted, onFinishedChange }: Props) {
@@ -150,19 +150,19 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
     const navigate = useNavigate()
     const [dominantColor, setDominantColor] = useState('#6B7280')
     const [imgError, setImgError] = useState(false)
-    
+
     // 调试：记录传入的 coverUrl
     useEffect(() => {
         console.log('[Hero] Received props - bookId:', bookId, 'coverUrl:', coverUrl)
     }, [bookId, coverUrl])
-    
+
     useEffect(() => {
         if (coverUrl) {
             setImgError(false) // Reset error state when coverUrl changes
             extractDominantColor(coverUrl).then(setDominantColor)
         }
     }, [coverUrl])
-    
+
     const luminance = getLuminance(dominantColor)
     // 默认使用白色文字，因为 blur 背景通常较暗
     // 只有当确认提取到浅色时才使用深色文字
@@ -189,7 +189,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
             >
                 {/* Ambient Blur 背景 - 使用封面图片模糊放大 */}
                 {coverUrl && (
-                    <div 
+                    <div
                         className="absolute inset-0 scale-150"
                         style={{
                             backgroundImage: `url(${coverUrl})`,
@@ -199,17 +199,17 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                         }}
                     />
                 )}
-                
+
                 {/* 渐变遮罩 - 确保文字可读 */}
-                <div 
+                <div
                     className="absolute inset-0"
                     style={{
-                        background: isLight 
+                        background: isLight
                             ? 'linear-gradient(to right, rgba(255,255,255,0.2), rgba(255,255,255,0.5))'
                             : 'linear-gradient(to right, rgba(0,0,0,0.2), rgba(0,0,0,0.4))'
                     }}
                 />
-                
+
                 {/* 内容布局 */}
                 <div className="relative flex h-full">
                     {/* 封面区域 - 图片上边与标题齐平，下边与进度条齐平 */}
@@ -231,7 +231,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                                     <BookOpen className="w-8 h-8 text-gray-400" />
                                 </div>
                             )}
-                            
+
                             {/* Play 按钮 - Hover 时显示 */}
                             <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-medium">
                                 <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg backdrop-blur-sm">
@@ -240,7 +240,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* 内容区域 - 占 3/4 宽度 */}
                     <div className="flex-1 flex flex-col justify-center px-4 py-3 pr-12 overflow-hidden">
                         <h3 className={`text-lg font-bold mb-1 overflow-hidden whitespace-nowrap ${textClass}`}>
@@ -249,7 +249,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                         <p className={`text-sm mb-3 overflow-hidden whitespace-nowrap ${subTextClass}`}>
                             {author || t('common.unknown_author')}
                         </p>
-                        
+
                         {/* 进度信息 - 已读完时显示勾选图标和"已读完" */}
                         <div className="mt-auto">
                             {isFinished ? (
@@ -274,7 +274,7 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                             )}
                         </div>
                     </div>
-                    
+
                     {/* 更多按钮 - 使用 BookCardMenu */}
                     <div className="absolute top-3 right-3">
                         <BookCardMenu
@@ -287,16 +287,6 @@ export default function ContinueReadingHero({ bookId, title, author, coverUrl, p
                         />
                     </div>
                 </div>
-                
-                {/* 底部进度条线 - 已读完时隐藏 */}
-                {!isFinished && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/10">
-                        <div 
-                            className="h-full bg-white/80 transition-all"
-                            style={{ width: `${progressPercent}%` }}
-                        />
-                    </div>
-                )}
             </div>
         </div>
     )

@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan, FolderPlus } from 'lucide-react'
+import { MoreHorizontal, Trash2, CheckCircle, BookOpen, Loader2, FileText, Scan, FolderPlus, Headphones } from 'lucide-react'
 import { cn, generateUUID, getDeviceId } from '@/lib/utils'
 import { usePowerSync } from '@powersync/react'
 import { useAuthStore } from '@/stores/auth'
+import { useTTSStore } from '@/stores/tts'
 import BookMetadataDialog from './BookMetadataDialog'
 import OcrTriggerDialog from './OcrTriggerDialog'
 import AddToShelfDialog from './AddToShelfDialog'
@@ -45,7 +47,9 @@ export default function BookCardMenu({
   position = 'right',
 }: Props) {
   const { t } = useTranslation('common')
+  const navigate = useNavigate()
   const db = usePowerSync()
+  const ttsInit = useTTSStore((s) => s.init)
   const [open, setOpen] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showMetadataDialog, setShowMetadataDialog] = useState(false)
@@ -328,6 +332,33 @@ export default function BookCardMenu({
           >
             <FolderPlus className="w-4 h-4 text-system-purple" />
             <span>{t('shelf.add_to_shelf')}</span>
+          </button>
+
+          {/* 听书模式 */}
+          <button
+            onClick={async (e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setOpen(false)
+              
+              try {
+                // 初始化 TTS 引擎
+                await ttsInit()
+                // 导航到阅读器页面，TTS 组件会在那里启动
+                navigate(`/app/read/${bookId}?tts=1`)
+              } catch (error) {
+                console.error('[BookCardMenu] TTS init failed:', error)
+              }
+            }}
+            className={cn(
+              'w-full flex items-center gap-3 px-4 py-3',
+              'text-left text-sm font-medium',
+              'text-label hover:bg-secondary-background',
+              'transition-colors duration-fast'
+            )}
+          >
+            <Headphones className="w-4 h-4 text-system-indigo" />
+            <span>{t('book_menu.listen_book')}</span>
           </button>
 
           {/* 分隔线 */}

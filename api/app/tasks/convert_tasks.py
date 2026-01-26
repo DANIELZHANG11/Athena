@@ -233,6 +233,13 @@ def convert_to_epub(book_id: str, user_id: str):
             except Exception:
                 pass
             
+            # 【App-First】触发向量索引
+            try:
+                print(f"[Convert] Triggering vector index for converted book: {book_id}")
+                celery_app.send_task("tasks.index_book_vectors", args=[book_id])
+            except Exception as e:
+                print(f"[Convert] Failed to trigger vector index: {e}")
+            
         except Exception as e:
             print(f"[Convert] Conversion error: {e}")
             import traceback

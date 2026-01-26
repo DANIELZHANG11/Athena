@@ -416,17 +416,17 @@ async def upload_complete(
         r.setex(idem_key, 24 * 3600, str(data))
     
     # 【统一架构】所有格式均使用 Calibre 提取元数据
-    # Calibre ebook-meta 支持 PDF, EPUB, MOBI, AZW3, FB2 等 20+ 种格式
-    # 对于 PDF 还会检测是否为图片型（需要 OCR）
+    # EPUB/PDF 文字型：由 metadata_tasks.py 完成后触发向量索引
+    # PDF 图片型：由 ocr_tasks.py OCR 完成后触发向量索引
+    # AZW3/MOBI：由 convert_tasks.py 转换完成后触发向量索引
     try:
         print(f"[Upload] Using Calibre for metadata extraction (format: {fmt_lower})...")
         celery_app.send_task("tasks.extract_ebook_metadata_calibre", args=[book_id, user_id])
         
-        # 非 EPUB/PDF 格式：额外启动转换任务，供阅读器使用
+        # 非 EPUB/PDF 格式需要额外转换
         if fmt_lower not in ('epub', 'pdf'):
-            print(f"[Upload] Non-EPUB/PDF format, also starting conversion to EPUB...")
+            print(f"[Upload] Non-EPUB/PDF format, starting conversion to EPUB...")
             celery_app.send_task("tasks.convert_to_epub", args=[book_id, user_id])
-            
     except Exception as e:
         print(f"[Upload] Failed to queue background tasks: {e}")
         
@@ -2332,6 +2332,13 @@ async def register_book(body: dict = Body(...), auth=Depends(require_user)):
             },
         )
     index_book(book_id, user_id, title, author)
+    # 【App-First】触发向量索引（仅针对 EPUB 或已转换的书籍）
+    try:
+        from .celery_app import celery_app
+        celery_app.send_task("tasks.index_book_vectors", args=[book_id])
+    except Exception as e:
+        print(f"[Results] Failed to trigger vector index: {e}")
+        
     return {"status": "success", "data": {"id": book_id, "download_url": object_url}}
 
 
