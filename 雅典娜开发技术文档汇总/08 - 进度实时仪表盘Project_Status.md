@@ -1,6 +1,47 @@
 # 雅典娜项目 - 进度实时仪表盘
 
 ##
+### 2026-01-26 - OCR架构重构Docker测试成功 ✅ 🎉
+
+**时间**: 2026-01-26 22:07 UTC+8
+
+#### 测试结果
+成功在Docker环境中测试了新的OCRmyPDF + PaddleOCR插件方案！
+
+**测试书籍**: 曹汉章传略 (160页图片型PDF)
+- Book ID: `6ec621b8-f08c-41b4-a748-a1328c9c27b7`
+- 处理时间: **65.9秒** (160页)
+- 输出文件: **41.3 MB** 双层PDF
+- OCR状态: `completed` ✅
+
+#### 修复的Bug
+**问题**: `UnboundLocalError: cannot access local variable 'text' where it is not associated with a value`
+
+**根因**: 在`_run()`异步函数中，后面有`text = page.get_text()`，导致Python认为`text`是局部变量，但前面的`text("SELECT...")`尝试调用SQLAlchemy的`text`函数。
+
+**解决**: 将提取文本的变量名从`text`改为`page_text`。
+
+```python
+# 修改前 (第565行)
+text = page.get_text()
+
+# 修改后
+page_text = page.get_text()  # 避免覆盖SQLAlchemy的text函数
+```
+
+#### 验证结果
+```sql
+SELECT id, title, ocr_status, minio_key FROM books WHERE id = '6ec621b8-f08c-41b4-a748-a1328c9c27b7';
+-- ocr_status: completed ✅
+-- minio_key: users/.../layered/6ec621b8-f08c-41b4-a748-a1328c9c27b7.pdf ✅
+```
+
+#### 下一步
+- [ ] 在前端打开OCR后的PDF验证文字层对齐效果
+- [ ] 对比新旧方案的对齐质量
+
+---
+
 ### 2026-01-26 - OCR架构重大升级：采用OCRmyPDF官方插件方案 ✅ 🚀
 
 **时间**: 2026-01-26 (晚间 - 续2)
