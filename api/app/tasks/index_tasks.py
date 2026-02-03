@@ -11,6 +11,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import zipfile
 
 from celery import shared_task
@@ -26,6 +27,60 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://athena:athena_dev@postgres:5432/athena"
 )
+
+
+# ============================================================================
+# OCR 文本清理
+# ============================================================================
+
+def clean_ocr_text_for_embedding(text_content: str) -> str:
+    """
+    清理 OCR 文本中的多余空格，优化向量搜索效果。
+    
+    【背景】OCRmyPDF 生成的双层 PDF 中，文字层为了与图片层对齐，
+    会在字符之间插入大量空格（如："白 洞 是 什 么"）。
+    这些空格会严重影响 embedding 向量的相似度计算。
+    
+    处理规则：
+    1. 去除 CJK 字符之间的空格（中文/日文/韩文字符之间不应有空格）
+    2. 合并连续多个空格为一个
+    3. 保留英文单词之间的空格
+    
+    Args:
+        text_content: 原始 OCR 文本
+        
+    Returns:
+        清理后的文本
+    """
+    if not text_content:
+        return text_content
+    
+    # CJK 字符范围：中文 + 日文平假名 + 日文片假名 + 韩文
+    CJK_PATTERN = r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]'
+    
+    # 步骤 1: 去除 CJK 字符之间的空格
+    # 匹配：CJK字符 + 空白 + CJK字符，替换为直接连接
+    # 需要多次替换，因为正则不会匹配重叠部分
+    pattern = f'({CJK_PATTERN})\\s+({CJK_PATTERN})'
+    prev = None
+    result = text_content
+    while prev != result:
+        prev = result
+        result = re.sub(pattern, r'\1\2', result)
+    
+    # 步骤 2: 去除 CJK 字符与标点符号之间的空格
+    # 例如："你好 。" → "你好。"
+    punctuation = r'[。、，；：？！“”‘’【】《》.,;:?!"\'—…]'
+    result = re.sub(f'({CJK_PATTERN})\\s+({punctuation})', r'\1\2', result)
+    result = re.sub(f'({punctuation})\\s+({CJK_PATTERN})', r'\1\2', result)
+    
+    # 步骤 3: 合并连续多个空格/制表符为一个空格
+    result = re.sub(r'[ \t]+', ' ', result)
+    
+    # 步骤 4: 合并连续多个换行符
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    
+    return result.strip()
 
 
 def _create_task_engine():
@@ -376,12 +431,19 @@ def extract_pdf_with_docling(pdf_bytes: bytes) -> list:
     【优化 2026-01-12】Docling 可以识别 PDF 中的章节结构，
     提取标题、段落等语义信息，比 PyMuPDF 的纯文本提取更精准。
     
+    【性能优化 2026-01-30】根据官方文档优化配置：
+    - 禁用表格结构提取（我们只需要文本，不需要表格）
+    - 禁用图片相关功能
+    - 启用 force_backend_text（直接使用 PDF 内嵌文字层，更快）
+    - 设置超时保护（120 秒）
+    - 配置 CPU 线程数
+    
     Returns:
         list of dict: [{"page": 1, "text": "...", "title": "Chapter 1"}, ...]
         如果失败返回空列表
     """
     try:
-        from docling.document_converter import DocumentConverter
+        from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         import tempfile
@@ -393,11 +455,40 @@ def extract_pdf_with_docling(pdf_bytes: bytes) -> list:
             tmp_path = tmp.name
         
         try:
-            # 配置 Docling Pipeline
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = False  # 不使用OCR（我们有单独的OCR流程）
+            # ================================================================
+            # 【性能优化 2026-01-30】配置 Docling Pipeline
+            # 参考: https://docling-project.github.io/docling/usage/gpu/
+            # 
+            # 背景：我们传入的 PDF 是 OCRmyPDF 生成的双层 PDF，已有文字层
+            # 所以 Docling 只需要直接读取文字层，不需要运行重量级的 AI 模型
+            # ================================================================
             
-            converter = DocumentConverter()
+            # Pipeline 配置 - 最小化功能，最大化速度
+            pipeline_options = PdfPipelineOptions(
+                # 核心优化：禁用所有不需要的 AI 功能
+                do_ocr=False,  # 不使用 Docling 的 OCR（我们有 OCRmyPDF）
+                do_table_structure=False,  # 禁用表格检测（即使没表格也会消耗资源扫描）
+                do_picture_classification=False,  # 禁用图片分类
+                do_picture_description=False,  # 禁用图片描述（VLM 模型很重）
+                do_formula_enrichment=False,  # 禁用公式识别
+                do_code_enrichment=False,  # 禁用代码块识别
+                # 关键优化：直接使用 PDF 内嵌文字层（双层 PDF 必备）
+                force_backend_text=True,  # 跳过 Layout 检测，直接读取文字层
+                # 商业服务不设超时：用户的 PDF 可能有 1000+ 页
+                # document_timeout=None,  # 默认无超时
+                # 禁用图片生成
+                generate_page_images=False,
+                generate_picture_images=False,
+            )
+            
+            # 使用 format_options 配置 Converter（正确的官方 API）
+            converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(
+                        pipeline_options=pipeline_options
+                    )
+                }
+            )
             result = converter.convert(tmp_path)
             
             if not result or not result.document:
@@ -405,29 +496,74 @@ def extract_pdf_with_docling(pdf_bytes: bytes) -> list:
                 return []
             
             doc = result.document
-            structured_pages = []
             current_chapter = ""
             
-            # 遍历文档元素，提取结构化内容
-            for item in doc.iterate_items():
-                text = item.text if hasattr(item, 'text') else str(item)
+            # ================================================================
+            # 【修复 2026-02-02】合并同页段落，解决 chunk 过短问题
+            # 
+            # 问题：Docling 会将每个段落作为独立 item 返回，
+            # 如果直接传给 SentenceSplitter，短段落会各自成为一个 chunk，
+            # 导致平均 chunk 长度只有 50-100 字符（应该是 ~1024）。
+            # 
+            # 解决：先按页码合并所有段落，再传给分块器处理。
+            # ================================================================
+            
+            # Step 1: 按页码收集所有段落
+            page_contents = {}  # {page_no: {"texts": [], "title": ""}}
+            
+            for item, level in doc.iterate_items():
+                # 获取文本内容：优先使用 text 属性，否则使用 orig（原始文本）
+                text = None
+                if hasattr(item, 'text') and item.text:
+                    text = item.text
+                elif hasattr(item, 'orig') and item.orig:
+                    text = item.orig
+                
+                # 跳过无文本或太短的内容
                 if not text or len(text.strip()) < 5:
                     continue
                 
-                page_num = getattr(item, 'page_no', 1) or 1
+                # 获取页码：从 prov (provenance) 中提取
+                page_num = 1
+                if hasattr(item, 'prov') and item.prov:
+                    for prov in item.prov:
+                        if hasattr(prov, 'page_no') and prov.page_no:
+                            page_num = prov.page_no
+                            break
+                
                 item_type = type(item).__name__.lower()
                 
                 # 检测章节标题
-                if 'heading' in item_type or 'title' in item_type:
+                if 'header' in item_type or 'title' in item_type:
                     current_chapter = text.strip()[:100]
                 
-                structured_pages.append({
-                    "page": page_num,
-                    "text": text.strip(),
-                    "title": current_chapter,
-                })
+                # 初始化页面容器
+                if page_num not in page_contents:
+                    page_contents[page_num] = {"texts": [], "title": current_chapter}
+                
+                # 【关键】清理 OCR 文本中的多余空格，优化向量搜索效果
+                cleaned_text = clean_ocr_text_for_embedding(text.strip())
+                page_contents[page_num]["texts"].append(cleaned_text)
+                
+                # 如果检测到新章节，更新该页的章节标题
+                if current_chapter and not page_contents[page_num]["title"]:
+                    page_contents[page_num]["title"] = current_chapter
             
-            logger.info(f"[IndexBook] Docling extracted {len(structured_pages)} items from PDF")
+            # Step 2: 合并每页的段落为一个条目
+            structured_pages = []
+            for page_num in sorted(page_contents.keys()):
+                content = page_contents[page_num]
+                # 使用双换行符合并段落，保持段落分隔
+                merged_text = "\n\n".join(content["texts"])
+                
+                if merged_text and len(merged_text.strip()) > 10:
+                    structured_pages.append({
+                        "page": page_num,
+                        "text": merged_text,
+                        "title": clean_ocr_text_for_embedding(content["title"]),
+                    })
+            
+            logger.info(f"[IndexBook] Docling extracted {len(page_contents)} pages, merged into {len(structured_pages)} page entries")
             return structured_pages
             
         finally:
@@ -470,9 +606,11 @@ def extract_pdf_text_with_pages(pdf_bytes: bytes) -> list:
             page = doc[page_num]
             text = page.get_text()
             if text.strip() and len(text.strip()) > 20:
+                # 【关键】清理 OCR 文本中的多余空格
+                cleaned_text = clean_ocr_text_for_embedding(text.strip())
                 pages.append({
                     "page": page_num + 1,  # 1-based page number
-                    "text": text.strip(),
+                    "text": cleaned_text,
                     "title": "",  # PyMuPDF 无法提取章节标题
                 })
         

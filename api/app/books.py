@@ -14,6 +14,9 @@
 - OCR 报告兼容旧版与新版数据结构
 """
 import os
+
+# 开发模式：跳过 OCR 配额限制
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
 import uuid
 
 import redis
@@ -69,7 +72,9 @@ def _quick_confidence(bucket: str, key: str) -> tuple[bool, float]:
     """
     快速检测 PDF 是否为图片型。
     
-    使用 PyMuPDF 检查前 6 页的文本内容，这比检查字节头更可靠。
+    【重要】不能只检查前几页，因为封面、版权页、目录等通常没有正文文字。
+    采用固定页码抽样：第5、6、7、15、20页（0-indexed: 4、5、6、14、19）
+    这样既跳过了前几页，又避免了大面积抽取。
     
     返回 (is_image_based, confidence):
     - is_image_based: 是否为图片型 PDF
@@ -77,6 +82,7 @@ def _quick_confidence(bucket: str, key: str) -> tuple[bool, float]:
     """
     try:
         import fitz  # PyMuPDF
+        import re
         
         # 获取文件数据
         pdf_data = None
@@ -97,55 +103,86 @@ def _quick_confidence(bucket: str, key: str) -> tuple[bool, float]:
         if not key.lower().endswith('.pdf'):
             return (False, 1.0)  # 非 PDF 默认是数字型
         
-        # 使用 PyMuPDF 提取前 6 页文本
+        # 使用 PyMuPDF 打开 PDF
         doc = fitz.open(stream=pdf_data, filetype="pdf")
         total_pages = len(doc)
-        pages_to_check = min(6, total_pages)
+        
+        if total_pages == 0:
+            doc.close()
+            return (True, 0.1)  # 空 PDF
+        
+        # 【固定页码抽样】第5、6、7、15、20页 (0-indexed: 4、5、6、14、19)
+        # 跳过前4页（封面、版权、目录），检查正文区域
+        SAMPLE_PAGES = [4, 5, 6, 14, 19]  # 0-indexed
+        
+        # 过滤掉超出范围的页码
+        pages_to_check = [p for p in SAMPLE_PAGES if p < total_pages]
+        
+        # 如果 PDF 页数太少（< 5页），回退到检查所有页
+        if len(pages_to_check) == 0:
+            pages_to_check = list(range(total_pages))
         
         total_chars = 0
         meaningful_chars = 0
+        pages_with_text = 0  # 有实质文字的页面数
         
-        for i in range(pages_to_check):
-            page = doc[i]
+        for page_idx in pages_to_check:
+            page = doc[page_idx]
             text = page.get_text()
             
             if text:
-                total_chars += len(text)
-                # 统计有意义的字符（中文、英文字母）
-                import re
-                cjk = len(re.findall(r'[\u4e00-\u9fff]', text))
+                page_chars = len(text)
+                total_chars += page_chars
+                
+                # 统计有意义的字符（中文、日文、韩文、英文字母）
+                cjk = len(re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]', text))
                 latin = len(re.findall(r'[A-Za-z]', text))
-                meaningful_chars += cjk + latin
+                page_meaningful = cjk + latin
+                meaningful_chars += page_meaningful
+                
+                # 每页超过 100 个有意义字符算有实质文字
+                if page_meaningful > 100:
+                    pages_with_text += 1
         
         doc.close()
+        
+        checked_count = len(pages_to_check)
         
         # 计算比例
         if total_chars == 0:
             # 完全没有文本，是纯图片型
+            print(f"[PDF Detection] {key}: checked pages {[p+1 for p in pages_to_check]}/{total_pages}, NO TEXT → Image-based")
             return (True, 0.1)
         
         ratio = meaningful_chars / max(1, total_chars)
+        avg_chars_per_page = total_chars / checked_count
+        text_page_ratio = pages_with_text / checked_count  # 有文字页面的比例
         
-        # 判断标准：
-        # - 如果有意义字符占比 < 5%，认为是图片型
-        # - 每页平均文本少于 50 字符，也认为是图片型
-        avg_chars_per_page = total_chars / pages_to_check
-        
-        is_image_based = ratio < 0.05 or avg_chars_per_page < 50
+        # 【判断标准】
+        # 主要依据：有实质文字页面的比例
+        # - 如果 >= 50% 的采样页面有实质内容（> 100 字符），认为是文字型
+        # - 或者平均每页字符数 >= 200 且有意义字符比例 >= 10%
+        is_text_based = text_page_ratio >= 0.5 or (ratio >= 0.1 and avg_chars_per_page >= 200)
+        is_image_based = not is_text_based
         
         # confidence 规则：
         # - 图片型：confidence < 0.8
         # - 数字型：confidence >= 0.8
         if is_image_based:
-            conf = max(0.1, min(0.5, ratio * 5.0))  # 图片型 conf 最高 0.5
+            conf = max(0.1, min(0.7, text_page_ratio * 0.8))
         else:
-            conf = max(0.8, min(1.0, 0.8 + ratio * 0.2))  # 数字型 conf 最低 0.8
+            conf = max(0.8, min(1.0, 0.8 + text_page_ratio * 0.2))
         
-        print(f"[PDF Detection] {key}: {pages_to_check} pages, {total_chars} chars, ratio={ratio:.3f}, avg={avg_chars_per_page:.0f}, is_image={is_image_based}, conf={conf:.2f}")
+        sample_pages_display = [p + 1 for p in pages_to_check]  # 显示为1-indexed
+        print(f"[PDF Detection] {key}: checked pages {sample_pages_display}/{total_pages}, "
+              f"chars={total_chars}, meaningful_ratio={ratio:.3f}, avg={avg_chars_per_page:.0f}, "
+              f"text_pages={pages_with_text}/{checked_count}, is_image={is_image_based}, conf={conf:.2f}")
         return (is_image_based, conf)
         
     except Exception as e:
         print(f"[PDF Detection] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return (False, 0.0)
 
 
@@ -220,7 +257,8 @@ async def upload_init(
                 text(
                     """SELECT id::text, minio_key, cover_image_key, deleted_at, 
                               original_format, conversion_status, converted_epub_key,
-                              title, author, language
+                              title, author, language,
+                              is_digitalized, ocr_status
                        FROM books 
                        WHERE (original_content_sha256 = :sha OR content_sha256 = :sha)
                        ORDER BY deleted_at IS NULL DESC, 
@@ -233,7 +271,7 @@ async def upload_init(
             global_row = res.fetchone()
             if global_row:
                 (canonical_id, minio_key, cover_key, deleted_at, orig_fmt, conv_status, epub_key,
-                 c_title, c_author, c_language) = global_row
+                 c_title, c_author, c_language, is_digitalized, ocr_status) = global_row
                 is_soft_deleted = deleted_at is not None
                 
                 # 检查转换状态
@@ -247,6 +285,51 @@ async def upload_init(
                             "message": "该文件正在处理中，请稍后重试"
                         }
                     }
+                
+                # 【商业逻辑】图片型 PDF 不能秒传双层 PDF
+                # OCR 是收费服务，每个用户必须自己付费 OCR
+                # 只有 OCR 完成后的双层 PDF 才能提供给该用户
+                if orig_fmt == 'pdf' and is_digitalized is False:
+                    # 这是图片型 PDF
+                    if ocr_status == 'completed':
+                        # 服务器上有 OCR 完成的双层 PDF，但不能秒传给新用户
+                        # 告知用户：文件已存在，但需要 OCR 才能使用
+                        print(f"[Upload Init] Image-based PDF with OCR exists, but OCR is a paid service")
+                        return {
+                            "status": "success",
+                            "data": {
+                                "dedup_hit": "global_needs_ocr",
+                                "dedup_available": False,  # 不能秒传
+                                "canonical_book_id": canonical_id,
+                                "canonical_cover_key": cover_key,
+                                "canonical_metadata": {
+                                    "title": c_title or "",
+                                    "author": c_author or "",
+                                    "language": c_language or "",
+                                    "cover_url": cover_key or "",
+                                },
+                                "message": "该 PDF 为扫描版，需要 OCR 识别后才能阅读"
+                            }
+                        }
+                    else:
+                        # 服务器上也没有 OCR 完成的版本
+                        print(f"[Upload Init] Image-based PDF without OCR, user needs to upload and OCR")
+                        return {
+                            "status": "success",
+                            "data": {
+                                "dedup_hit": "global_needs_ocr",
+                                "dedup_available": False,  # 不能秒传
+                                "canonical_book_id": canonical_id,
+                                "canonical_cover_key": cover_key,
+                                "canonical_metadata": {
+                                    "title": c_title or "",
+                                    "author": c_author or "",
+                                    "language": c_language or "",
+                                    "cover_url": cover_key or "",
+                                },
+                                "message": "该 PDF 为扫描版，需要 OCR 识别后才能阅读"
+                            }
+                        }
                 
                 # 全局已存在且可用，告知客户端可以秒传
                 # 对于非EPUB/PDF格式，返回转换后的EPUB key
@@ -1560,7 +1643,11 @@ async def trigger_book_ocr(book_id: str, auth=Depends(require_user)):
         # 配额检查逻辑（按商业模型 V9.0）
         can_use_free = units_needed == 1  # 仅 ≤600 页可用免费额度
         
-        if is_pro:
+        # 【开发模式】跳过所有配额检查，无限制使用 OCR
+        if DEV_MODE:
+            print(f"[OCR DEV_MODE] Bypassing quota check for book {book_id}, pages={page_count}, units={units_needed}")
+            quota_type = "dev_bypass"
+        elif is_pro:
             # Pro 会员：优先用月度赠送
             if can_use_free and free_ocr_used < gift_quota:
                 # 使用月度赠送额度
@@ -2242,10 +2329,12 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
         if row[14]:  # cover_image_key
             cover_url = presigned_get(BOOKS_BUCKET, row[14])
         
-        # 解析 meta 获取 page_count 和 metadata_extracted
+        # 解析 meta 获取 page_count, metadata_extracted 和 toc
         meta = row[17] or {}
         page_count = meta.get("page_count") if isinstance(meta, dict) else None
         metadata_extracted = meta.get("metadata_extracted", False) if isinstance(meta, dict) else False
+        # PDF TOC（目录）：从 meta.toc 获取
+        toc = meta.get("toc") if isinstance(meta, dict) else None
         
         # 判断是否是图片型 PDF
         # 方式1: is_digitalized=true 且 confidence < 0.8
@@ -2278,6 +2367,9 @@ async def get_book(book_id: str, auth=Depends(require_user), response: Response 
                 "page_count": page_count,
                 "is_image_based": is_image_based,
                 "conversion_status": row[20],  # 格式转换状态: pending/processing/completed/failed/null
+                # PDF 目录（内置 outline/bookmarks）
+                # 格式: [{"label": "Chapter 1", "page": 1, "subitems": [...]}]
+                "toc": toc,
             },
         }
 

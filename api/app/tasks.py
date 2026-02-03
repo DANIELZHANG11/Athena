@@ -122,8 +122,20 @@ def _extract_epub_metadata(epub_data: bytes) -> dict:
 
 
 def _extract_pdf_metadata(pdf_data: bytes) -> dict:
-    """Extract metadata (title, author, page count) and a quick digitalization score."""
-    metadata = {"title": None, "author": None, "page_count": None, "is_image_based": False, "digitalization_confidence": 1.0}
+    """Extract metadata (title, author, page count), TOC outline, and a quick digitalization score.
+    
+    TOC格式: 与 EPUB TocItem 兼容的结构:
+    [{"label": "Chapter 1", "page": 1, "subitems": [...]}]
+    其中 page 是 1-based 页码（可以直接用于前端导航）
+    """
+    metadata = {
+        "title": None, 
+        "author": None, 
+        "page_count": None, 
+        "is_image_based": False, 
+        "digitalization_confidence": 1.0,
+        "toc": None  # PDF 内置目录（outline/bookmarks）
+    }
     try:
         import fitz  # PyMuPDF
 
@@ -137,6 +149,20 @@ def _extract_pdf_metadata(pdf_data: bytes) -> dict:
 
         page_count = len(doc)
         metadata["page_count"] = page_count
+
+        # 提取 PDF 内置目录 (outline/bookmarks)
+        # PyMuPDF get_toc() 返回: [[level, title, page, ...], ...]
+        # level: 层级 (1=顶级, 2=子级...)
+        # title: 章节标题
+        # page: 目标页码 (1-based)
+        raw_toc = doc.get_toc()
+        if raw_toc:
+            toc = _build_pdf_toc_tree(raw_toc)
+            if toc:
+                metadata["toc"] = toc
+                print(f"[Metadata] PDF TOC extracted: {len(toc)} top-level items")
+        else:
+            print("[Metadata] PDF has no built-in TOC/outline")
 
         sample_pages = min(5, page_count)
         total_text_chars = 0
@@ -174,6 +200,68 @@ def _extract_pdf_metadata(pdf_data: bytes) -> dict:
     except Exception as e:
         print(f"[Metadata] Failed to extract PDF metadata: {e}")
     return metadata
+
+
+def _build_pdf_toc_tree(raw_toc: list) -> list:
+    """将 PyMuPDF 的扁平 TOC 列表转换为嵌套树结构。
+    
+    输入格式 (PyMuPDF get_toc): [[level, title, page, ...], ...]
+    输出格式 (与 EPUB TocItem 兼容): [{"label": "...", "page": N, "subitems": [...]}]
+    
+    Args:
+        raw_toc: PyMuPDF doc.get_toc() 返回的原始列表
+        
+    Returns:
+        嵌套的目录树结构，适合前端渲染
+    """
+    if not raw_toc:
+        return []
+    
+    # 使用栈来构建树结构
+    root = []  # 顶级列表
+    stack = [(0, root)]  # (level, parent_list)
+    
+    for item in raw_toc:
+        if len(item) < 3:
+            continue
+        level, title, page = item[0], item[1], item[2]
+        
+        # 清理标题
+        if not title or not title.strip():
+            continue
+        title = title.strip()
+        
+        # 确保页码是正整数
+        if not isinstance(page, int) or page < 1:
+            page = 1
+        
+        # 创建节点
+        node = {"label": title, "page": page, "subitems": []}
+        
+        # 找到正确的父节点
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        
+        if not stack:
+            # 如果栈空了，作为顶级项
+            root.append(node)
+            stack = [(0, root), (level, node["subitems"])]
+        else:
+            # 添加到当前父节点
+            parent_list = stack[-1][1]
+            parent_list.append(node)
+            stack.append((level, node["subitems"]))
+    
+    # 清理空的 subitems
+    def cleanup(items):
+        for item in items:
+            if not item["subitems"]:
+                del item["subitems"]
+            else:
+                cleanup(item["subitems"])
+    
+    cleanup(root)
+    return root
 
 
 def _extract_epub_cover(epub_data: bytes) -> bytes | None:
@@ -417,6 +505,9 @@ def extract_ebook_metadata_calibre(book_id: str, user_id: str):
                 digitalization_confidence = pdf_analysis.get("digitalization_confidence", 1.0)
                 if pdf_analysis.get("page_count"):
                     metadata["page_count"] = pdf_analysis["page_count"]
+                # 保存 PDF TOC（如果有）
+                if pdf_analysis.get("toc"):
+                    metadata["toc"] = pdf_analysis["toc"]
                 print(f"[CalibreMeta] PDF analysis: is_image_based={is_image_based}, confidence={digitalization_confidence:.2f}")
             
             # 更新数据库
@@ -448,10 +539,17 @@ def extract_ebook_metadata_calibre(book_id: str, user_id: str):
                     params["title"] = extracted_title
                     print(f"[CalibreMeta] Will update title to: '{extracted_title}'")
             
-            # 更新页数
-            meta_updates = []
+            # 构建 meta JSONB 更新内容
+            meta_obj = {
+                "metadata_extracted": True,
+                "extraction_method": "calibre"
+            }
             if metadata.get("page_count"):
-                meta_updates.append(f"'page_count', {metadata['page_count']}::int")
+                meta_obj["page_count"] = int(metadata["page_count"])
+            # PDF TOC：存储到 meta.toc
+            if metadata.get("toc"):
+                meta_obj["toc"] = metadata["toc"]
+                print(f"[CalibreMeta] Will save PDF TOC with {len(metadata['toc'])} top-level items")
             
             # PDF 特殊：更新图片型检测结果
             if fmt_lower == 'pdf':
@@ -459,10 +557,10 @@ def extract_ebook_metadata_calibre(book_id: str, user_id: str):
                 updates.append("initial_digitalization_confidence = :confidence")
                 params["confidence"] = digitalization_confidence
             
-            # 标记元数据已提取（合并所有 meta 更新，使用 JSON 字面量避免类型推断问题）
-            meta_updates.append("'metadata_extracted', true::boolean")
-            meta_updates.append("'extraction_method', 'calibre'::text")
-            updates.append(f"meta = COALESCE(meta, '{{}}'::jsonb) || jsonb_build_object({', '.join(meta_updates)})")
+            # 使用参数化 JSONB 更新（支持复杂对象如 TOC）
+            import json
+            updates.append("meta = COALESCE(meta, '{}'::jsonb) || :meta_json::jsonb")
+            params["meta_json"] = json.dumps(meta_obj)
             
             if updates:
                 updates.append("updated_at = now()")
@@ -1879,25 +1977,31 @@ def process_book_ocr_deprecated(book_id: str, user_id: str):
             # 备份失败不影响后续流程
         
         # 8. 更新数据库记录
+        layered_pdf_size = len(layered_pdf_data)  # 获取双层PDF的大小
+        
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             
             # 更新书籍记录：指向双层PDF，并标记OCR完成
+            # 关键：同时更新 size 和 version，使前端能检测到文件变化并刷新缓存
             # 注意：全文搜索通过 OpenSearch 实现，不需要在数据库中存储 ocr_text
             await conn.execute(
                 text("""
                     UPDATE books 
                     SET 
                         minio_key = :layered_key,
+                        size = :new_size,
                         ocr_status = 'completed',
+                        version = version + 1,
                         updated_at = now()
                     WHERE id = cast(:id as uuid)
                 """),
                 {
                     "id": book_id,
                     "layered_key": layered_pdf_key,
+                    "new_size": layered_pdf_size,
                 }
             )
             
@@ -1934,6 +2038,7 @@ def process_book_ocr_deprecated(book_id: str, user_id: str):
                     "book_id": book_id,
                     "ocr_status": "completed",
                     "layered_pdf_key": layered_pdf_key,
+                    "new_size": layered_pdf_size,  # 添加新文件大小，前端用于比较刷新缓存
                     "message": "OCR processing completed successfully"
                 })
             )

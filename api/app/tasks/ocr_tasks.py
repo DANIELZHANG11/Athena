@@ -512,43 +512,59 @@ def process_book_ocr(book_id: str, user_id: str):
                 )
             return
         
-        # 备份原始 PDF
-        backup_key = f"users/{user_id}/backups/{book_id}_original.pdf"
+        # 【商业逻辑】删除原始图片型 PDF，节省存储空间
+        # 双层 PDF 已包含原始图像层 + OCR 文字层，无需保留原始文件
+        # 注意：不再备份到 backups 目录，因为双层 PDF 本身就是完整的
         try:
-            try:
-                read_head(BUCKET, backup_key)
-                print(f"[OCR] Backup already exists: {backup_key}")
-            except Exception:
-                upload_bytes(BUCKET, backup_key, pdf_data, "application/pdf")
-                print(f"[OCR] Created backup: {backup_key}")
+            from ..storage import delete_object
+            delete_object(BUCKET, original_minio_key)
+            print(f"[OCR] Deleted original image-based PDF: {original_minio_key}")
         except Exception as e:
-            print(f"[OCR] Warning: Failed to create backup: {e}")
+            print(f"[OCR] Warning: Failed to delete original PDF (non-critical): {e}")
         
         # 更新数据库
+        # 【关键修复】同步更新 size 字段为双层 PDF 大小
+        # 这样前端 PowerSync 同步后，缓存验证会检测到大小变化并重新下载
+        layered_pdf_size = len(layered_pdf_data)
+        
+        # 【关键】计算双层PDF的SHA256，用于向量索引匹配
+        import hashlib
+        layered_pdf_sha256 = hashlib.sha256(layered_pdf_data).hexdigest()
+        print(f"[OCR] Layered PDF SHA256: {layered_pdf_sha256[:16]}...")
+        
         async with engine.begin() as conn:
             await conn.execute(
                 text("SELECT set_config('app.user_id', :v, true)"), {"v": user_id}
             )
             
             # 注意：全文搜索通过 OpenSearch 实现，不需要在数据库中存储 ocr_text
+            # 【2026-01-30 修复】更新 size 字段，触发前端缓存失效并重新下载双层 PDF
+            # 【2026-01-31 修复】更新 content_sha256 为双层 PDF 的 SHA256
+            # 如果 original_content_sha256 为空，先保存原始图片 PDF 的 SHA256
             await conn.execute(
                 text("""
                     UPDATE books 
                     SET 
+                        -- 先保存原始 SHA256（如果尚未保存）
+                        original_content_sha256 = COALESCE(original_content_sha256, content_sha256),
+                        -- 更新为双层 PDF 的 SHA256
+                        content_sha256 = :layered_sha256,
                         minio_key = :layered_key,
+                        size = :layered_size,
                         ocr_status = 'completed',
                         updated_at = now()
                     WHERE id = cast(:id as uuid)
                 """),
                 {
                     "id": book_id,
+                    "layered_sha256": layered_pdf_sha256,
                     "layered_key": layered_pdf_key,
+                    "layered_size": layered_pdf_size,
                 }
             )
             
             print(f"[OCR] Successfully completed OCR for book {book_id}")
-            print(f"[OCR]   Original: {original_minio_key}")
-            print(f"[OCR]   Backup: {backup_key}")
+            print(f"[OCR]   Original (deleted): {original_minio_key}")
             print(f"[OCR]   Layered PDF: {layered_pdf_key}")
         
         # 触发搜索索引 - 从生成的双层 PDF 中提取文字
@@ -579,6 +595,15 @@ def process_book_ocr(book_id: str, user_id: str):
                 print(f"[OCR] Warning: No text extracted for search indexing")
         except Exception as e:
             print(f"[OCR] Warning: Failed to index book content for search: {e}")
+        
+        # 【关键】触发向量索引 - OCR完成后 PDF 可用于 AI 问答
+        # OCR 任务是触发 PDF 向量索引的四个时机之一（参见 index_tasks.py 注释）
+        try:
+            from ..celery_app import celery_app
+            celery_app.send_task("tasks.index_book_vectors", args=[book_id])
+            print(f"[OCR] ✓ Triggered vector indexing for book {book_id}")
+        except Exception as e:
+            print(f"[OCR] Warning: Failed to trigger vector indexing: {e}")
         
         # WebSocket 通知
         try:

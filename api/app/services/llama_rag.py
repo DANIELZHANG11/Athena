@@ -518,9 +518,17 @@ async def index_book_chunks(
                 doc_id = str(uuid.uuid4())
                 
                 # 【精简存储结构】只存储必要字段
+                # 【2026-01-31 修复】将章节标题添加到可搜索的text字段
+                # 这确保章节标题也可以被全文搜索匹配到
+                searchable_text = chunk_info["text"]
+                chapter_title = chunk_info.get("chapter_title", "")
+                if chapter_title and chapter_title not in searchable_text:
+                    # 将标题作为前缀添加，用分隔符隔开
+                    searchable_text = f"【{chapter_title}】{searchable_text}"
+                
                 doc = {
                     "embedding": embedding,
-                    "text": chunk_info["text"],  # 纯正文
+                    "text": searchable_text,  # 包含章节标题的可搜索文本
                     "metadata": {
                         "book_id": chunk_info["book_id"],
                         "content_sha256": chunk_info["content_sha256"],
@@ -1281,6 +1289,7 @@ async def opensearch_knn_search(
                 "chapter": meta.get("chapter_title"),
                 "section_index": meta.get("section_index"),  # EPUB 章节索引，用于精确跳转
                 "section_filename": meta.get("section_filename"),  # EPUB 章节文件名
+                "chunk_index": meta.get("chunk_index"),  # 【2026-01-31 修复】RRF 融合需要此字段去重
                 "score": score,
             })
         
@@ -1353,6 +1362,7 @@ async def opensearch_keyword_search(
                 "chapter": meta.get("chapter_title"),
                 "section_index": meta.get("section_index"),
                 "section_filename": meta.get("section_filename"),
+                "chunk_index": meta.get("chunk_index"),  # 【2026-01-31 修复】RRF 融合需要此字段去重
                 "score": hit["_score"],
             })
         
@@ -1491,8 +1501,9 @@ async def delete_book_index(book_id: str) -> bool:
             index=BOOK_CHUNKS_INDEX,
             body={
                 "query": {
-                    # 使用 .keyword 后缀进行精确匹配，否则UUID会被分词导致匹配失败
-                    "term": {"metadata.book_id.keyword": book_id}
+                    # 【2025-01-16 修复】metadata.book_id 已经是 keyword 类型
+                    # 不需要 .keyword 后缀，否则会匹配不到任何文档
+                    "term": {"metadata.book_id": book_id}
                 }
             },
             wait_for_completion=True,
