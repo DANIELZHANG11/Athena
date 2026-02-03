@@ -404,11 +404,10 @@ services:
       - TORCH_NCCL_ASYNC_ERROR_HANDLING=0
       # 【2026-01-09】模型预加载所需
       - CELERY_QUEUES=gpu_high,gpu_low
-      # 【2026-01-09】离线模式 - 暂时禁用，因为模型尚未预下载到 Docker 镜像
-      # 模型首次下载后可以启用这些环境变量：
-      # - HF_HUB_OFFLINE=1
-      # - TRANSFORMERS_OFFLINE=1
-      # - HF_DATASETS_OFFLINE=1
+      # 【2026-01-31】离线模式 - 模型已预下载到缓存
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
       # 并发=1：GPU 任务串行执行，避免显存竞争
       # 监听 gpu_high (OCR) 和 gpu_low (向量索引) 队列
     command: [ "celery", "-A", "app.celery_app.celery_app", "worker", "-Q", "gpu_high,gpu_low", "-l", "INFO", "--concurrency=1", "--pool=prefork", "--max-tasks-per-child=50" ]

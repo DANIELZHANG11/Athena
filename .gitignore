@@ -6,3 +6,10 @@ dist/
 coverage/
 .DS_Store
 data_ssd/
+
+# ML/模型缓存与日志（不入库）
+.hf_cache/
+api/.hf_cache/
+
+# 临时分析脚本
+api/tmp_*.py
