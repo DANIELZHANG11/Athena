@@ -21,8 +21,10 @@ interface PdfPageWithOcrProps {
   bookId?: string
   /** 页码（从 1 开始） */
   pageNumber: number
-  /** 页面宽度 */
-  width: number
+  /** 页面宽度（与 height 二选一，优先使用 height） */
+  width?: number
+  /** 页面高度（优先级高于 width，用于自适应视口高度） */
+  height?: number
   /** 是否启用 OCR 叠加层（已废弃，保留接口兼容性） */
   enableOcrLayer?: boolean
   /** 当前页的 OCR 区域数据（已废弃，保留接口兼容性） */
@@ -47,6 +49,7 @@ export const PdfPageWithOcr = memo(function PdfPageWithOcr({
   bookId: _bookId,  // 保留接口兼容性
   pageNumber,
   width,
+  height,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   enableOcrLayer: _enableOcrLayer,  // 已废弃：双层 PDF 不需要前端 OCR 层
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -74,13 +77,15 @@ export const PdfPageWithOcr = memo(function PdfPageWithOcr({
       }}
     >
       {/* PDF 页面渲染 - 始终启用文字层 */}
+      {/* 【2026-01-30 修复】支持 height 属性，优先使用 height 自适应视口 */}
       <Page
         pageNumber={pageNumber}
         // 【关键】始终启用 TextLayer，让 react-pdf 渲染 PDF 自带的透明文字
         // 对于双层 PDF，文字层已由后端嵌入，可直接选择
         renderTextLayer={true}
         renderAnnotationLayer={false}
-        width={width}
+        // 优先使用 height（自适应视口高度），否则使用 width
+        {...(height ? { height } : width ? { width } : {})}
         onRenderSuccess={handleRenderSuccess}
       />
     </div>

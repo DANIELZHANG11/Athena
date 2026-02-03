@@ -30,6 +30,7 @@ export interface BookItem {
   isImageBased?: boolean
   conversionStatus?: string | null
   originalFormat?: string
+  fileSize?: number  // 文件大小（字节），用于验证缓存有效性
 }
 
 interface BookRow {
@@ -188,6 +189,8 @@ export function useBooksData(options: UseBooksDataOptions = {}) {
         isImageBased: book.is_digitalized !== 1 || (book.is_digitalized === 1 && (book.initial_digitalization_confidence ?? 1) < 0.8),
         conversionStatus: book.conversion_status || null,
         originalFormat: book.file_type || undefined,
+        // 【2026-01-30 修复】添加 fileSize 用于缓存验证（OCR 后文件大小会变化）
+        fileSize: book.file_size || undefined,
       }
     })
   }, [booksData, progressMap, accessToken])
@@ -335,6 +338,7 @@ export function useBookData(bookId: string | null) {
       isImageBased: bookRow.is_digitalized !== 1 || (bookRow.is_digitalized === 1 && (bookRow.initial_digitalization_confidence ?? 1) < 0.8),
       conversionStatus: bookRow.conversion_status || null,
       originalFormat: bookRow.file_type || undefined,
+      fileSize: bookRow.file_size || undefined,  // 添加文件大小用于缓存验证
     }
   }, [data, progressData, accessToken])
 

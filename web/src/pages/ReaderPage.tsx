@@ -104,8 +104,29 @@ export default function ReaderPage() {
       try {
         // 检查缓存
         const cached = await getBookFile(bookId)
+        
+        // 验证缓存：如果服务器有 file_size，检查缓存是否过期（OCR后文件大小会变化）
+        let cacheValid = false
         if (cached) {
-          console.log('[ReaderPage] Cached file:', {
+          const serverSize = book?.fileSize
+          console.log('[ReaderPage] Cache validation:', {
+            cachedSize: cached.blob.size,
+            serverSize,
+            match: serverSize ? cached.blob.size === serverSize : 'no server size'
+          })
+          
+          if (serverSize && cached.blob.size !== serverSize) {
+            // 缓存大小与服务器不一致，需要重新下载（可能是 OCR 生成了新的双层PDF）
+            console.log('[ReaderPage] Cache invalidated: size mismatch, will re-download')
+            const { deleteBookFile } = await import('@/lib/bookStorage')
+            await deleteBookFile(bookId)
+          } else {
+            cacheValid = true
+          }
+        }
+        
+        if (cached && cacheValid) {
+          console.log('[ReaderPage] Using cached file:', {
             format: cached.format,
             size: cached.blob.size,
             blobType: cached.blob.type,
@@ -178,7 +199,7 @@ export default function ReaderPage() {
       if (blobUrl) revokeBlobUrl(blobUrl)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, accessToken])
+  }, [bookId, accessToken, book?.fileSize])
 
   // 阅读会话管理
   // 使用 ref 跟踪会话状态，确保在各种退出场景下都能正确关闭会话
