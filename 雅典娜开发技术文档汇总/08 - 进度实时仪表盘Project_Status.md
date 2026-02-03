@@ -1,6 +1,424 @@
 # 雅典娜项目 - 进度实时仪表盘
 
+### 2026-02-03 - GitHub 全量同步发布 ✅
+
+**时间**: 2026-02-03 18:00 UTC+8
+
+#### 本次同步内容
+- 后端：合入近期 OCR/RAG 修复与脚本清理，删除缓存日志以防泄露（见 [api/app/tasks/ocr_tasks.py](api/app/tasks/ocr_tasks.py)、[api/app/services/llama_rag.py](api/app/services/llama_rag.py) 等）
+- 前端：PDF 阅读器新增目录侧边栏与缓存尺寸校验，配套样式入库（见 [web/src/components/readers/PdfReader.tsx](web/src/components/readers/PdfReader.tsx)、[web/src/hooks/useBooksData.ts](web/src/hooks/useBooksData.ts)、[web/src/components/readers/PdfReader.css](web/src/components/readers/PdfReader.css)）
+- 基础设施：更新 compose 配置与 .gitignore，忽略 .hf_cache 和临时脚本，保持离线缓存不入库（见 [docker-compose.yml](docker-compose.yml)、[.gitignore](.gitignore)）
+
+#### 影响与风险
+- `api/external/ocrmypdf-paddleocr` 子目录仍存在未跟踪文件，后续需确认是否需要入库或忽略
+- 需在推送前再做最终拉取/冲突检查，保持 main 与同步分支一致
+
+---
+
 ##
+### 2026-01-31 - RAG搜索重大Bug修复（第二个）：RRF融合缺少 `chunk_index` 字段 ✅ 🐛
+
+**时间**: 2026-01-31 21:30 UTC+8
+
+#### 问题描述
+修复 `delete_book_index()` 后，问题仍然存在 - PDF RAG 搜索仍只返回 1 个 citation。
+
+#### 调查过程
+1. 确认 KNN 搜索返回 20 个结果，Keyword 搜索返回 20 个结果
+2. 但 RRF 融合后只有 1 个结果
+3. 检查 RRF 融合算法发现：`chunk_key = f"{book_id}_{section_index}_{chunk_index}"`
+4. 发现搜索函数返回的结果中没有 `chunk_index` 字段！
+5. 所有结果的 chunk_key 都变成 `f0204cf9..._None_None` → 被合并成 1 条
+
+#### 根本原因
+`opensearch_knn_search()` 和 `opensearch_keyword_search()` 返回的结果字典中缺少 `chunk_index` 字段：
+
+```python
+# ❌ 错误（缺少 chunk_index）:
+results.append({
+    "content": content,
+    "book_id": meta.get("book_id"),
+    "section_index": meta.get("section_index"),
+    # chunk_index 没有！
+    "score": score,
+})
+
+# ✅ 正确：
+results.append({
+    "content": content,
+    "book_id": meta.get("book_id"),
+    "section_index": meta.get("section_index"),
+    "chunk_index": meta.get("chunk_index"),  # 添加此字段
+    "score": score,
+})
+```
+
+#### 修复方案
+修改 [llama_rag.py](api/app/services/llama_rag.py) 两个搜索函数：
+- `opensearch_knn_search()` (Line ~1286)
+- `opensearch_keyword_search()` (Line ~1356)
+
+```python
+"chunk_index": meta.get("chunk_index"),  # 【2026-01-31 修复】RRF 融合需要此字段去重
+```
+
+#### 验证结果
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| RRF 融合结果 | 1 个 | 10 个 |
+| 唯一 chunk_key | 1 个 | 10 个 |
+| chunk_key 示例 | `f0204cf9.._None_None` | `f0204cf9.._None_38`, `f0204cf9.._None_39`... |
+
+#### 修改文件
+| 文件 | 变更说明 |
+|------|---------|
+| `api/app/services/llama_rag.py` | 两个搜索函数添加 `chunk_index` 返回字段 |
+
+---
+
+### 2026-01-31 - RAG搜索重大Bug修复（第一个）：`delete_book_index()` 字段路径错误 ✅ 🐛
+
+**时间**: 2026-01-31 19:40 UTC+8
+
+#### 问题描述
+PDF RAG 搜索只返回 1 个 citation，而 EPUB 返回 5-10 个。用户搜索"海岛上的贵妇"只能找到 1 个引用。
+
+#### 调查过程
+1. 检查 hybrid search 日志：vector=20, keyword=20 候选，但 RRF 只返回 1 个结果
+2. 发现问题：同一本书有 **1911 个文档**，而预期应该是 **637 个**（3倍重复！）
+3. 所有重复文档 `book_id` 相同但 `_id`（document ID）不同
+4. 根本原因：`delete_book_index()` 删除了 **0 个文档**！
+
+#### 根本原因
+`delete_book_index()` 函数使用了错误的 OpenSearch 字段路径：
+
+```python
+# ❌ 错误（匹配 0 个文档）:
+"term": {"metadata.book_id.keyword": book_id}
+
+# ✅ 正确（metadata.book_id 已经是 keyword 类型，不需要 .keyword 后缀）:
+"term": {"metadata.book_id": book_id}
+```
+
+**技术解释**：
+- OpenSearch mapping 中 `metadata.book_id` 定义为 `"type": "keyword"`
+- 对于 keyword 类型字段，直接使用字段名查询，不需要 `.keyword` 后缀
+- `.keyword` 后缀只用于 `text` 类型字段的精确匹配
+
+#### 修复方案
+修改 [llama_rag.py](api/app/services/llama_rag.py#L1498-L1505):
+
+```python
+def delete_book_index(self, book_id: str) -> int:
+    """删除指定书籍的所有向量索引"""
+    response = self.os_client.delete_by_query(
+        index=self.index_name,
+        body={
+            "query": {
+                # 【2025-01-16 修复】metadata.book_id 已经是 keyword 类型，不需要 .keyword 后缀
+                "term": {"metadata.book_id": book_id}  # 不是 metadata.book_id.keyword
+            }
+        },
+        wait_for_completion=True
+    )
+    deleted = response.get("deleted", 0)
+    logger.info(f"[LlamaRAG] Deleted {deleted} chunks for book {book_id}")
+    return deleted
+```
+
+#### 验证结果
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 文档数量 | 1911 (3x重复) | 637 (正确) |
+| 删除操作 | 删除 0 个 | 删除 824 个 |
+| 向量搜索结果 | RRF 返回 1 个 | 返回 20 个 |
+| 关键词搜索结果 | - | 返回 20 个 |
+
+#### 重要经验
+1. **字段类型决定查询方式**：keyword 类型直接查询，text 类型才需要 `.keyword`
+2. **必须通过 GPU Worker 执行索引任务**：使用 Celery 发送任务到 `gpu_low` 队列
+3. **验证删除操作**：重新索引前检查 delete_by_query 的 `deleted` 计数是否正确
+
+#### 修改文件
+| 文件 | 变更说明 |
+|------|---------|
+| `api/app/services/llama_rag.py` | 修复 `delete_book_index()` 字段路径 |
+
+---
+
+### 2026-01-30 - Docling 性能优化配置 ✅ 🔧
+
+**时间**: 2026-01-30 23:45 UTC+8
+
+#### 问题描述
+Docling 默认配置会运行多个 AI 模型（表格检测、Layout 检测等），但我们传入的是 OCRmyPDF 生成的双层 PDF，已有文字层，不需要这些功能。
+
+#### 优化思路
+1. **双层 PDF 有文字层** → 启用 `force_backend_text=True` 直接读取文字层
+2. **禁用表格检测** → `do_table_structure=False`（即使没表格也会扫描消耗资源）
+3. **禁用所有图片/公式/代码识别** → 我们只需要文本
+4. **不设超时** → 商业服务，用户 PDF 可能有 1000+ 页
+5. **GPU 使用默认 AUTO** → Docling 默认就会自动使用 GPU
+
+#### 优化后的配置
+
+```python
+pipeline_options = PdfPipelineOptions(
+    # 禁用所有不需要的 AI 功能
+    do_ocr=False,  # 我们有 OCRmyPDF
+    do_table_structure=False,  # 禁用表格检测
+    do_picture_classification=False,
+    do_picture_description=False,
+    do_formula_enrichment=False,
+    do_code_enrichment=False,
+    # 关键：直接读取双层 PDF 的文字层
+    force_backend_text=True,
+    # 禁用图片生成
+    generate_page_images=False,
+    generate_picture_images=False,
+    # 商业服务不设超时
+)
+```
+
+#### 预期效果
+- 跳过 Layout 检测模型 → **速度大幅提升**
+- 跳过表格检测模型 → **GPU/CPU 消耗降低**
+- 直接读取文字层 → **对双层 PDF 最高效**
+
+#### 修改文件
+| 文件 | 修改内容 |
+|------|---------|
+| `api/app/tasks/index_tasks.py` | 优化 `extract_pdf_with_docling()` 配置 |
+
+---
+
+### 2026-01-30 - PDF向量索引与OCR商业逻辑完善 ✅ 🔧
+
+**时间**: 2026-01-30 22:30 UTC+8
+
+#### 问题描述
+1. **OCR完成后未触发向量索引**: AI问答功能对OCR后的PDF无效
+2. **图片型PDF秒传逻辑错误**: 应该禁止秒传OCR后的双层PDF（OCR是收费服务）
+3. **原始图片型PDF未删除**: 浪费存储空间
+
+#### 问题1: OCR完成后向量索引缺失
+
+**根因分析**:
+`ocr_tasks.py` 在OCR完成后只调用了 `index_book_content()`（全文搜索索引），
+**没有调用 `index_book_vectors()`**（向量索引，用于AI RAG问答）。
+
+向量索引的四个触发时机（参见 `index_tasks.py` 注释）：
+1. EPUB 上传完成 ✅
+2. 文字型 PDF 元数据提取完成 ✅
+3. 格式转换 (MOBI/AZW3 → EPUB) 完成 ✅
+4. **OCR 任务完成 ❌ 缺失**
+
+**修复方案**:
+```python
+# ocr_tasks.py - OCR完成后添加向量索引调用
+try:
+    from ..celery_app import celery_app
+    celery_app.send_task("tasks.index_book_vectors", args=[book_id])
+    print(f"[OCR] ✓ Triggered vector indexing for book {book_id}")
+except Exception as e:
+    print(f"[OCR] Warning: Failed to trigger vector indexing: {e}")
+```
+
+#### 问题2: SHA256更新与存储清理
+
+**背景理解**:
+- `original_content_sha256`: 原始上传文件的SHA256（用于全局去重）
+- `content_sha256`: 当前可用文件的SHA256（用于向量索引匹配）
+
+**修复方案**:
+```python
+# ocr_tasks.py - 计算双层PDF的SHA256
+import hashlib
+layered_pdf_sha256 = hashlib.sha256(layered_pdf_data).hexdigest()
+
+# 更新数据库
+await conn.execute(
+    text("""
+        UPDATE books 
+        SET 
+            -- 先保存原始 SHA256（如果尚未保存）
+            original_content_sha256 = COALESCE(original_content_sha256, content_sha256),
+            -- 更新为双层 PDF 的 SHA256
+            content_sha256 = :layered_sha256,
+            minio_key = :layered_key,
+            size = :layered_size,
+            ocr_status = 'completed',
+            updated_at = now()
+        WHERE id = cast(:id as uuid)
+    """),
+    {"id": book_id, "layered_sha256": layered_pdf_sha256, ...}
+)
+```
+
+**删除原始图片型PDF**:
+```python
+# OCR完成后删除原始文件，节省存储空间
+from ..storage import delete_object
+delete_object(BUCKET, original_minio_key)
+print(f"[OCR] Deleted original image-based PDF: {original_minio_key}")
+```
+
+#### 问题3: 图片型PDF秒传商业逻辑
+
+**商业逻辑**:
+- OCR 是收费服务
+- 即使服务器已有双层PDF，后续用户仍需付费OCR才能使用
+- 不能秒传OCR结果给新用户
+
+**修复方案** (`books.py`):
+```python
+# 查询时添加 is_digitalized 和 ocr_status 字段
+if orig_fmt == 'pdf' and is_digitalized is False:
+    # 这是图片型 PDF，不能秒传
+    return {
+        "status": "success",
+        "data": {
+            "dedup_hit": "global_needs_ocr",
+            "dedup_available": False,  # 禁止秒传
+            "canonical_cover_key": cover_key,
+            "canonical_metadata": {...},
+            "message": "该 PDF 为扫描版，需要 OCR 识别后才能阅读"
+        }
+    }
+```
+
+#### 修改文件汇总
+
+| 文件 | 变更说明 |
+| :--- | :--- |
+| `api/app/tasks/ocr_tasks.py` | 1. OCR完成后触发向量索引 2. 更新content_sha256为双层PDF的SHA256 3. 保存original_content_sha256 4. 删除原始图片型PDF |
+| `api/app/books.py` | 图片型PDF秒传时返回 `dedup_available=False`，提示需要OCR |
+
+#### 上传解析流程总结
+
+| 格式 | 原始SHA256 | 转换/OCR | 新SHA256 | 删除原文件 | 向量索引触发点 |
+|------|-----------|----------|----------|-----------|--------------|
+| EPUB | ✅记录 | ❌不需要 | ❌不需要 | ❌不需要 | 元数据提取后 |
+| MOBI/AZW等 | ✅记录 | ✅转EPUB | ✅记录EPUB的SHA256 | ✅删除原始MOBI | 转换完成后 |
+| 文字型PDF | ✅记录 | ❌不需要 | ❌不需要 | ❌不需要 | 元数据提取后(Docling重排) |
+| 图片型PDF | ✅记录 | ✅OCR生成双层PDF | ✅记录双层PDF的SHA256 | ✅删除原始图片PDF | OCR完成后(Docling重排) |
+
+#### 手动修复已OCR书籍
+
+对于在此修复之前已OCR但未向量索引的书籍，在 worker-gpu 容器内运行：
+```bash
+cd /app && python -m scripts.check_and_queue_books --queue-vector
+```
+
+#### 验证步骤
+1. ✅ Python 语法检查通过
+2. ✅ OCR任务代码已更新
+3. ✅ 秒传逻辑已更新
+4. ⏳ 等待下次OCR任务验证向量索引触发
+
+---
+
+### 2026-01-30 - OCR双层PDF未同步到前端问题修复 + PDF阅读器自适应优化 ✅ 🔧
+
+**时间**: 2026-01-30 20:50 UTC+8
+
+#### 问题描述
+1. **OCR双层PDF未回传到前端**: 用户上传图片型PDF后，后端OCR处理成功生成了双层PDF，但前端仍然显示原始PDF
+2. **PDF阅读器未自适应**: 阅读器需要上下滚动才能看全，不符合全屏阅读体验
+
+#### 问题1: OCR双层PDF未同步
+
+**根因分析**:
+OCR 完成后，后端只更新了 `minio_key` 和 `ocr_status`，**没有更新 `size` 字段**。
+
+前端缓存验证逻辑（ReaderPage.tsx 第108-120行）:
+1. 检查本地 IndexedDB 缓存的文件大小
+2. 对比 PowerSync 同步的 `book.fileSize`（来自数据库 `size` 字段）
+3. 如果大小一致，认为缓存有效，不重新下载
+
+由于数据库 `size` 仍是原始文件大小，与缓存大小一致，导致不会触发重新下载。
+
+**修复方案**:
+
+1. **后端 `api/app/tasks/ocr_tasks.py`**:
+   - OCR 完成时同步更新 `size` 字段为双层 PDF 大小
+   ```python
+   # 【关键修复】同步更新 size 字段为双层 PDF 大小
+   layered_pdf_size = len(layered_pdf_data)
+   
+   await conn.execute(
+       text("""
+           UPDATE books 
+           SET 
+               minio_key = :layered_key,
+               size = :layered_size,  -- 新增
+               ocr_status = 'completed',
+               updated_at = now()
+           WHERE id = cast(:id as uuid)
+       """),
+       {"id": book_id, "layered_key": layered_pdf_key, "layered_size": layered_pdf_size}
+   )
+   ```
+
+2. **前端 `web/src/hooks/useBooksData.ts`**:
+   - items 映射中添加 `fileSize` 字段（之前遗漏）
+   ```typescript
+   return {
+     ...
+     fileSize: book.file_size || undefined,  // 用于缓存验证
+   }
+   ```
+
+#### 问题2: PDF阅读器未自适应视口
+
+**根因分析**:
+- 阅读区域使用 `overflow-auto`，允许滚动
+- `min-h-full` 导致内容可能超出视口
+- 没有固定阅读器高度，导致需要上下滚动
+
+**修复方案**:
+
+**`web/src/components/readers/PdfReader.tsx`**:
+1. 使用 `fixed inset-0` 固定阅读器填满整个视口
+2. 使用 `overflow-hidden` 禁止整体滚动
+3. 使用 `flex-1` + `ResizeObserver` 计算阅读区域实际高度
+4. PDF 页面使用 `height` 属性自适应可用高度（而非 `width`）
+5. 顶部和底部工具栏使用 `flex-none` 固定高度
+
+**`web/src/components/reader/PdfPageWithOcr.tsx`**:
+1. 添加可选的 `height` 属性
+2. 优先使用 `height` 约束页面（自适应视口高度）
+3. 向后兼容 `width` 属性
+
+#### 修改文件汇总
+
+| 文件 | 变更说明 |
+| :--- | :--- |
+| `api/app/tasks/ocr_tasks.py` | OCR 完成时更新 `size` 字段为双层 PDF 大小 |
+| `web/src/hooks/useBooksData.ts` | items 映射添加 `fileSize` 字段 |
+| `web/src/components/readers/PdfReader.tsx` | 重构为全屏固定布局，使用高度自适应 |
+| `web/src/components/reader/PdfPageWithOcr.tsx` | 添加 `height` 属性支持 |
+
+#### 手动修复已处理书籍
+
+对于在此修复之前已 OCR 处理的书籍，需手动更新 size 字段:
+```sql
+-- 查询双层 PDF 实际大小并更新
+UPDATE books SET size = <actual_layered_pdf_size>, updated_at = now() 
+WHERE id = '<book_id>' AND ocr_status = 'completed';
+```
+
+已修复书籍: `脆弱的联合：汉密尔顿、杰斐逊和麦迪逊` (29934007 bytes)
+
+#### 验证步骤
+1. ✅ TypeScript 类型检查通过
+2. ✅ 后端 OCR 任务代码已更新
+3. ✅ 前端 hooks 和组件已更新
+4. ✅ Worker 容器已重启
+5. 🔄 等待用户重新打开 PDF 验证
+
+---
+
 ### 2026-01-26 - OCR架构重构Docker测试成功 ✅ 🎉
 
 **时间**: 2026-01-26 22:07 UTC+8
